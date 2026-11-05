@@ -9,6 +9,8 @@ import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.MusicScreen
 import me.sorihiko.dangomusicgtnh.music.MusicSource
 import me.sorihiko.dangomusicgtnh.music.NeteaseApi
+import me.sorihiko.dangomusicgtnh.music.NeteaseQuality
+import me.sorihiko.dangomusicgtnh.music.NeteaseStream
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
@@ -27,6 +29,9 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private var lastSkipNotice = 0L
     private var progRect = LayoutBounds()
     private var volRect = LayoutBounds()
+    private var qualityOpen = false
+    private var qualityButton = LayoutBounds()
+    private var qualityMenu = LayoutBounds()
     /** 正在拖进度条：拖的时候只移动显示的位置，松开才真正跳过去（拖动过程中不反复重新解码） */
     private var seeking = false
     private var seekFraction = 0f
@@ -206,6 +211,69 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             val repeatB = LayoutBounds(shB.x - 40f, vy - 14f, 32f, 28f)
             toggleButton(repeatB, vy, MusicPlayer.repeatOne, repeatA, "↻") { module.toggleRepeatOne() }
         }
+        if (screen.canOpenLyrics) drawQuality(bar, vy) else dismissQualityMenu()
+    }
+
+    private fun drawQuality(bar: LayoutBounds, y: Float) {
+        val preferred = module.preferredQuality
+        val stream = MusicPlayer.neteaseStream
+        val badge = LayoutBounds(bar.right - 62f, y - 14f, 49f, 28f)
+        qualityButton = badge
+        val label = stream?.quality?.let { I18n.text(it.label) }
+            ?: stream?.bitrate?.takeIf { it > 0 }?.let { "${it / 1000}k" }
+            ?: I18n.text("Quality")
+        val color = if (qualityOpen || ui.hover(badge)) RED else Theme.TEXT_PRIMARY
+        ui.ctx.drawShape(badge, ShapeStyle(Theme.TRACK, 7f, 1f, color.copy(a = 0.42f)))
+        val size = 10f
+        val badgeText = ui.trim(label, badge.width - 6f, size, Theme.FONT_SEMIBOLD)
+        ui.text(badgeText, badge.x + (badge.width - ui.width(badgeText, size, Theme.FONT_SEMIBOLD)) / 2f,
+            badge.y + 8f, size, color, Theme.FONT_SEMIBOLD)
+        ui.hits += badge to {
+            if (!dismissQualityMenu()) qualityOpen = true
+        }
+        if (!qualityOpen) return
+
+        val menu = LayoutBounds(bar.right - 262f, bar.y - 252f, 249f, 246f)
+        qualityMenu = menu
+        ui.ctx.drawShape(menu, ShapeStyle(Color.fromHex("#242830"), 14f, 1f, Color(1f, 1f, 1f, 0.22f)))
+        ui.text(I18n.text("Playback quality"), menu.x + 14f, menu.y + 13f, 16f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        val now = when {
+            stream != null -> I18n.format("Current stream · %s", streamDescription(stream))
+            MusicPlayer.state == MusicPlayer.State.LOADING && MusicPlayer.current?.source == MusicSource.NETEASE -> I18n.text("Loading current stream…")
+            else -> I18n.text("No active NetEase stream")
+        }
+        ui.text(ui.trim(now, menu.width - 28f, 12f), menu.x + 14f, menu.y + 38f, 12f, Theme.TEXT_SECONDARY)
+        for ((i, tier) in NeteaseQuality.values().reversed().withIndex()) {
+            val row = LayoutBounds(menu.x + 8f, menu.y + 57f + i * 29f, menu.width - 16f, 27f)
+            val selected = tier == preferred
+            if (selected || ui.hover(row)) ui.card(row, if (selected) RED.copy(a = 0.16f) else Theme.TRACK, 6f)
+            ui.text(I18n.text(tier.label), row.x + 10f, row.y + 6f, 14f,
+                if (selected) RED else Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+            if (selected) ui.icon("✓", row.right - 15f, row.y + row.height / 2f, 12f, RED)
+            ui.hits += row to { module.selectQuality(tier) }
+        }
+        ui.hits += menu to {}
+    }
+
+    private fun streamDescription(stream: NeteaseStream): String {
+        return listOfNotNull(
+            stream.quality?.let { I18n.text(it.label) },
+            stream.format.takeIf { it.isNotBlank() }?.uppercase(java.util.Locale.ROOT),
+            stream.bitrate.takeIf { it > 0 }?.let { "${it / 1000} kbps" },
+        ).joinToString("  ").ifEmpty { I18n.text("Unknown quality") }
+    }
+
+    fun dismissQualityMenu(): Boolean {
+        if (!qualityOpen) return false
+        qualityOpen = false
+        qualityMenu = LayoutBounds()
+        return true
+    }
+
+    fun qualityMenuContains(x: Int, y: Int) = qualityOpen && qualityMenu.contains(x, y)
+
+    fun closeQualityMenuOutside(x: Int, y: Int) {
+        if (!qualityMenuContains(x, y) && !qualityButton.contains(x, y)) dismissQualityMenu()
     }
 
     /**

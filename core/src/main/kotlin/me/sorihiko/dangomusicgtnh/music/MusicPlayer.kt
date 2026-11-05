@@ -27,6 +27,10 @@ object MusicPlayer {
         private set
     @Volatile var message: String = ""
         private set
+    @Volatile var neteaseQuality = NeteaseQuality.LOSSLESS
+        private set
+    @Volatile var neteaseStream: NeteaseStream? = null
+        private set
 
     @Volatile var queue: List<NeteaseTrack> = emptyList()
         private set
@@ -66,6 +70,8 @@ object MusicPlayer {
     @Volatile private var line: AudioOutput? = null
     @Volatile private var seekBaseMs = 0L
     @Volatile private var pausedAtMs = 0L
+    @Volatile private var loadingPosition = 0L
+    private var loadingPaused = false
 
     val durationMs: Long get() = current?.durationMs ?: 0L
 
@@ -102,6 +108,7 @@ object MusicPlayer {
         get() = when (state) {
             State.PLAYING -> seekBaseMs + (line?.positionMicros ?: 0L) / 1000
             State.PAUSED -> pausedAtMs
+            State.LOADING -> loadingPosition
             else -> 0L
         }
 
@@ -131,14 +138,30 @@ object MusicPlayer {
         val idx = ((i % q.size) + q.size) % q.size
         val track = q[idx]
         index = idx
+        loadTrack(track, 0L, false)
+        if (radio != null && idx >= q.size - 2) extendRadio(null)
+    }
+
+    @Synchronized fun setNeteaseQuality(quality: NeteaseQuality) {
+        if (quality == neteaseQuality) return
+        neteaseQuality = quality
+        val track = current ?: return
+        if (!active || track.source != MusicSource.NETEASE) return
+        loadTrack(track, positionMs, state == State.PAUSED || (state == State.LOADING && loadingPaused))
+    }
+
+    private fun loadTrack(track: NeteaseTrack, position: Long, paused: Boolean) {
         val gen = ++generation
         stopLine()
         audio = null
+        neteaseStream = null
         current = track
+        loadingPosition = position
+        loadingPaused = paused
         state = State.LOADING
         message = "加载中…"
-        loader.execute { load(gen, track) }
-        if (radio != null && idx >= q.size - 2) extendRadio(null)
+        val quality = neteaseQuality
+        loader.execute { load(gen, track, quality, position, paused) }
     }
 
     /** 电台：再要几首接到队列后面（去掉已经在队列里的），然后执行 [then] */
@@ -249,6 +272,7 @@ object MusicPlayer {
         ++generation
         stopLine()
         audio = null
+        neteaseStream = null
         current = null
         state = State.STOPPED
         message = ""
@@ -264,11 +288,15 @@ object MusicPlayer {
 
     // ---------------------------------------------------------------- 加载 / 解码
 
-    private fun load(gen: Int, track: NeteaseTrack) {
+    private fun load(gen: Int, track: NeteaseTrack, quality: NeteaseQuality, position: Long, paused: Boolean) {
         if (gen != generation) return
         try {
             val kugou = if (track.source == MusicSource.KUGOU) KugouMusicSource.loadAudio(track) { gen == generation } else null
-            val url = if (track.source == MusicSource.KUGOU) kugou?.info else MusicSources.api(track.source).songUrl(track)
+            val url = when (track.source) {
+                MusicSource.KUGOU -> kugou?.info
+                MusicSource.NETEASE -> NeteaseApi.songUrl(track, quality) { gen == generation }
+                else -> MusicSources.api(track.source).songUrl(track)
+            }
             if (gen != generation) return
             if (url == null) return fail(gen, if (track.source == MusicSource.NETEASE) "拿不到播放地址"
                 else if (NativeAccounts.get(track.source) != null) "No playable MP3. Your login may have expired, or this song is restricted by membership or region."
@@ -288,18 +316,26 @@ object MusicPlayer {
             // Cloud list duration units are not reliable. Use compressed audio timing before enabling seeking.
             val measuredDuration = if (track.cloud) AudioAnalysis.duration(bytes) { gen == generation } else 0L
             val measuredGain = if (normalize) AudioAnalysis.gain(bytes) { gen == generation } else null
-            if (gen != generation) return
-            if (measuredDuration > 0) track.durationMs = measuredDuration
-            audio = bytes
-            message = when {
-                url.trialOnly -> "Preview only: membership is needed for the full song"
-                url.replaced -> "The original was unavailable, playing another version"
-                else -> ""
+            val stream = if (track.source == MusicSource.NETEASE) neteaseStreamOf(url, bytes) else null
+            synchronized(this) {
+                if (gen != generation) return
+                if (measuredDuration > 0) track.durationMs = measuredDuration
+                audio = bytes
+                neteaseStream = stream
+                message = when {
+                    url.trialOnly -> "Preview only: membership is needed for the full song"
+                    url.replaced -> "The original was unavailable, playing another version"
+                    else -> ""
+                }
+                trackGain = if (normalize) measuredGain ?: loudnessGain(url) else 1f
+                if (paused) {
+                    pausedAtMs = position
+                    state = State.PAUSED
+                }
+                startDecode(gen, bytes, position)
             }
-            trackGain = if (normalize) measuredGain ?: loudnessGain(url) else 1f
             DangoLogger.info("Audio analysis: source={} cloud={} durationMs={} localGain={} appliedGain={}",
                 track.source.key, track.cloud, measuredDuration, measuredGain != null, trackGain)
-            startDecode(gen, bytes, 0L)
         } catch (e: Throwable) {
             if (gen != generation) return
             // 包括 NoClassDefFoundError 之类的 Error：不接住的话线程会悄悄退出，界面一直停在"加载中"
@@ -313,10 +349,29 @@ object MusicPlayer {
         }
     }
 
+    private fun neteaseStreamOf(url: NeteaseApi.SongUrl, bytes: ByteArray): NeteaseStream {
+        val reported = url.neteaseStream ?: NeteaseStream(null, 0L, "")
+        val format = when (Mp3Probe.kind(bytes)) {
+            "flac" -> "flac"
+            "ogg-vorbis" -> "vorbis"
+            "id3", "mpeg-like" -> "mp3"
+            else -> reported.format
+        }
+        // If the file disagrees with the response, don't attach the response's quality label.
+        if (reported.format.isNotEmpty() && format != reported.format && !(format == "vorbis" && reported.format == "ogg")) {
+            return NeteaseStream(null, 0L, format)
+        }
+        if (reported.quality?.let { it >= NeteaseQuality.LOSSLESS } == true && format in setOf("mp3", "vorbis")) {
+            return reported.copy(quality = null, format = format)
+        }
+        return reported.copy(format = format)
+    }
+
     /** 失败跳过独立计时，不占用加载线程；旧请求不能切掉用户新选的歌。 */
     @Synchronized private fun fail(gen: Int, msg: String) {
         if (gen != generation) return
         state = State.ERROR
+        neteaseStream = null
         message = msg
         current?.let { failedTracks.add(it.key) }
         if (failedTracks.size >= 10 || queue.none { it.key !in failedTracks }) {
@@ -487,12 +542,16 @@ object MusicPlayer {
                 if (out == null) {
                     val format = AudioFormat(frame.rate.toFloat(), 16, frame.channels, true, false)
                     out = openOutput(format, frame.rate * frame.channels * 2 / 4)   // 约 0.25 秒缓冲
-                    line = out
-                    if (state == State.PAUSED) {
-                        out.stop()
-                    } else {
-                        out.start()
-                        state = State.PLAYING
+                    synchronized(this) {
+                        if (gen != generation) return
+                        line = out
+                        if (state == State.PAUSED) {
+                            pausedAtMs = seekBaseMs
+                            out.stop()
+                        } else {
+                            out.start()
+                            state = State.PLAYING
+                        }
                     }
                 }
                 // 暂停：不再往声卡写数据，原地等待。

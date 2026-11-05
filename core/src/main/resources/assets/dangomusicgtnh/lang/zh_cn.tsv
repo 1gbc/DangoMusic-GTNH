@@ -438,3 +438,14 @@ Lyrics font size	歌词字号
 Lyrics settings	歌词快捷设置
 Font size: %d	字号：%d
 Reset lyrics settings	恢复默认设置
+Quality	音质
+Playback quality	播放音质
+Standard	标准
+Higher	较高
+High quality	极高
+Lossless	无损
+Master	超清母带
+Current stream · %s	当前音源 · %s
+Loading current stream…	正在加载音源…
+No active NetEase stream	当前没有网易云音源
+Unknown quality	音质未知

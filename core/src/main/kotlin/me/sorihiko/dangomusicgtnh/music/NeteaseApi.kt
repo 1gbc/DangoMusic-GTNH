@@ -433,15 +433,20 @@ object NeteaseApi {
      * @param peak    音源给的峰值（线性，0 = 没给），增益不能把它推过 1，不然会破音
      * @param replaced 原来那首放不了，换成了平台推荐的另一个版本
      */
-    class SongUrl(val url: String, val trialOnly: Boolean, val gainDb: Float = 0f, val peak: Float = 0f, val replaced: Boolean = false)
+    class SongUrl @JvmOverloads constructor(
+        val url: String, val trialOnly: Boolean, val gainDb: Float = 0f, val peak: Float = 0f,
+        val replaced: Boolean = false, val neteaseStream: NeteaseStream? = null,
+    )
 
     /**
      * 播放地址。登录后能拿到账号有权限的完整音频；拿不到时退回网易云外链（只对免费歌曲有效）。
-     * 优先新版 exhigh；只接受播放器支持的 MP3 / Vorbis。
+     * 先请求所选音质，仅使用播放器支持的音频格式。
      */
     fun songUrl(id: Long): SongUrl? = songUrl(NeteaseTrack(id, "", emptyList(), 0, ""))
 
-    fun songUrl(track: NeteaseTrack): SongUrl? {
+    fun songUrl(track: NeteaseTrack): SongUrl? = songUrl(track, MusicPlayer.neteaseQuality)
+
+    internal fun songUrl(track: NeteaseTrack, quality: NeteaseQuality, active: () -> Boolean = { true }): SongUrl? {
         if (track.cloud) {
             // 同一云盘条目可能同时给上传标识和曲库标识；不能按歌名猜测另一个版本。
             var info = track
@@ -456,7 +461,7 @@ object NeteaseApi {
             var preview: SongUrl? = null
             var unsupported: SourceAccessException? = null
             for (id in listOf(upload, info.id).distinct()) {
-                val result = try { playerUrl(id, aliases) } catch (e: SourceAccessException) {
+                val result = try { playerUrl(id, quality, active, aliases) } catch (e: SourceAccessException) {
                     if (e.message != "NetEase returned an audio format that this player does not support yet.") throw e
                     unsupported = e
                     null
@@ -466,19 +471,23 @@ object NeteaseApi {
             }
             if (preview != null) return preview
             unsupported?.let { throw it }
-        } else playerUrl(track.id)?.let { return it }
+        } else playerUrl(track.id, quality, active)?.let { return it }
+        if (!active()) return null
         // 私人上传没有公共曲库替代项；换成另一首会让用户误以为自己的上传播放成功。
         if (track.cloud) throw SourceAccessException("No playable cloud audio was returned. Check this upload in the official NetEase client.")
         alternativeVersion(track.id)?.let { alt ->
-            playerUrl(alt)?.let { found -> return SongUrl(found.url, found.trialOnly, found.gainDb, found.peak, replaced = true) }
+            playerUrl(alt, quality, active)?.let { found ->
+                return SongUrl(found.url, found.trialOnly, found.gainDb, found.peak, replaced = true, neteaseStream = found.neteaseStream)
+            }
         }
         return SongUrl("https://music.163.com/song/media/outer/url?id=${track.id}.mp3", false)
     }
 
-    private fun playerUrl(id: Long, aliases: List<Long> = emptyList()): SongUrl? = NeteasePlayback({ stage, body ->
+    private fun playerUrl(id: Long, quality: NeteaseQuality, active: () -> Boolean, aliases: List<Long> = emptyList()): SongUrl? = NeteasePlayback({ stage, body ->
+        if (!active()) throw java.util.concurrent.CancellationException()
         if (stage == "v1") NeteasePlayerRequest.post(body, cookieHeader())
-        else getJson("https://music.163.com/api/song/enhance/player/url?ids=" + enc("[$id]") + "&br=192000")
-    }, loggedIn).resolve(id, aliases)
+        else getJson("https://music.163.com/api/song/enhance/player/url?ids=" + enc("[$id]") + "&br=" + body.number("br"))
+    }, loggedIn).resolve(id, aliases, quality)
 
     /** 变灰的歌（privileges.st < 0）里网易云推荐的替代版本 id；没有就是 null */
     private fun alternativeVersion(id: Long): Long? = try {
@@ -582,16 +591,18 @@ object NeteaseApi {
         requestOnce(url, accept, maxBytes)
     }
 
+    internal const val MAX_AUDIO_BYTES = 64 * 1024 * 1024
+
     internal fun requestAudio(url: String, active: () -> Boolean, progress: (Int) -> Unit): ByteArray? {
         val transfer = AudioTransfer(active, progress)
         return try {
             try {
-                requestOnce(url, "*/*", 64 * 1024 * 1024, transfer)
+                requestOnce(url, "*/*", MAX_AUDIO_BYTES, transfer)
             } catch (error: java.io.IOException) {
                 if (!transfer.canResume()) throw error
                 transfer.check()
                 DangoLogger.info("Resuming NetEase audio at byte {}", transfer.buffer.size())
-                requestOnce(url, "*/*", 64 * 1024 * 1024, transfer)
+                requestOnce(url, "*/*", MAX_AUDIO_BYTES, transfer)
             }
         } catch (error: SSLException) {
             throw SourceAccessException("网易云音源连接发生 TLS 错误，请稍后重试。")

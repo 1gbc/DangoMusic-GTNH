@@ -20,6 +20,7 @@ import me.sorihiko.dangomusicgtnh.music.EnvironmentAudio
 import me.sorihiko.dangomusicgtnh.music.RoomAcoustics
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.NeteaseApi
+import me.sorihiko.dangomusicgtnh.music.NeteaseQuality
 import me.sorihiko.dangomusicgtnh.music.MusicSources
 import me.sorihiko.dangomusicgtnh.music.MusicSource
 import me.sorihiko.dangomusicgtnh.platform.Keys
@@ -49,6 +50,16 @@ class NeteaseMusicModule : Module() {
     @ModuleValue("Audio output", "Where the music plays through")
     // 0 自动（安卓用游戏的 OpenAL，电脑用 Java Sound），1 Java Sound，2 游戏的 OpenAL
     private val audioOutput = IntValue(0, 2, 0)
+
+    @ModuleValue("NetEase audio quality", "")
+    private val audioQuality = IntValue(0, NeteaseQuality.values().lastIndex, NeteaseQuality.LOSSLESS.ordinal)
+
+    internal val preferredQuality get() = NeteaseQuality.values()[audioQuality.value]
+
+    internal fun selectQuality(quality: NeteaseQuality) {
+        audioQuality.setValue(quality.ordinal)
+        ClientMusic.control { MusicPlayer.setNeteaseQuality(quality) }
+    }
 
     // 播放器窗口的位置和大小：占屏幕的比例（换分辨率 / GUI 缩放也不会跑到屏幕外）；宽为 0 = 默认大小。
     // 拖窗口边缘时改，设置页里不显示
@@ -170,6 +181,7 @@ class NeteaseMusicModule : Module() {
 
     override fun onEnable() {
         NeteaseApi.ensureCookieFile()
+        ClientMusic.control { MusicPlayer.setNeteaseQuality(preferredQuality) }
     }
 
     override fun onDisable() {

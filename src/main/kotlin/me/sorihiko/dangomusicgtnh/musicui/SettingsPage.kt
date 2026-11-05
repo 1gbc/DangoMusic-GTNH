@@ -261,6 +261,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         player.left.remove("shuffle")   // 随机播放用播放栏上的按钮就够了，设置页不再显示（状态照样保存）
         player.left.remove("repeatOne") // 单曲循环同样通过播放栏控制
         player.left.remove("musicSource") // 音源通过侧栏切换。
+        player.left.remove("audioQuality") // 网易云音质从底部播放栏选择。
         for (k in listOf("windowX", "windowY", "windowW", "windowH", "lyricsPageSize", "lyricsPageTranslation", "lyricsPageRomanization")) {
             player.left.remove(k) // 在窗口或歌词页内调整。
         }
