@@ -10,6 +10,7 @@ import me.sorihiko.dangomusicgtnh.musicui.ArtistRef
 import me.sorihiko.dangomusicgtnh.musicui.GridPage
 import me.sorihiko.dangomusicgtnh.musicui.Library
 import me.sorihiko.dangomusicgtnh.musicui.LoginDialog
+import me.sorihiko.dangomusicgtnh.musicui.LyricsPage
 import me.sorihiko.dangomusicgtnh.musicui.Page
 import me.sorihiko.dangomusicgtnh.musicui.PageSnapshot
 import me.sorihiko.dangomusicgtnh.musicui.PlayerBar
@@ -53,10 +54,13 @@ class MusicScreen(
     internal val grid = GridPage(this)
     private val artistPage = ArtistPage(this)
     private val settings = SettingsPage(this, module)
+    private val lyricsPage = LyricsPage(ui, module)
+    private var lyricsOpen = false
+    internal val canOpenLyrics get() = MusicSources.selected == MusicSource.NETEASE
 
     /** 平台层根据搜索、筛选和设置输入框的焦点开关系统输入法。 */
     val textInputActive: Boolean
-        get() = !login.visible && closingAt == 0L && (sidebar.searchFocused || tracks.filterFocused || settings.editing)
+        get() = !lyricsOpen && !login.visible && closingAt == 0L && (sidebar.searchFocused || tracks.filterFocused || settings.editing)
     private val bar = PlayerBar(this, module)
 
     private var openedAt = 0L
@@ -113,6 +117,7 @@ class MusicScreen(
     }
 
     internal fun go(p: Page) {
+        closeLyrics()
         tracks.clearFilter()
         ScreenState.page = p
         ScreenState.backPage = null
@@ -129,6 +134,10 @@ class MusicScreen(
     }
 
     internal fun goBack() {
+        if (lyricsOpen) {
+            if (!lyricsPage.dismissMenu()) closeLyrics()
+            return
+        }
         if (ScreenState.page == Page.SETTINGS) {
             ScreenState.page = ScreenState.settingsBack
             return
@@ -164,6 +173,7 @@ class MusicScreen(
 
     /** 打开歌手页（当前音源的歌手）；已经在看这个歌手就不动 */
     internal fun openArtist(ref: ArtistRef) {
+        closeLyrics()
         if (ref.source != MusicSources.selected || !MusicSources.api(ref.source).hasArtists) return
         val cur = ScreenState.artist
         if (ScreenState.page == Page.ARTIST && cur != null && cur.source == ref.source &&
@@ -209,6 +219,7 @@ class MusicScreen(
     }
 
     internal fun toggleSettings() {
+        closeLyrics()
         settings.commitEdit()
         blurTextFields()
         settings.bindingKey = null
@@ -224,6 +235,24 @@ class MusicScreen(
     internal fun toggleCoverView() {
         ScreenState.coverView = !ScreenState.coverView
         if (ScreenState.coverView) tracks.focusCurrentInCoverflow()
+    }
+
+    internal fun toggleLyrics() {
+        if (lyricsOpen) {
+            closeLyrics()
+        } else if (canOpenLyrics) {
+            settings.commitEdit()
+            settings.bindingKey = null
+            sidebar.menuOpen = false
+            blurTextFields()
+            lyricsOpen = true
+        }
+    }
+
+    private fun closeLyrics() {
+        if (!lyricsOpen) return
+        lyricsOpen = false
+        lyricsPage.reset()
     }
 
     /** 取消所有输入框的焦点（搜索、筛选、房间码） */
@@ -444,6 +473,12 @@ class MusicScreen(
         val pad = 10f
         val sideW = 224f
         val barH = 88f
+        if (lyricsOpen && !canOpenLyrics) closeLyrics()
+        if (lyricsOpen) {
+            barRect = LayoutBounds(win.x + pad, win.bottom - pad - barH, win.width - pad * 2f, barH)
+            lyricsPage.draw(LayoutBounds(win.x + pad, win.y + pad, win.width - pad * 2f, barRect.y - win.y - pad * 2f), ::closeLyrics)
+            return
+        }
         val side = LayoutBounds(win.x + pad, win.y + pad, sideW, win.height - pad * 2)
         val mainX = side.right + pad + 8f
         val mainW = win.right - pad - 8f - mainX
@@ -524,8 +559,8 @@ class MusicScreen(
             return
         }
         if (mouseButton == 0 && beginWindowDrag(mx, my)) return
-        if (mouseButton == 0 && settings.resetKeyAt(mx, my)) return
-        if (settings.bindMouse(mouseButton)) return
+        if (!lyricsOpen && mouseButton == 0 && settings.resetKeyAt(mx, my)) return
+        if (!lyricsOpen && settings.bindMouse(mouseButton)) return
         val mouseKey = Keys.mouse(mouseButton)
         if (mouseKey == module.openKey.value) {
             if (!openKeyHeld) {
@@ -543,8 +578,12 @@ class MusicScreen(
         }
         if (mouseButton != 0) return
         if (bar.mouseDown(mx, my)) return
-        if (tracks.scrollbarDown(mx, my)) return
+        if (!lyricsOpen && tracks.scrollbarDown(mx, my)) return
         val hit = ui.hits.firstOrNull { it.first.contains(mx, my) }
+        if (lyricsOpen) {
+            if (hit == null) lyricsPage.dismissMenu() else hit.second()
+            return
+        }
         settings.onClickElsewhere(hit)
         if (hit == null || hit.first !== sidebar.searchRect) sidebar.searchFocused = false
         if (hit == null || !sidebar.isMenuHit(hit.first)) sidebar.menuOpen = false
@@ -580,6 +619,10 @@ class MusicScreen(
         if (wheel == 0 || login.visible) return
         val lx = (x / ui.scale).toInt()
         val ly = (y / ui.scale).toInt()
+        if (lyricsOpen) {
+            lyricsPage.scroll(wheel, lx, ly)
+            return
+        }
         // 按住 Ctrl 滚得快十倍
         val step = (if (wheel > 0) -3 else 3) * (if (platform.ctrlDown) 10 else 1)
         when {
@@ -604,9 +647,11 @@ class MusicScreen(
             return
         }
         // 正在输入 / 录按键的地方先拿走按键
-        if (settings.keyTyped(typedChar, keyCode)) return
-        if (sidebar.keyTyped(typedChar, keyCode)) return
-        if (tracks.filterKeyTyped(typedChar, keyCode)) return
+        if (!lyricsOpen) {
+            if (settings.keyTyped(typedChar, keyCode)) return
+            if (sidebar.keyTyped(typedChar, keyCode)) return
+            if (tracks.filterKeyTyped(typedChar, keyCode)) return
+        }
         if (keyCode != Keys.NONE && keyCode == module.openKey.value) {
             if (!openKeyHeld) {
                 openKeyHeld = true
@@ -617,16 +662,16 @@ class MusicScreen(
         }
         // 自己设的快捷键在播放器里也能用
         if (keyCode != Keys.ESCAPE && keyCode != module.openKey.value && module.handleHotkey(keyCode)) return
-        if (tracks.shortcutBefore(keyCode)) return
+        if (!lyricsOpen && tracks.shortcutBefore(keyCode)) return
         when {
             // 其它页面 Ctrl+F 是全网搜索
-            platform.ctrlDown && keyCode == Keys.F -> sidebar.searchFocused = true
+            !lyricsOpen && platform.ctrlDown && keyCode == Keys.F -> sidebar.searchFocused = true
             keyCode == Keys.SPACE -> ClientMusic.control { MusicPlayer.togglePause() }
             keyCode == Keys.BACK -> goBack()
-            tracks.coverflowKey(keyCode) -> {}
+            !lyricsOpen && tracks.coverflowKey(keyCode) -> {}
             keyCode == Keys.RIGHT -> ClientMusic.control { MusicPlayer.seek(MusicPlayer.positionMs + 5000) }
             keyCode == Keys.LEFT -> ClientMusic.control { MusicPlayer.seek(MusicPlayer.positionMs - 5000) }
-            keyCode == Keys.ESCAPE -> close()
+            keyCode == Keys.ESCAPE -> if (lyricsOpen) goBack() else close()
         }
     }
 

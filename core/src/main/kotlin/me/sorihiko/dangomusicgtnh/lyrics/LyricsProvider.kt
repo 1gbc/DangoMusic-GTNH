@@ -15,7 +15,13 @@ class LyricWord(val startMs: Long, val durMs: Long, val text: String)
  * @param words 网易云逐字歌词（yrc）里这一句的每个字 / 词的时间；普通 LRC 歌词为 null
  * @param translation 这一句的翻译（音乐平台提供的，没有就是 null）
  */
-class LyricLine(val timeMs: Long, val text: String, val words: List<LyricWord>? = null, val translation: String? = null)
+class LyricLine @JvmOverloads constructor(
+    val timeMs: Long,
+    val text: String,
+    val words: List<LyricWord>? = null,
+    val translation: String? = null,
+    val romanization: String? = null,
+)
 
 class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
     /** 去掉"纯音乐，请欣赏"这类提示（网易云给没歌词的歌塞的一句话） */
@@ -101,8 +107,8 @@ object LyricSplit {
     fun split(lines: List<LyricLine>): List<LyricLine> {
         val out = ArrayList<LyricLine>(lines.size)
         for ((li, line) in lines.withIndex()) {
-            // 带翻译的句子不拆：翻译是对着整句的
-            if (line.translation != null) {
+            // 翻译和音译是对着整句的。
+            if (line.translation != null || line.romanization != null) {
                 out += line
                 continue
             }
@@ -193,9 +199,11 @@ object LyricsProvider {
         var lrcText: String? = null
         var yrcText: String? = null
         var transText: String? = null
+        var romaText: String? = null
+        var yromaText: String? = null
         val urls = listOf(
             "https://music.163.com/api/song/lyric/v1?id=$id&cp=false&lv=0&kv=0&tv=0&rv=0&yv=0&ytv=0&yrv=0",
-            "https://music.163.com/api/song/lyric?id=$id&lv=-1&kv=-1&tv=-1&yv=-1",
+            "https://music.163.com/api/song/lyric?id=$id&lv=-1&kv=-1&tv=-1&yv=-1&rv=-1",
         )
         for (url in urls) {
             if (lrcText != null && yrcText != null) break
@@ -207,28 +215,47 @@ object LyricsProvider {
                 if (lrcText == null) lrcText = lyricField(o, "lrc")
                 if (yrcText == null) yrcText = lyricField(o, "yrc")
                 if (transText == null) transText = lyricField(o, "tlyric")
+                if (romaText == null) romaText = lyricField(o, "romalrc")
+                if (yromaText == null) yromaText = lyricField(o, "yromalrc")
             } catch (e: Exception) {
                 DangoLogger.warn("NetEase lyric request failed: {}", e.toString())
             }
         }
         val trans = transText?.let { parseLrc(it) } ?: emptyList()
+        val roma = parseRomanization(romaText, yromaText)
         yrcText?.let { y ->
             val lines = parseYrc(y)
-            if (lines.isNotEmpty()) return Lyrics(withTranslation(lines, trans), "NetEase")
+            if (lines.isNotEmpty()) return Lyrics(withTranslation(lines, trans, roma), "NetEase")
         }
         val lines = lrcText?.let { parseLrc(it) } ?: return null
-        return if (lines.isEmpty()) null else Lyrics(withTranslation(lines, trans), "NetEase")
+        return if (lines.isEmpty()) null else Lyrics(withTranslation(lines, trans, roma), "NetEase")
     }
 
     /**
      * 按时间把翻译对到每一句上：取时间最近的那句翻译（相差 1.5 秒以内）。
      * 翻译和原文一样、或者是 "//" 这种占位的不要。
      */
-    fun withTranslation(lines: List<LyricLine>, trans: List<LyricLine>): List<LyricLine> {
-        val usable = trans.filter { isRealTranslation(it.text) }
-        if (usable.isEmpty()) return lines
-        val times = LongArray(usable.size) { usable[it].timeMs }
+    @JvmOverloads
+    fun withTranslation(lines: List<LyricLine>, trans: List<LyricLine>, roma: List<LyricLine> = emptyList()): List<LyricLine> {
+        if (trans.isEmpty() && roma.isEmpty()) return lines
+        val translated = nearbyText(trans)
+        val romanized = nearbyText(roma)
         return lines.map { line ->
+            val t = translated(line)?.takeUnless { it == line.text.trim() } ?: line.translation
+            val r = romanized(line)?.takeUnless { it == line.text.trim() } ?: line.romanization
+            if (t == line.translation && r == line.romanization) line else LyricLine(line.timeMs, line.text, line.words, t, r)
+        }
+    }
+
+    internal fun parseRomanization(lrc: String?, yrc: String?): List<LyricLine> {
+        val lines = yrc?.let { parseYrc(it).ifEmpty { parseLrc(it) } }.orEmpty()
+        return lines.ifEmpty { lrc?.let(::parseLrc).orEmpty() }
+    }
+
+    private fun nearbyText(lines: List<LyricLine>): (LyricLine) -> String? {
+        val usable = lines.filter { isRealTranslation(it.text) }
+        val times = LongArray(usable.size) { usable[it].timeMs }
+        return { line ->
             var i = java.util.Arrays.binarySearch(times, line.timeMs)
             if (i < 0) i = -i - 1
             var best = -1
@@ -238,8 +265,7 @@ object LyricsProvider {
                 val d = Math.abs(usable[j].timeMs - line.timeMs)
                 if (d < bestDiff) { bestDiff = d; best = j }
             }
-            val t = if (best >= 0 && bestDiff <= 1500L) usable[best].text.trim() else null
-            if (t == null || t == line.text.trim()) line else LyricLine(line.timeMs, line.text, line.words, t)
+            if (best >= 0 && bestDiff <= 1500L) usable[best].text.trim() else null
         }
     }
 

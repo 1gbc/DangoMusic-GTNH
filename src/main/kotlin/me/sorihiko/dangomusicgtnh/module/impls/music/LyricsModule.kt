@@ -259,15 +259,21 @@ class LyricsModule : Module() {
 
     private fun lyricsFor(key: String): Lyrics? = cache[key] as? Lyrics
 
-    private fun requestLyrics(s: NowPlaying) {
-        val key = s.key
+    internal fun playerLyrics(track: NeteaseTrack): Lyrics? {
+        requestLyrics(track)
+        return lyricsFor(track.key)
+    }
+
+    internal fun isLoadingLyrics(track: NeteaseTrack): Boolean = track.key in pending
+
+    private fun requestLyrics(track: NeteaseTrack) {
+        val key = track.key
         if (cache[key] === NotFound) {
             val failedAt = notFoundAt[key] ?: 0L
             if (System.nanoTime() - failedAt < 30_000_000_000L) return
             cache.remove(key, NotFound)
         }
         if (cache.containsKey(key) || !pending.add(key)) return
-        val track = s.track
         fetcher.execute {
             try {
                 val result = me.sorihiko.dangomusicgtnh.music.MusicSources.api(track.source).lyrics(track)
@@ -298,7 +304,7 @@ class LyricsModule : Module() {
             return
         }
         lastSeenNanos = now
-        requestLyrics(s)
+        requestLyrics(s.track)
         val p = MusicPlayer.positionMs.toDouble()
         if (s.key != currentKey) {
             currentKey = s.key

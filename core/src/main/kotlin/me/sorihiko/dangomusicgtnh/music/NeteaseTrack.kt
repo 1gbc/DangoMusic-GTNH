@@ -15,6 +15,7 @@ class NeteaseTrack @JvmOverloads constructor(
     val mediaId: String = nativeId,
     val albumId: String = "",
 ) {
+    var albumName: String = ""
     /** 酷狗目录的歌曲版本标识；不是专辑 ID，也不改变歌曲 hash。 */
     var albumAudioId: String = ""
     /** 云盘上传与普通曲库不能混用替代版本。 */
@@ -46,6 +47,7 @@ class NeteaseTrack @JvmOverloads constructor(
                 str(album.asJsonObject, "picUrl").ifEmpty { str(album.asJsonObject, "cover") }
             } else ""
             return NeteaseTrack(id, name, artists, dur, cover.ifEmpty { str(raw, "cover") }).apply {
+                albumName = album?.takeIf { it.isJsonObject }?.let { str(it.asJsonObject, "name") }.orEmpty()
                 val type = str(track, "t").ifEmpty { str(raw, "t") }
                 cloud = type == "1" || type == "2" || str(raw, "sourceType") == "cloud" || raw.has("simpleSong")
                 if (cloud) cloudId = str(raw, "songId").toLongOrNull()?.takeIf { it > 0 } ?: id

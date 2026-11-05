@@ -62,6 +62,13 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val coverBox = LayoutBounds(bar.x + PROGRESS_INSET, ry - cs / 2f, cs, cs)
         ui.drawCover(coverBox, t?.let { CoverCache.trackRounded(it, 0.27f) }, 13f)
         ctx.drawShape(coverBox, ShapeStyle(Color.TRANSPARENT, 13f, 1f, Color(1f, 1f, 1f, 0.10f)))
+        if (screen.canOpenLyrics) {
+            ui.hits += coverBox to screen::toggleLyrics
+            if (ui.hover(coverBox)) {
+                ui.card(coverBox, Color(0f, 0f, 0f, 0.47f), 13f)
+                ui.icon("♫", coverBox.x + cs / 2f, coverBox.y + cs / 2f, 23f, Theme.TEXT_PRIMARY)
+            }
+        }
         val infoX = coverBox.right + 12f
         // 窗口窄时歌名区跟着缩短，别压到中间的按钮上（红心也要留位置）
         val likeShown = t != null && t.source == MusicSource.NETEASE && NeteaseApi.loggedIn

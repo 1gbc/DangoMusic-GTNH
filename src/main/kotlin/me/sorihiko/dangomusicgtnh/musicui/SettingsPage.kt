@@ -261,7 +261,9 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         player.left.remove("shuffle")   // 随机播放用播放栏上的按钮就够了，设置页不再显示（状态照样保存）
         player.left.remove("repeatOne") // 单曲循环同样通过播放栏控制
         player.left.remove("musicSource") // 音源通过侧栏切换。
-        for (k in listOf("windowX", "windowY", "windowW", "windowH")) player.left.remove(k) // 拖窗口边缘改，不在设置里显示
+        for (k in listOf("windowX", "windowY", "windowW", "windowH", "lyricsPageSize", "lyricsPageTranslation", "lyricsPageRomanization")) {
+            player.left.remove(k) // 在窗口或歌词页内调整。
+        }
         if (!DangoMusic.instance.platform.hasGameAudio) player.left.remove("audioOutput") // 1.8.9 只有 Java Sound
         val card = Src(mm.get(SongCardModule::class.java), fmts = mapOf("posX" to ::percent, "posY" to ::percent))
         val island = Src(mm.get(DynamicIslandModule::class.java), fmts = mapOf("notifyTime" to { v: Any -> "%.1f s".format((v as FloatValue).value) }))

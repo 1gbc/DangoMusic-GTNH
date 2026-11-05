@@ -61,6 +61,13 @@ class NeteaseMusicModule : Module() {
     @ModuleValue("Window height", "")
     private val windowH = FloatValue(0f, 1f, 0f, 4)
 
+    @ModuleValue("Lyrics page font size", "")
+    internal val lyricsPageSize = IntValue(14, 30, 22)
+    @ModuleValue("Lyrics page translation", "")
+    internal val lyricsPageTranslation = BooleanValue(true)
+    @ModuleValue("Lyrics page romanization", "")
+    internal val lyricsPageRomanization = BooleanValue(false)
+
     /** 玩家拖过的窗口位置大小 [x, y, 宽, 高]（占屏幕比例）；没拖过是 null */
     fun windowFrame(): FloatArray? =
         if (windowW.value <= 0f || windowH.value <= 0f) null
@@ -196,7 +203,7 @@ class NeteaseMusicModule : Module() {
         return true
     }
 
-    private fun lyrics(): LyricsModule? = try {
+    internal fun lyrics(): LyricsModule? = try {
         DangoMusic.instance.moduleManager.get(LyricsModule::class.java)
     } catch (_: Exception) {
         null

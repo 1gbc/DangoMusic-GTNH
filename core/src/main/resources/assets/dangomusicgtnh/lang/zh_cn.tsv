@@ -419,3 +419,22 @@ You left the server, so the Listen Together room has closed.	离开了服务器�
 The server rejected this Listen Together action.	服务器拒绝了这次一起听操作
 Cannot reach Listen Together on this server. Please retry.	连不上当前服务器的一起听，请重试
 Syncing through the current server	经当前服务器同步
+Collapse lyrics	收起歌词
+Artist: %s	歌手：%s
+Album: %s	专辑：%s
+Follow playback	返回当前歌词
+Play a NetEase song to view lyrics	播放网易云歌曲后显示歌词
+Loading lyrics...	正在加载歌词…
+No lyrics available	暂无歌词
+Back 5 seconds	后退 5 秒
+Forward 5 seconds	前进 5 秒
+Phonetic glyph	音
+Translation glyph	译
+Phonetic lyrics	音译歌词
+No phonetic lyrics	这首歌暂无音译
+Lyric translation	歌词翻译
+No lyric translation	这首歌暂无翻译
+Lyrics font size	歌词字号
+Lyrics settings	歌词快捷设置
+Font size: %d	字号：%d
+Reset lyrics settings	恢复默认设置
