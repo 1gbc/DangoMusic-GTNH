@@ -26,10 +26,13 @@ public final class ClientProxy extends CommonProxy {
     private final KeyBinding openPlayer =
         new KeyBinding("key.dangomusicgtnh.open", Keyboard.KEY_M, "key.categories.dangomusicgtnh");
     private ClientSettings settings;
+    private GuiScreenEvent.InitGuiEvent.Pre menuBeforeInit;
 
     @Override
     public void preInit(FMLPreInitializationEvent event) {
-        settings = new ClientSettings(new File(event.getModConfigurationDirectory(), DangoMusicGtnh.ID));
+        File directory = new File(event.getModConfigurationDirectory(), DangoMusicGtnh.ID);
+        settings = new ClientSettings(directory);
+        ClientMusic.start(directory, settings.initialVolume, settings::saveVolume);
         ClientRegistry.registerKeyBinding(openPlayer);
         FMLCommonHandler.instance().bus().register(this);
         MinecraftForge.EVENT_BUS.register(this);
@@ -44,9 +47,17 @@ public final class ClientProxy extends CommonProxy {
     }
 
     @SubscribeEvent
-    public void menuInit(GuiScreenEvent.InitGuiEvent.Post event) {
-        if (settings.mainMenuButton && isMainMenu(event.gui)) {
-            event.buttonList.add(new MenuButton(event.gui.height));
+    public void menuInitStarted(GuiScreenEvent.InitGuiEvent.Pre event) {
+        menuBeforeInit = settings.mainMenuButton && isMainMenu(event.gui) ? event : null;
+    }
+
+    @SubscribeEvent
+    public void menuInitFinished(GuiScreenEvent.InitGuiEvent.Post event) {
+        GuiScreenEvent.InitGuiEvent.Pre menu = menuBeforeInit;
+        menuBeforeInit = null;
+        if (menu != null && menu.gui == Minecraft.getMinecraft().currentScreen) {
+            // Custom Main Menu replaces the Post event's screen and button list.
+            menu.buttonList.add(new MenuButton(menu.gui.height));
         }
     }
 

@@ -1,14 +1,20 @@
 # DangoMusic GTNH Edition
 
-Phase 3 development project for Minecraft 1.7.10 and Forge 10.13.4.1614. The bootstrap screen shows the current stage. The three providers, playback, original UI, lyrics and HUD will be integrated in subsequent phases.
+Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMusic v1.7.3](https://github.com/Sorihiko/DangoMusic/tree/1e82730e6cbf19301e33cc6901f210bcffe9ea2c)。当前版本为 Phase 4 开发版，包含三平台搜索、扫码入口和基础播放控制。运行状态见阶段验证记录。
 
-The port is based on [DangoMusic v1.7.3](https://github.com/Sorihiko/DangoMusic/tree/1e82730e6cbf19301e33cc6901f210bcffe9ea2c). See [the audit](docs/PORTING_AUDIT.md), [the porting plan](docs/PORTING_PLAN.md) and [the current validation record](docs/PHASE3_VALIDATION.md).
+- [源码审计](docs/PORTING_AUDIT.md)
+- [移植方案](docs/PORTING_PLAN.md)
+- [Phase 3 验证](docs/PHASE3_VALIDATION.md)
+- [Phase 4 验证](docs/PHASE4_VALIDATION.md)
 
-## Build
+## 编译
 
-Use JDK 25 for Gradle. The Forge Java sources target Java 8. On Windows run `gradlew.bat build`. Build artifacts are written to `build/libs`.
+使用 JDK 25 运行 Gradle。编译需 JDK 8 toolchain。若 Foojay 下载超时，预装 JDK 8 后通过 Gradle 的 `org.gradle.java.installations.paths` 指定目录。Windows 下运行 `gradlew.bat build`。JAR 输出至 `build/libs`，带 `-dev`、`-dev-preshadow` 或 `-sources` 后缀的 JAR 用于开发。
 
-## License
+## 隔离测试
 
-GPL-3.0. See LICENSE. Build conventions and wrapper come from the GTNH ExampleMod template. See LICENSE-build-template.
+使用 GTNH 2.9.0 的副本，将重混淆 JAR 放入其 `mods`。从主菜单左下角的 DangoMusic 按钮进入，或在世界中按 M。平台按钮依次切换网易云、QQ 音乐和酷狗。输入关键词后回车，点选曲目播放。账号凭据保存于测试实例的 `config/dangomusicgtnh/accounts`，音量与主菜单设置保存在同一目录下的 `settings.cfg`。
 
+## 许可
+
+项目沿用 GPL-3.0，见 LICENSE。构建模板的许可见 LICENSE-build-template。解码与二维码依赖的许可证位于 `core/src/main/resources/META-INF/licenses`。公开分发前仍需完成 LGPL 库的对应源码及可替换分发核对。

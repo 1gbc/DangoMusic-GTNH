@@ -9,8 +9,11 @@
 | 服务端代理隔离 | 通过独立类加载检查。在拒绝客户端、LWJGL 和 Java Sound 类的类加载器中执行共用入口和空代理 preInit。 |
 | 配置的生成和重读 | 通过无界面检查。用 Forge 1614 Configuration，生成默认设置后写入覆盖值，重新构造时正确加载覆盖值。 |
 | Custom Main Menu | 已检查本机 1.14.1 的字节码，实际 GuiCustom 走 GuiScreen 的点击入口，绘制路径接受普通 GuiButton。显示位置、交互、主题覆盖未实机验证。 |
-| GTNHGradle build / reobf | 进行中。 |
-| GTNH 启动、进世界、M 键、主菜单按钮、配置保存 | 未实测。原 GTNH 会话在运行，可用内存不足以稳妥地并行启动另一套完整实例。 |
+| Java Sound 环境探针 | JDK 25.0.3 可打开 44.1 kHz / 16-bit 双声道输出，写入并排空 100 ms 静音 PCM 后正确关闭。探针未运行 Mod 的音频引擎。 |
+| GTNHGradle build / reobf | 通过。Gradle 9.7.1、GTNHGradle 2.0.33，Java 25 daemon、Zulu JDK 8 编译，使用 Forge 1614 重混淆。模板 Spotless 脚本下载超时，Phase 3 构建使用 -PdisableSpotless=true。 |
+| GTNH 启动、配置生成、进世界 | 在隔离的 GTNH 2.9.0、Java 25.0.3、LWJGL 3.4.3 实例通过。进入新建世界。后续重进该测试存档时发生 GTNH 物品注册表映射错误，成因未确认。 |
+| 主菜单按钮 | 修正 Custom Main Menu 替换事件列表的问题后，实测成功打开基础屏幕并返回主菜单。 |
+| M 键 | 已注册，实机验证未完成。 |
 | Dedicated Server 及联机 | 未实测。独立类加载检查只验证共用入口的客户端类隔离。 |
 | 三平台、音频、完整 UI、歌词、HUD | 待后续阶段。 |
 

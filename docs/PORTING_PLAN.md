@@ -4,7 +4,7 @@
 
 以本机 ShatteredPrism 的 GTNH 2.9.0 正式版为第一验收基线。目标为 Minecraft 1.7.10 / Forge 10.13.4.1614，正式实机使用 Java 25.0.3 + lwjgl3ify 3.0.42 / LWJGL 3.4.3。2.9.x 其他发行版须分开验证。目标日志和模块审计见 PORTING_AUDIT.md。
 
-从 [ExampleMod 的已审查提交](https://github.com/GTNewHorizons/ExampleMod1.7.10/tree/bf0843f5b29153ad76866d8390916b2e5b559e05) 复用构建约定及 wrapper。Gradle 9.7.1 daemon 使用 JDK 25，Forge 工程采用 GTNHGradle 2.0.33 / RetroFuturaGradle、MCP stable_12。Java 桥选择普通 Java 8 语言模式，由 GTNH convention 选择 Java 8 编译 toolchain。移入 Kotlin 后使用 2.3.21、JVM 8 目标，并单独限制 JDK API。最终检查自有类 major version 52、依赖字节码、重混淆及安装用 JAR；字节码兼容不能替代 Java 25 + lwjgl3ify 下的实际测试。Java 8 作为开发基线及可选兼容分支。实际构建和启动结果以构建记录为准。
+从 [ExampleMod 的已审查提交](https://github.com/GTNewHorizons/ExampleMod1.7.10/tree/bf0843f5b29153ad76866d8390916b2e5b559e05) 复用构建约定及 wrapper。Gradle 9.7.1 daemon 使用 JDK 25，Forge 工程采用 GTNHGradle 2.0.33 / RetroFuturaGradle、MCP stable_12。Java 桥选择普通 Java 8 语言模式，由 GTNH convention 选择 Java 8 编译 toolchain。移入 Kotlin 后沿用 GTNHGradle 2.0.33 已加载的 Kotlin 2.2.21、JVM 8 目标，并单独限制 JDK API。最终检查自有类 major version 52、依赖字节码、重混淆及安装用 JAR；字节码兼容不能替代 Java 25 + lwjgl3ify 下的实际测试。Java 8 作为开发基线及可选兼容分支。实际构建和启动结果以构建记录为准。
 
 标识使用 `dangomusicgtnh`，包名使用 `me.sorihiko.dangomusicgtnh`，作为 GPL 派生项目保留上游归属。配置、会话、缓存分别放在 `config/dangomusicgtnh/settings.*`、`accounts/` 和 `cache/`。首次启动不读原版会话。源码在独立 Git 分支，保留上游提交和移植变更记录。
 

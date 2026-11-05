@@ -51,3 +51,6 @@
 *.[pP][dD][bB]          binary
 *.[dD][yY][lL][iI][bB]  binary
 *.[jJ][aA][rR]          binary
+
+core/src/main/resources/assets/dangomusicgtnh/lang/zh_cn.tsv whitespace=-blank-at-eol
+core/src/main/resources/META-INF/licenses/JOrbis-LGPL-2.1.txt whitespace=-blank-at-eof
