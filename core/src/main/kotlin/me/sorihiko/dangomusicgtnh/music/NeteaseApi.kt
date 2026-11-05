@@ -11,6 +11,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 class NeteasePlaylist(
     val id: Long,
@@ -579,18 +582,96 @@ object NeteaseApi {
         requestOnce(url, accept, maxBytes)
     }
 
-    private fun requestOnce(url: String, accept: String, maxBytes: Int): ByteArray? {
+    internal fun requestAudio(url: String, active: () -> Boolean, progress: (Int) -> Unit): ByteArray? {
+        val transfer = AudioTransfer(active, progress)
+        return try {
+            try {
+                requestOnce(url, "*/*", 64 * 1024 * 1024, transfer)
+            } catch (error: java.io.IOException) {
+                if (!transfer.canResume()) throw error
+                transfer.check()
+                DangoLogger.info("Resuming NetEase audio at byte {}", transfer.buffer.size())
+                requestOnce(url, "*/*", 64 * 1024 * 1024, transfer)
+            }
+        } catch (error: SSLException) {
+            throw SourceAccessException("网易云音源连接发生 TLS 错误，请稍后重试。")
+        } catch (error: java.net.SocketTimeoutException) {
+            throw SourceAccessException("网易云音源下载超时，请重试。")
+        } catch (error: java.io.IOException) {
+            throw SourceAccessException("网易云音源传输中断，请重试。")
+        }
+    }
+
+    private class AudioTransfer(val active: () -> Boolean, val progress: (Int) -> Unit) {
+        private val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(75)
+        private var lastPercent = -1
+        val buffer = ByteArrayOutputStream()
+        private var total = -1L
+        private var validator: String? = null
+
+        fun canResume() = total > 0 && buffer.size() in 1 until total
+
+        fun prepare(connection: HttpURLConnection) {
+            if (buffer.size() == 0) return
+            connection.setRequestProperty("Range", "bytes=${buffer.size()}-")
+            validator?.let { connection.setRequestProperty("If-Range", it) }
+        }
+
+        fun begin(connection: HttpURLConnection, code: Int, maxBytes: Int) {
+            if (code == 206) {
+                val range = CONTENT_RANGE.matchEntire(connection.getHeaderField("Content-Range").orEmpty())
+                val start = range?.groupValues?.get(1)?.toLongOrNull()
+                val end = range?.groupValues?.get(2)?.toLongOrNull()
+                val length = range?.groupValues?.get(3)?.toLongOrNull()
+                if (start != buffer.size().toLong() || length != total || end != total - 1L) {
+                    throw SourceAccessException("网易云音源返回的续传范围不一致，请重试。")
+                }
+            } else {
+                buffer.reset()
+                lastPercent = -1
+                total = connection.contentLengthLong
+                validator = connection.getHeaderField("ETag")?.takeUnless { it.startsWith("W/") }
+                    ?: connection.getHeaderField("Last-Modified")
+            }
+            if (total > maxBytes) throw SourceAccessException("网易云音源超过下载大小限制。")
+        }
+
+        fun check() {
+            if (!active()) throw CancellationException()
+            if (System.nanoTime() >= deadline) throw java.net.SocketTimeoutException()
+        }
+
+        fun report() {
+            if (total <= 0) return
+            val percent = (100L * buffer.size() / total).toInt().coerceIn(0, 100)
+            if (percent == lastPercent) return
+            lastPercent = percent
+            progress(percent)
+        }
+
+        fun finish() {
+            if (total > 0 && buffer.size().toLong() != total) throw java.io.EOFException()
+        }
+
+        companion object {
+            private val CONTENT_RANGE = Regex("bytes (\\d+)-(\\d+)/(\\d+)")
+        }
+    }
+
+    private fun requestOnce(url: String, accept: String, maxBytes: Int, audio: AudioTransfer? = null): ByteArray? {
         var current = url
         repeat(6) {
+            audio?.check()
             val endpoint = URL(current)
             if (endpoint.protocol != "https" && endpoint.protocol != "http") return null
             val conn = endpoint.openConnection() as HttpURLConnection
             try {
                 conn.instanceFollowRedirects = false
                 conn.connectTimeout = 8000
-                conn.readTimeout = 15000
+                conn.readTimeout = if (audio == null) 15000 else 8000
                 conn.setRequestProperty("User-Agent", UA)
                 conn.setRequestProperty("Accept", accept)
+                audio?.prepare(conn)
                 if (endpoint.protocol == "https" && endpoint.host.equals("music.163.com", ignoreCase = true)
                     && endpoint.userInfo == null && (endpoint.port == -1 || endpoint.port == 443)
                 ) {
@@ -604,16 +685,29 @@ object NeteaseApi {
                     current = URL(endpoint, loc).toString()
                     return@repeat
                 }
-                if (code !in 200..299) return null
+                if (code !in 200..299) {
+                    if (audio != null) {
+                        val message = when (code) {
+                            401, 403, 404, 410 -> "网易云未提供可播放的音源（HTTP $code）。"
+                            else -> "网易云音源服务器返回 HTTP $code，请稍后重试。"
+                        }
+                        throw SourceAccessException(message)
+                    }
+                    return null
+                }
+                audio?.begin(conn, code, maxBytes)
                 conn.inputStream.use { input ->
-                    val out = ByteArrayOutputStream()
+                    val out = audio?.buffer ?: ByteArrayOutputStream()
                     val buf = ByteArray(64 * 1024)
                     while (true) {
+                        audio?.check()
                         val n = input.read(buf)
                         if (n < 0) break
                         out.write(buf, 0, n)
                         if (out.size() > maxBytes) return null
+                        audio?.report()
                     }
+                    audio?.finish()
                     return out.toByteArray()
                 }
             } finally {

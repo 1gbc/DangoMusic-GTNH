@@ -265,6 +265,7 @@ object MusicPlayer {
     // ---------------------------------------------------------------- 加载 / 解码
 
     private fun load(gen: Int, track: NeteaseTrack) {
+        if (gen != generation) return
         try {
             val kugou = if (track.source == MusicSource.KUGOU) KugouMusicSource.loadAudio(track) { gen == generation } else null
             val url = if (track.source == MusicSource.KUGOU) kugou?.info else MusicSources.api(track.source).songUrl(track)
@@ -272,12 +273,17 @@ object MusicPlayer {
             if (url == null) return fail(gen, if (track.source == MusicSource.NETEASE) "拿不到播放地址"
                 else if (NativeAccounts.get(track.source) != null) "No playable MP3. Your login may have expired, or this song is restricted by membership or region."
                 else "No guest MP3 available. Login, payment or regional restrictions may apply.")
-            val bytes = kugou?.bytes ?: if (track.source == MusicSource.NETEASE) NeteaseApi.request(url.url)
+            if (track.source == MusicSource.NETEASE) message = "正在下载网易云音源…"
+            val bytes = kugou?.bytes ?: if (track.source == MusicSource.NETEASE) {
+                NeteaseApi.requestAudio(url.url, { gen == generation }) { percent ->
+                    if (gen == generation) message = "正在下载网易云音源 $percent%"
+                }
+            }
                 else SourceHttp.bytes(url.url, if (track.source == MusicSource.QQ) "https://y.qq.com/" else "https://m.kugou.com/")
             if (gen != generation) return
             if (bytes == null || bytes.isEmpty() || (!track.cloud && bytes.size < 10_000)) {
                 return fail(gen, if (track.source != MusicSource.NETEASE) "Unable to download this guest MP3. Try another song."
-                    else if (NeteaseApi.loggedIn) "这首歌没有播放权限" else "需要登录才能播放（VIP 歌曲）")
+                    else "网易云未提供有效的音频数据。")
             }
             // Cloud list duration units are not reliable. Use compressed audio timing before enabling seeking.
             val measuredDuration = if (track.cloud) AudioAnalysis.duration(bytes) { gen == generation } else 0L
@@ -295,6 +301,7 @@ object MusicPlayer {
                 track.source.key, track.cloud, measuredDuration, measuredGain != null, trackGain)
             startDecode(gen, bytes, 0L)
         } catch (e: Throwable) {
+            if (gen != generation) return
             // 包括 NoClassDefFoundError 之类的 Error：不接住的话线程会悄悄退出，界面一直停在"加载中"
             if (track.source == MusicSource.NETEASE) {
                 DangoLogger.warn("Music load failed: {}", e.javaClass.simpleName)
