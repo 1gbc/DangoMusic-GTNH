@@ -11,7 +11,7 @@ final class ClientSettings {
     ClientSettings(File directory) {
         Configuration config = new Configuration(new File(directory, "settings.cfg"));
         config.load();
-        mainMenuButton = config.getBoolean("mainMenuButton", Configuration.CATEGORY_CLIENT, true,
+        mainMenuButton = config.getBoolean("mainMenuButton", "client", true,
             "Show the DangoMusic button on the main menu.");
         if (config.hasChanged()) {
             config.save();
