@@ -1,0 +1,12 @@
+[
+  {
+    "modid": "${modId}",
+    "name": "${modName}",
+    "description": "Client-side DangoMusic port for GT New Horizons.",
+    "version": "${modVersion}",
+    "mcversion": "${minecraftVersion}",
+    "url": "https://github.com/Sorihiko/DangoMusic",
+    "authorList": ["Sorihiko (upstream DangoMusic)"]
+  }
+]
+
