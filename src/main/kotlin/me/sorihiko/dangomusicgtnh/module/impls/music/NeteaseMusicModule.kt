@@ -77,14 +77,11 @@ class NeteaseMusicModule : Module() {
     }
 
     @ModuleValue("Language", "Choose the player interface language")
-    // -1：尚未根据游戏语言初始化。早期 Fabric 入口处 Options 可能仍为空。
+    // -1 表示尚未选择界面语言。
     private val language = IntValue(-1, 1, -1)
 
     fun applyLanguage() {
-        if (language.value < 0) {
-            val gameLanguage = DangoMusic.instance.platform.languageCode ?: return
-            language.setValue(I18n.defaultLanguage(gameLanguage))
-        }
+        if (language.value < 0) language.setValue(I18n.CHINESE)
         I18n.language = language.value
     }
 

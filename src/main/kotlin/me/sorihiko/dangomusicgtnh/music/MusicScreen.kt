@@ -54,9 +54,9 @@ class MusicScreen(
     private val artistPage = ArtistPage(this)
     private val settings = SettingsPage(this, module)
 
-    /** 有输入框在打字（搜索、筛选、房间码、代理、设置里改数值 / 颜色）：平台层据此让系统输入法可用 */
+    /** 平台层根据搜索、筛选和设置输入框的焦点开关系统输入法。 */
     val textInputActive: Boolean
-        get() = sidebar.searchFocused || tracks.filterFocused || settings.editing
+        get() = !login.visible && closingAt == 0L && (sidebar.searchFocused || tracks.filterFocused || settings.editing)
     private val bar = PlayerBar(this, module)
 
     private var openedAt = 0L

@@ -2,16 +2,13 @@ package me.sorihiko.dangomusicgtnh.i18n
 
 import java.util.Locale
 
-/** UI 文案独立于游戏语言：游戏语言只决定没有保存设置时的默认值。 */
+/** 播放器的界面语言独立于 Minecraft。 */
 object I18n {
     const val ENGLISH = 0
     const val CHINESE = 1
 
-    @Volatile var language = ENGLISH
+    @Volatile var language = CHINESE
         set(value) { field = value.coerceIn(ENGLISH, CHINESE) }
-
-    fun defaultLanguage(gameLanguage: String): Int =
-        if (gameLanguage.replace('-', '_').substringBefore('_').equals("zh", ignoreCase = true)) CHINESE else ENGLISH
 
     private val chinese: Map<String, String> by lazy {
         I18n::class.java.getResourceAsStream("/assets/dangomusicgtnh/lang/zh_cn.tsv")!!

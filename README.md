@@ -1,6 +1,6 @@
 # DangoMusic GTNH Edition
 
-Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMusic v1.7.3](https://github.com/Sorihiko/DangoMusic/tree/1e82730e6cbf19301e33cc6901f210bcffe9ea2c)。当前版本为 Phase 5–6 开发版，接入了原版播放器界面和歌词、HUD 渲染入口。运行状态见阶段验证记录。
+Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMusic v1.7.3](https://github.com/Sorihiko/DangoMusic/tree/1e82730e6cbf19301e33cc6901f210bcffe9ea2c)。当前版本为 Phase 5–6 开发版，接入了原版播放器界面和歌词、HUD 渲染入口。首次启动默认简体中文，已保存的界面语言可在播放器设置里切换。运行状态见阶段验证记录。
 
 - [源码审计](docs/PORTING_AUDIT.md)
 - [移植方案](docs/PORTING_PLAN.md)

@@ -14,6 +14,7 @@ class LegacyMusicScreen(
 ) : GuiScreen() {
 
     private val screen = DangoClient.newMusicScreen { mc.displayGuiScreen(parent) }
+    private val inputMethod = TextInputFocus()
 
     // 复用已初始化的主菜单，仅调用它的全景绘制，不画按钮、标题或 Realms。
     private val panoramaMethod by lazy {
@@ -32,6 +33,7 @@ class LegacyMusicScreen(
     }
 
     override fun onGuiClosed() {
+        inputMethod.setActive(false)
         screen.login.close()
         Keyboard.enableRepeatEvents(false)
     }
@@ -39,6 +41,7 @@ class LegacyMusicScreen(
     override fun doesGuiPauseGame() = false
 
     override fun updateScreen() {
+        inputMethod.setActive(screen.textInputActive)
         if (mc.theWorld == null && parent is GuiMainMenu) parent.updateScreen()
     }
 
@@ -58,6 +61,7 @@ class LegacyMusicScreen(
 
     override fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) {
         screen.mouseClicked(mouseButton)
+        inputMethod.setActive(mc.currentScreen === this && screen.textInputActive)
     }
 
     override fun mouseClickMove(mouseX: Int, mouseY: Int, clickedMouseButton: Int, timeSinceLastClick: Long) {
@@ -77,6 +81,7 @@ class LegacyMusicScreen(
 
     override fun keyTyped(typedChar: Char, keyCode: Int) {
         screen.keyTyped(typedChar, keyCode)
+        inputMethod.setActive(mc.currentScreen === this && screen.textInputActive)
     }
 
     override fun handleKeyboardInput() {

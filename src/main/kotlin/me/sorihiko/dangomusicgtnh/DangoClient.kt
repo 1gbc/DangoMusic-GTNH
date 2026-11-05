@@ -22,7 +22,7 @@ object DangoClient {
     @JvmStatic
     fun start(platform: Platform, gfx: Gfx) {
         this.gfx = gfx
-        I18n.language = I18n.ENGLISH // 未显示 UI 的启动阶段占位；不写入语言设置。
+        I18n.language = I18n.CHINESE
         val musicModule = NeteaseMusicModule()
         DangoMusic.start(
             platform,
