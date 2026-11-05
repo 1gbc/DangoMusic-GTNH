@@ -63,6 +63,7 @@ Kotlin 路径以对应模块的 `src/main/kotlin/me/sorihiko/dango/` 为基准�
 ## 本机基线与风险
 
 - ShatteredPrism 的 `290正式版` 实例中，现有游戏日志显示 GTNH 2.9.0、Minecraft 1.7.10、FML 7.99.40.1614、LWJGL 3.4.3+4 和声音引擎启动。实例组件为 Forge 10.13.4.1614、LWJGL 3.4.3、lwjgl3ify 3.0.42，安装 Angelica 2.2.43、GTNHLib 0.11.54、Custom Main Menu 1.14.1。启动器指定 Java 25.0.3，该路径的 JDK 可运行。具体 OpenAL 设备和驱动版本未测。
+- 启动器组件补丁显示该实例解析 Gson 2.10.1、Log4j API/core 2.0-beta9-fixed、Paulscode soundsystem 20120107 和 LWJGL OpenAL 绑定及 Windows 本地包 3.4.3。绑定版本与运行时实际驱动/设备须分别检查。
 - 三家接口为上游实现的服务端协议，源码存在并不证明当前可用。酷狗上游含活动权益逻辑，联网测试前逐条确认授权来源及失败行为。地区限制、二维码失效、试听、CDN 拒绝和账号过期都需要独立结果。当前没有已授权的账号会话，也没有供最终联机验收的服务器资料。
 - Shader 在固定功能管线能编译只是前提。1.7.10 的 RenderWorldLastEvent 与 Angelica 合成的相对顺序、CJK 字形、分辨率变化和 GL 状态还原须实测。上游 `docs/shader-compatibility.md` 已明确 1.8.9 的入口和 modern 不同。
 - 推荐保留 Kotlin Core/UI，建立 `me.sorihiko.dangomusicgtnh` 项目与独立 Forge 客户端桥。复用平台协议、模型、播放算法、UI 布局和旧版 shader，重写 Forge 生命周期、显示、输入、GL 状态和客户端隔离。技术决策和验证门槛见 PORTING_PLAN.md。
