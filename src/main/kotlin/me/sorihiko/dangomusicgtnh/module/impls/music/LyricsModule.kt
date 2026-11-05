@@ -1076,7 +1076,8 @@ class LyricsModule : Module() {
      */
     /** 歌曲卡片 HUD 正在显示内置播放器的歌时，就不再画左上角的信息，免得重复 */
     private fun songCardCovers(): Boolean = try {
-        DangoMusic.instance.moduleManager.get(SongCardModule::class.java).showing
+        val modules = DangoMusic.instance.moduleManager
+        modules.get(DynamicIslandModule::class.java).showingMergedCard || modules.get(SongCardModule::class.java).showing
     } catch (_: Exception) {
         false
     }

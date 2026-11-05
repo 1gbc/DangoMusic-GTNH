@@ -44,7 +44,10 @@ object DangoClient {
     @JvmStatic
     fun renderMainMenuNowPlaying() {
         if (platform.inMainMenu) {
-            DangoMusic.instance.moduleManager.get(LyricsModule::class.java).renderMainMenu()
+            val modules = DangoMusic.instance.moduleManager
+            val island = modules.get(DynamicIslandModule::class.java)
+            if (island.showingMergedCard) island.renderIsland()
+            else modules.get(LyricsModule::class.java).renderMainMenu()
         }
     }
 }

@@ -449,3 +449,9 @@ Current stream · %s	当前音源 · %s
 Loading current stream…	正在加载音源…
 No active NetEase stream	当前没有网易云音源
 Unknown quality	音质未知
+Cover progress HUD	封面进度条
+Separate position when not merged	分开显示时使用此位置
+Merge cover progress into island	融合封面进度条
+Show cover and progress together in the island	将封面、曲目信息和进度条显示在灵动岛中
+Island horizontal position	灵动岛在屏幕中的水平位置
+Island vertical position	灵动岛在屏幕中的垂直位置

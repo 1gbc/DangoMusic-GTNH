@@ -1,11 +1,11 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
 import me.sorihiko.dangomusicgtnh.DangoClient
+import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.font.MixedText
 import me.sorihiko.dangomusicgtnh.gfx.GuiCanvas
-import me.sorihiko.dangomusicgtnh.lyrics.Lyrics
 import me.sorihiko.dangomusicgtnh.module.Category
 import me.sorihiko.dangomusicgtnh.module.Module
 import me.sorihiko.dangomusicgtnh.module.ModuleMeta
@@ -32,9 +32,6 @@ import kotlin.math.sin
 @ModuleMeta(Category.MUSIC, "SongCard")
 class SongCardModule : Module() {
 
-    /** 默认用灵动岛，歌曲卡片要自己打开 */
-    override val enabledByDefault: Boolean get() = false
-
     @ModuleValue("Scale", "Card size")
     private val scale = FloatValue(0.6f, 2f, 1f, 1)
 
@@ -54,15 +51,22 @@ class SongCardModule : Module() {
     private var dragDY = 0f
     private var appear = 0f
     private var lastNanos = 0L
+    private val island by lazy { DangoMusic.instance.moduleManager.get(DynamicIslandModule::class.java) }
 
     /** 卡片正在显示（Lyrics 模块据此隐藏它自己的左上角信息） */
-    val showing: Boolean get() = enabled && appear > 0.01f
+    val showing: Boolean get() = enabled && !island.showingMergedCard && appear > 0.01f
 
     private val mt = MixedText()
 
     @EventHandler
     fun render(e: HudRenderEvent) {
         if (!enabled) return
+        if (island.showingMergedCard) {
+            dragging = false
+            appear = 0f
+            lastNanos = 0L
+            return
+        }
         val now = System.nanoTime()
         val dt = if (lastNanos == 0L) 16f else ((now - lastNanos) / 1e6f).coerceAtMost(50f)
         lastNanos = now
@@ -74,16 +78,23 @@ class SongCardModule : Module() {
         if (appear < 0.01f || t == null) return
 
         val platform = DangoClient.platform
-        val uiScale = min(platform.windowWidth / 1280f, platform.windowHeight / 800f).coerceAtLeast(0.5f)
+        if (platform.windowWidth <= 0 || platform.windowHeight <= 0) return
+        val w = cardW * scale.value
+        val h = cardH * scale.value
+        val uiScale = minOf(
+            min(platform.windowWidth / 1280f, platform.windowHeight / 800f).coerceAtLeast(0.5f),
+            platform.windowWidth / w,
+            platform.windowHeight / h,
+        )
         val lw = platform.windowWidth / uiScale
         val lh = platform.windowHeight / uiScale
         val mx = platform.mouseX / uiScale
         val my = platform.mouseY / uiScale
 
-        val w = cardW * scale.value
-        val h = cardH * scale.value
-        var x = posX.value * (lw - w)
-        var y = posY.value * (lh - h)
+        val travelX = (lw - w).coerceAtLeast(0f)
+        val travelY = (lh - h).coerceAtLeast(0f)
+        var x = posX.value * travelX
+        var y = posY.value * travelY
 
         // 打开聊天栏时可以拖动
         val chatOpen = platform.chatOpen
@@ -95,10 +106,10 @@ class SongCardModule : Module() {
                 dragDY = my - y
             }
             if (dragging) {
-                x = (mx - dragDX).coerceIn(0f, lw - w)
-                y = (my - dragDY).coerceIn(0f, lh - h)
-                posX.setValue(if (lw > w) x / (lw - w) else 0f)
-                posY.setValue(if (lh > h) y / (lh - h) else 0f)
+                x = (mx - dragDX).coerceIn(0f, travelX)
+                y = (my - dragDY).coerceIn(0f, travelY)
+                if (travelX > 0f) posX.setValue(x / travelX)
+                if (travelY > 0f) posY.setValue(y / travelY)
             }
         } else {
             dragging = false

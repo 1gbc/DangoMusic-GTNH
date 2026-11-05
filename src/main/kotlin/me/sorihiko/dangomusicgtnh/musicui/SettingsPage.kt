@@ -267,15 +267,20 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         }
         if (!DangoMusic.instance.platform.hasGameAudio) player.left.remove("audioOutput") // 1.8.9 只有 Java Sound
         val card = Src(mm.get(SongCardModule::class.java), fmts = mapOf("posX" to ::percent, "posY" to ::percent))
-        val island = Src(mm.get(DynamicIslandModule::class.java), fmts = mapOf("notifyTime" to { v: Any -> "%.1f s".format((v as FloatValue).value) }))
+        val island = Src(mm.get(DynamicIslandModule::class.java), fmts = mapOf(
+            "posX" to ::percent, "posY" to ::percent,
+            "notifyTime" to { v: Any -> "%.1f s".format((v as FloatValue).value) },
+        ))
         val environment = player.take(listOf("envAudio", "envRain", "envStrength", "envRays"))
         val music = listOf(
+            Group("Dynamic Island", "Overlay", island.m, true,
+                island.take(listOf("mergeCoverProgress", "posX", "posY")) + island.take()),
+            Group("Cover progress HUD", "Separate position when not merged", card.m, true,
+                card.take(listOf("posX", "posY")) + card.take()),
             Group("Player", "Playback", player.m, false, player.take(listOf("volume", "normalize", "audioOutput", "language"))),
             Group("Environment audio", "Sound around you", player.m, false, environment),
             Group("Hotkeys", "Click, then press a key · Backspace clears", player.m, false, player.take()),
-            Group("Song card", "Overlay", card.m, true, card.take()),
             nowPlaying,
-            Group("Dynamic Island", "Overlay", island.m, true, island.take()),
         )
         return listOf(lyrics, music)
     }

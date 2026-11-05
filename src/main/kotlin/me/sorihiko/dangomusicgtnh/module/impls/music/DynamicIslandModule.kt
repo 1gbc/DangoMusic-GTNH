@@ -3,7 +3,6 @@ package me.sorihiko.dangomusicgtnh.module.impls.music
 import me.sorihiko.dangomusicgtnh.i18n.I18n
 
 import me.sorihiko.dangomusicgtnh.DangoClient
-import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.font.MixedText
@@ -17,6 +16,7 @@ import me.sorihiko.dangomusicgtnh.module.values.FloatValue
 import me.sorihiko.dangomusicgtnh.module.values.ModuleValue
 import me.sorihiko.dangomusicgtnh.music.CoverCache
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
+import me.sorihiko.dangomusicgtnh.musicui.fmtTime
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
@@ -33,9 +33,8 @@ import kotlin.math.sin
 /**
  * 灵动岛（iOS 风格的胶囊）：
  *  - 平时：用户名 · FPS · 延迟 · 时间；内置播放器在放歌时显示 封面 + 歌名 + 跳动的音浪
- *  - 切歌 / 暂停 / 继续：展开成大卡片（封面、歌名、歌手、进度条）
- *  - 开关模块、攻击玩家：短暂显示对应信息
- *  - 有新版本时在游戏里提醒一次（每个版本只提醒一次）
+ *  - 融合模式下，播放期间一直显示封面、歌名、歌手和进度条
+ *  - 分开显示时，切歌 / 暂停 / 继续才短暂展开
  * 尺寸用弹簧动画过渡，内容淡入淡出；背景可选液态玻璃或纯黑。
  */
 @ModuleMeta(Category.MUSIC, "DynamicIsland")
@@ -46,6 +45,15 @@ class DynamicIslandModule : Module() {
 
     @ModuleValue("Show now playing", "Show what the built-in player is playing")
     private val showMusic = BooleanValue(true)
+
+    @ModuleValue("Merge cover progress into island", "Show cover and progress together in the island")
+    private val mergeCoverProgress = BooleanValue(true)
+
+    @ModuleValue("Pos X", "Island horizontal position")
+    private val posX = FloatValue(0f, 1f, 0.5f, 3)
+
+    @ModuleValue("Pos Y", "Island vertical position")
+    private val posY = FloatValue(0f, 1f, 0.05f, 3)
 
     @ModuleValue("Song notify", "Expand to show the song on track change or pause")
     private val songNotify = BooleanValue(true)
@@ -72,18 +80,15 @@ class DynamicIslandModule : Module() {
     private var vw = 0f
     private var vh = 0f
     private var lastNanos = 0L
-    private var enabledAt = 0L
 
     private var lastTrackId = ""
     private var lastState: MusicPlayer.State? = null
-    /** 这次启动是否已经处理过新版本提醒 */
 
     private val clock = SimpleDateFormat("HH:mm")
 
     private val mt = MixedText()
 
     override fun onEnable() {
-        enabledAt = System.currentTimeMillis()
         w = 0f; h = 0f; vw = 0f; vh = 0f
         shown = Kind.IDLE
         temp = null
@@ -105,8 +110,8 @@ class DynamicIslandModule : Module() {
             lastTrackId = ""
         } else if (cur.key != lastTrackId) {
             lastTrackId = cur.key
-            if (songNotify.get()) show(Kind.SONG, (notifyTime.value * 1000).toLong())
-        } else if (lastState != null && st != lastState && songNotify.get() &&
+            if (!showingMergedCard && songNotify.get()) show(Kind.SONG, (notifyTime.value * 1000).toLong())
+        } else if (!showingMergedCard && lastState != null && st != lastState && songNotify.get() &&
             (st == MusicPlayer.State.PAUSED || (st == MusicPlayer.State.PLAYING && lastState == MusicPlayer.State.PAUSED))
         ) {
             if (temp != Kind.SONG || tempUntil - System.currentTimeMillis() < 1500L) show(Kind.SONG, 1500L)
@@ -115,6 +120,10 @@ class DynamicIslandModule : Module() {
     }
 
     private fun desired(): Kind {
+        if (showingMergedCard) {
+            temp = null
+            return Kind.SONG
+        }
         val t = temp
         if (t != null && System.currentTimeMillis() < tempUntil) {
             val ok = when (t) {
@@ -127,7 +136,10 @@ class DynamicIslandModule : Module() {
         return Kind.IDLE
     }
 
-    private fun musicIdle() = showMusic.get() && MusicPlayer.current != null && MusicPlayer.active
+    private fun musicIdle() = showMusic.get() && MusicPlayer.active
+
+    internal val showingMergedCard: Boolean
+        get() = enabled && mergeCoverProgress.get() && musicIdle()
 
     // ---------------------------------------------------------------- 尺寸（逻辑像素）
 
@@ -140,11 +152,12 @@ class DynamicIslandModule : Module() {
             )
             (76f + max(tw, 150f) + 44f) to 76f
         }
-        Kind.IDLE -> if (musicIdle()) {
-            val t = MusicPlayer.current!!
-            (9f + 22f + 9f + width(t.name, 12f, Theme.FONT_SEMIBOLD).coerceAtMost(170f) + 12f + 14f + 12f) to 32f
-        } else {
-            (14f + 6f + 8f + idleWidth() + 16f) to 32f
+        Kind.IDLE -> {
+            val t = MusicPlayer.current
+            val width = if (t != null && musicIdle()) {
+                78f + width(t.name, 12f, Theme.FONT_SEMIBOLD).coerceAtMost(170f)
+            } else 44f + idleWidth()
+            width to 32f
         }
     }
 
@@ -172,8 +185,12 @@ class DynamicIslandModule : Module() {
     // ---------------------------------------------------------------- 渲染
 
     @EventHandler
-    fun render(e: HudRenderEvent) {
+    fun render(e: HudRenderEvent) = renderIsland()
+
+    internal fun renderIsland() {
         if (!enabled) return
+        val platform = DangoClient.platform
+        if (platform.windowWidth <= 0 || platform.windowHeight <= 0) return
         val now = System.nanoTime()
         val dt = if (lastNanos == 0L) 0.016f else ((now - lastNanos) / 1e9f).coerceIn(0f, 0.05f)
         lastNanos = now
@@ -202,16 +219,14 @@ class DynamicIslandModule : Module() {
         h += vh * dt
         if (w < 1f || h < 1f) return
 
-        val platform = DangoClient.platform
         val ctx = context ?: DangoClient.gfx.newCanvas().also { context = it }
         ctx.begin(glass.get(), 0, 0)
         try {
             val uiScale = min(platform.windowWidth / 1280f, platform.windowHeight / 800f).coerceAtLeast(0.5f)
-            val k = uiScale * scale.value
+            val k = minOf(uiScale * scale.value, platform.windowWidth / w, platform.windowHeight / h)
             val lw = platform.windowWidth / k
-            val sf = platform.guiScale
-            val top = 18f * sf / k                       // 和原来一样，留出 Boss 血条的位置
-            val pill = LayoutBounds((lw - w) / 2f, top, w, h)
+            val lh = platform.windowHeight / k
+            val pill = LayoutBounds(posX.value * (lw - w).coerceAtLeast(0f), posY.value * (lh - h).coerceAtLeast(0f), w, h)
             val r = min(h / 2f, 22f)
 
             ctx.pushScale(k, k, 1f)
@@ -296,12 +311,22 @@ class DynamicIslandModule : Module() {
         text(ctx, trim(t.name, tw - 4f, 14f, Theme.FONT_SEMIBOLD), tx, b.y + 24f, 14f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
         text(ctx, trim(t.artists.joinToString(" / "), tw, 11f), tx, b.y + 42f, 11f, Theme.TEXT_SECONDARY)
 
-        val bar = LayoutBounds(tx, b.y + 60f, tw, 3f)
-        ctx.drawShape(bar, ShapeStyle(Theme.TRACK, 1.5f))
         val dur = MusicPlayer.durationMs
-        if (dur > 0) {
-            val f = (MusicPlayer.positionMs.toDouble() / dur).coerceIn(0.0, 1.0).toFloat()
-            ctx.drawShape(LayoutBounds(bar.x, bar.y, max(3f, bar.width * f), bar.height), ShapeStyle(Theme.TEXT_PRIMARY, 1.5f))
+        val pos = MusicPlayer.positionMs.coerceIn(0L, dur.coerceAtLeast(0L))
+        val left = fmtTime(pos)
+        val right = if (dur > 0L) "-${fmtTime(dur - pos)}" else "--:--"
+        val timeSize = 9f
+        val timeY = b.y + 57f
+        val timeW = width(right, timeSize)
+        text(ctx, left, tx, timeY, timeSize, Theme.TEXT_SECONDARY)
+        text(ctx, right, b.right - 14f - timeW, timeY, timeSize, Theme.TEXT_SECONDARY)
+        val inset = width(left, timeSize) + 7f
+        val bar = LayoutBounds(tx + inset, b.y + 60f, (tw - inset - timeW - 7f).coerceAtLeast(0f), 3f)
+        if (bar.width <= 0f) return
+        ctx.drawShape(bar, ShapeStyle(Theme.TRACK, 1.5f))
+        if (pos > 0L && dur > 0L) {
+            val fill = (bar.width * (pos.toDouble() / dur)).toFloat()
+            ctx.drawShape(LayoutBounds(bar.x, bar.y, fill, bar.height), ShapeStyle(Theme.TEXT_PRIMARY, min(1.5f, fill / 2f)))
         }
     }
 
