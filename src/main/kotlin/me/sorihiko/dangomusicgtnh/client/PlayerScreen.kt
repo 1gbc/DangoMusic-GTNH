@@ -91,8 +91,8 @@ internal class PlayerScreen(private val parent: GuiScreen?) : GuiScreen() {
             3 -> ClientMusic.control { MusicPlayer.prev() }
             4 -> ClientMusic.control { MusicPlayer.togglePause() }
             5 -> ClientMusic.control { MusicPlayer.next() }
-            6 -> MusicPlayer.volume = (MusicPlayer.volume - 0.05f).coerceAtLeast(0f)
-            7 -> MusicPlayer.volume = (MusicPlayer.volume + 0.05f).coerceAtMost(1f)
+            6 -> ClientMusic.setVolume(MusicPlayer.volume - 0.05f)
+            7 -> ClientMusic.setVolume(MusicPlayer.volume + 0.05f)
             8 -> mc.displayGuiScreen(parent)
         }
     }

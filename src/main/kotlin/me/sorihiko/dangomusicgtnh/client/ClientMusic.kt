@@ -1,24 +1,38 @@
 package me.sorihiko.dangomusicgtnh.client
 
+import cpw.mods.fml.common.FMLCommonHandler
+import me.sorihiko.dangomusicgtnh.DangoClient
 import me.sorihiko.dangomusicgtnh.DangoMusic
+import me.sorihiko.dangomusicgtnh.legacy.LegacyGfx
+import me.sorihiko.dangomusicgtnh.legacy.LegacyKeyBindings
+import me.sorihiko.dangomusicgtnh.legacy.LegacyMusicScreen
+import me.sorihiko.dangomusicgtnh.legacy.mc
+import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.NativeLogin
 import me.sorihiko.dangomusicgtnh.music.NeteaseLogin
 import me.sorihiko.dangomusicgtnh.platform.Platform
+import me.sorihiko.dangomusicgtnh.platform.ListenerEnvironment
+import me.sorihiko.dangomusicgtnh.platform.PlayerKeyBinding
 import me.sorihiko.dangomusicgtnh.platform.PlayerPose
 import net.minecraft.client.Minecraft
+import net.minecraft.block.Block
+import net.minecraft.block.BlockLeaves
+import net.minecraft.block.material.Material
 import net.minecraft.client.gui.GuiChat
 import net.minecraft.client.gui.GuiMainMenu
 import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.gui.ScaledResolution
+import net.minecraft.util.MathHelper
+import net.minecraftforge.common.MinecraftForge
 import org.lwjgl.input.Keyboard
 import org.lwjgl.input.Mouse
 import java.io.File
 import java.nio.file.Path
+import java.util.IdentityHashMap
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import java.util.function.Consumer
 
 internal object ClientMusic {
     private val controls = ThreadPoolExecutor(
@@ -28,19 +42,33 @@ internal object ClientMusic {
     )
 
     @JvmStatic
-    fun start(directory: File, initialVolume: Float, saveVolume: Consumer<Float>) {
-        DangoMusic.start(ClientPlatform(directory.toPath()), emptyList())
-        MusicPlayer.volume = initialVolume
+    fun start(directory: File, initialVolume: Float) {
+        val hasSettings = directory.resolve("settings.json").isFile
+        mc = Minecraft.getMinecraft()
+        DangoClient.start(ClientPlatform(directory.toPath()), LegacyGfx)
+        if (!hasSettings) setVolume(initialVolume)
+        LegacyKeyBindings.register()
+        FMLCommonHandler.instance().bus().register(ClientRenderBridge)
+        MinecraftForge.EVENT_BUS.register(ClientRenderBridge)
         Runtime.getRuntime().addShutdownHook(Thread({
             controls.shutdownNow()
             NeteaseLogin.cancel()
             NativeLogin.cancel()
             MusicPlayer.shutdown()
-            saveVolume.accept(MusicPlayer.volume)
         }, "DangoMusic-shutdown"))
     }
 
     fun control(action: () -> Unit) = controls.execute { action() }
+
+    fun setVolume(value: Float) {
+        DangoMusic.instance.moduleManager.get(NeteaseMusicModule::class.java).setVolume(value)
+    }
+
+    @JvmStatic
+    fun open(parent: GuiScreen?) {
+        val screen = if (ClientRenderBridge.graphicsReady) LegacyMusicScreen(parent) else PlayerScreen(parent)
+        mc.displayGuiScreen(screen)
+    }
 }
 
 private class ClientPlatform(override val configDir: Path) : Platform {
@@ -63,14 +91,73 @@ private class ClientPlatform(override val configDir: Path) : Platform {
         client.currentScreen?.javaClass?.name == "lumien.custommainmenu.gui.GuiCustom"
     override val chatOpen get() = client.currentScreen is GuiChat
     override val guiScale get() = ScaledResolution(client, windowWidth, windowHeight).scaleFactor
-    override val fps get() = 0
+    override val fps get() = client.debug?.substringBefore(' ')?.toIntOrNull() ?: 0
     override val fov get() = client.gameSettings.fovSetting
-    override val pingMs get() = 0
+    override val pingMs get() =
+        client.netHandler?.playerInfoList?.firstOrNull { it.name == playerName }?.responseTime ?: 0
+    override val skyDarken get() = client.theWorld?.skylightSubtracted
     override val player get() = client.thePlayer?.let { player ->
         PlayerPose(player.posX, player.posY + player.eyeHeight, player.posZ, player.rotationYaw, player.rotationPitch)
     }
 
+    private val absorption = IdentityHashMap<Block, Float>()
+    private val soundDirections = arrayOf(
+        intArrayOf(1, 0, 0), intArrayOf(-1, 0, 0), intArrayOf(0, 1, 0),
+        intArrayOf(0, -1, 0), intArrayOf(0, 0, 1), intArrayOf(0, 0, -1),
+        intArrayOf(1, 1, 1), intArrayOf(1, 1, -1), intArrayOf(-1, 1, 1), intArrayOf(-1, 1, -1),
+        intArrayOf(1, -1, 1), intArrayOf(1, -1, -1), intArrayOf(-1, -1, 1), intArrayOf(-1, -1, -1)
+    )
+
+    override fun soundAbsorption(x: Int, y: Int, z: Int): Float {
+        val world = client.theWorld ?: return -1f
+        if (!world.blockExists(x, y, z)) return -1f
+        val block = world.getBlock(x, y, z)
+        return absorption.getOrPut(block) {
+            val material = block.material
+            if (block is BlockLeaves || material == Material.leaves || material.isLiquid || !material.blocksMovement()) -1f
+            else when (block.stepSound) {
+                Block.soundTypeStone, Block.soundTypePiston -> 0.03f
+                Block.soundTypeMetal, Block.soundTypeAnvil -> 0.04f
+                Block.soundTypeGlass -> 0.05f
+                Block.soundTypeWood, Block.soundTypeLadder -> 0.12f
+                Block.soundTypeGrass -> 0.3f
+                Block.soundTypeGravel, Block.soundTypeSand -> 0.35f
+                Block.soundTypeSnow -> 0.5f
+                Block.soundTypeCloth -> 0.7f
+                else -> 0.1f
+            }
+        }
+    }
+
+    override val environment: ListenerEnvironment?
+        get() {
+            val player = client.thePlayer ?: return null
+            val world = client.theWorld ?: return null
+            if (!MusicPlayer.active) return null
+            val eyeY = player.posY + player.eyeHeight
+            val x = MathHelper.floor_double(player.posX)
+            val y = MathHelper.floor_double(eyeY)
+            val z = MathHelper.floor_double(player.posZ)
+            if (!world.blockExists(x, y, z)) return null
+            val hits = soundDirections.count { direction ->
+                val scale = if (direction.all { it != 0 }) 0.57735 else 1.0
+                (1..6).any { step ->
+                    soundAbsorption(
+                        MathHelper.floor_double(player.posX + direction[0] * step * scale),
+                        MathHelper.floor_double(eyeY + direction[1] * step * scale),
+                        MathHelper.floor_double(player.posZ + direction[2] * step * scale)
+                    ) >= 0f
+                }
+            }
+            val sky = world.canBlockSeeTheSky(x, y, z)
+            val rain = if (sky && world.isRaining && world.getBiomeGenForCoords(x, z).canSpawnLightningBolt()) {
+                if (world.isThundering) 1f else 0.5f
+            } else 0f
+            return ListenerEnvironment(player.isInsideOfMaterial(Material.water), sky, hits / soundDirections.size.toFloat(), rain)
+        }
+
     override fun isMouseDown(button: Int) = Mouse.isButtonDown(button)
+    override fun syncKeyBindings(bindings: List<PlayerKeyBinding>) = LegacyKeyBindings.sync(bindings)
     override fun isKeyDown(key: Int): Boolean = when {
         key in -100..-1 -> Mouse.isButtonDown(key + 100)
         key in 1 until Keyboard.KEYBOARD_SIZE -> Keyboard.isKeyDown(key)
@@ -78,6 +165,6 @@ private class ClientPlatform(override val configDir: Path) : Platform {
     }
 
     override fun openMusicScreen() {
-        client.displayGuiScreen(PlayerScreen(client.currentScreen))
+        ClientMusic.open(client.currentScreen)
     }
 }

@@ -1,11 +1,12 @@
 # DangoMusic GTNH Edition
 
-Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMusic v1.7.3](https://github.com/Sorihiko/DangoMusic/tree/1e82730e6cbf19301e33cc6901f210bcffe9ea2c)。当前版本为 Phase 4 开发版，包含三平台搜索、扫码入口和基础播放控制。运行状态见阶段验证记录。
+Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMusic v1.7.3](https://github.com/Sorihiko/DangoMusic/tree/1e82730e6cbf19301e33cc6901f210bcffe9ea2c)。当前版本为 Phase 5–6 开发版，接入了原版播放器界面和歌词、HUD 渲染入口。运行状态见阶段验证记录。
 
 - [源码审计](docs/PORTING_AUDIT.md)
 - [移植方案](docs/PORTING_PLAN.md)
 - [Phase 3 验证](docs/PHASE3_VALIDATION.md)
 - [Phase 4 验证](docs/PHASE4_VALIDATION.md)
+- [Phase 5–6 验证](docs/PHASE5_VALIDATION.md)
 
 ## 编译
 
@@ -13,7 +14,7 @@ Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMu
 
 ## 隔离测试
 
-使用 GTNH 2.9.0 的副本，将重混淆 JAR 放入其 `mods`。从主菜单左下角的 DangoMusic 按钮进入，或在世界中按 M。平台按钮依次切换网易云、QQ 音乐和酷狗。输入关键词后回车，点选曲目播放。账号凭据保存于测试实例的 `config/dangomusicgtnh/accounts`，音量与主菜单设置保存在同一目录下的 `settings.cfg`。
+使用 GTNH 2.9.0 的副本，将重混淆 JAR 放入其 `mods`。从主菜单左下角的 DangoMusic 按钮进入，或在世界中按 M。从侧栏切换网易云、QQ 音乐和酷狗。输入关键词后回车，点选曲目播放。账号凭据保存于测试实例的 `config/dangomusicgtnh/accounts`，播放器与 HUD 设置保存在 `settings.json`，主菜单入口开关在 `settings.cfg`。
 
 ## 许可
 

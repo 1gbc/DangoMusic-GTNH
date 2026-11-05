@@ -1,6 +1,11 @@
 key.categories.dangomusicgtnh=DangoMusic GTNH Edition
-key.dangomusicgtnh.open=Open DangoMusic
 dangomusicgtnh.menu=DangoMusic
 dangomusicgtnh.title=DangoMusic GTNH Edition
-dangomusicgtnh.phase3=Client bootstrap build. Music providers are pending.
 
+key.dangomusicgtnh.open_player=Open / close player
+key.dangomusicgtnh.play_pause=Play / pause
+key.dangomusicgtnh.previous=Previous track
+key.dangomusicgtnh.next=Next track
+key.dangomusicgtnh.volume_up=Volume up
+key.dangomusicgtnh.volume_down=Volume down
+key.dangomusicgtnh.toggle_lyrics=Toggle lyrics

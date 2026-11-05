@@ -8,10 +8,8 @@ final class ClientSettings {
 
     final boolean mainMenuButton;
     final float initialVolume;
-    private final Configuration config;
-
     ClientSettings(File directory) {
-        config = new Configuration(new File(directory, "settings.cfg"));
+        Configuration config = new Configuration(new File(directory, "settings.cfg"));
         config.load();
         mainMenuButton = config.getBoolean("mainMenuButton", "client", true,
             "Show the DangoMusic button on the main menu.");
@@ -21,11 +19,5 @@ final class ClientSettings {
         }
     }
 
-    void saveVolume(float volume) {
-        if (Float.compare(volume, initialVolume) != 0) {
-            config.get("client", "volume", 0.2).set((double) volume);
-            config.save();
-        }
-    }
 }
 

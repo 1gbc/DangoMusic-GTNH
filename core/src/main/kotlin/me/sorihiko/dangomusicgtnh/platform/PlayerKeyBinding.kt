@@ -9,7 +9,7 @@ enum class PlayerAction(val id: String, val defaultKey: Int = Keys.NONE) {
     OPEN("open_player", Keys.M), PAUSE("play_pause"), PREVIOUS("previous"), NEXT("next"),
     VOLUME_UP("volume_up"), VOLUME_DOWN("volume_down"), LYRICS("toggle_lyrics");
 
-    val translationKey: String get() = "key.dangomusic.$id"
+    val translationKey: String get() = "key.dangomusicgtnh.$id"
 }
 
 class PlayerKeyBinding(val action: PlayerAction, val value: IntValue)
@@ -61,7 +61,7 @@ class KeyBindingLink(
 /** 只读 Dango Music 的原版绑定项，不重新加载整个 options.txt。 */
 fun savedPlayerKeys(file: Path): Map<String, String> = try {
     if (!Files.exists(file)) emptyMap() else Files.readAllLines(file, StandardCharsets.UTF_8)
-        .filter { it.startsWith("key_key.dangomusic.") }
+        .filter { it.startsWith("key_key.dangomusicgtnh.") }
         .mapNotNull { line ->
             val colon = line.indexOf(':')
             if (colon < 0) null else line.substring(4, colon) to line.substring(colon + 1)
