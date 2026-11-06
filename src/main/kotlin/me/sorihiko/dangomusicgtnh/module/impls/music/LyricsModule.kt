@@ -1,6 +1,5 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
-import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.DangoClient
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
@@ -425,21 +424,22 @@ class LyricsModule : Module() {
             val lyricIndex = if (ktv) lyrics.ktvIndexAt(pos) else lyrics.indexAt(pos)
             val section = if (ktv && ktvInstrumental.get() && lyricIndex < 0) lyrics.instrumentalAt(pos.coerceAtLeast(0L), MusicPlayer.durationMs + lyricOffset(s.track)) else null
             val idx = if (section != null) -2 - section.ordinal else lyricIndex
+            val sectionLabel = section?.displayLabel()
             if (paused) {
                 // 暂停：当前这句淡出消失，恢复播放时再出现
                 active?.let { startFade(it) }
                 active = null
                 lastIndex = idx
                 wasPaused = true
-            } else if (idx != lastIndex || wasPaused) {
+            } else if (idx != lastIndex || wasPaused || (sectionLabel != null && sectionLabel != active?.lyric?.text)) {
                 val resumed = wasPaused && idx == lastIndex
                 wasPaused = false
                 val anchor = active?.takeIf { maxLyricLines.value > 1 && lastIndex >= 0 && idx == lastIndex + 1 }
                 lastIndex = idx
                 active?.let { startFade(it) }
                 active = null
-                if (section != null) {
-                    active = spawn(LyricLine(pos, "【${I18n.text(section.label)}】"), pos + 3500L)
+                if (sectionLabel != null) {
+                    active = spawn(LyricLine(pos, sectionLabel), pos + 3500L)
                 } else if (idx >= 0) {
                     val line = lyrics.lines[idx]
                     if (line.text.isNotBlank()) {

@@ -123,7 +123,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             val section = if (ktv && lyricModule?.ktvInstrumental?.get() == true && manualPosition == null)
                 lyrics?.instrumentalAt(position.coerceAtLeast(0L), MusicPlayer.durationMs + (song?.let { lyricModule?.lyricOffset(it) } ?: 0L)) else null
             if (section != null) {
-                lyricText("【${I18n.text(section.label)}】", lyricArea.y + lyricArea.height * 0.46f - size / 2f, size,
+                lyricText(section.displayLabel(), lyricArea.y + lyricArea.height * 0.46f - size / 2f, size,
                     Color.fromRGB(lyricModule?.ktvBaseColor?.value ?: 0xD8D8D8), Theme.FONT_SEMIBOLD, popup)
             } else if (!ktv || active >= 0 || manualPosition != null) {
                 drawLyrics(active, position, size, popup, lyricModule)

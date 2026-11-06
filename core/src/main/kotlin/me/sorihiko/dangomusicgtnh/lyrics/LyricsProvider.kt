@@ -3,6 +3,7 @@ package me.sorihiko.dangomusicgtnh.lyrics
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import me.sorihiko.dangomusicgtnh.DangoLogger
+import me.sorihiko.dangomusicgtnh.i18n.I18n
 
 import java.net.HttpURLConnection
 import java.net.URL
@@ -77,7 +78,9 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
     val lines: List<LyricLine> get() = if (LyricSplit.enabled) split else raw
 
     enum class Instrumental(val label: String) {
-        INTRO("Instrumental intro"), INTERLUDE("Instrumental interlude"), OUTRO("Instrumental outro"),
+        INTRO("Intro"), INTERLUDE("Interlude"), OUTRO("Outro");
+
+        fun displayLabel(): String = "【${I18n.text(label)}】"
     }
 
     fun instrumentalAt(pos: Long, durationMs: Long): Instrumental? {
