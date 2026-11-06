@@ -235,6 +235,18 @@ class LyricsModule : Module() {
 
     private var current: NowPlaying? = null
     private var currentKey: String? = null
+    private var offsetTrack: String? = null
+    private var lyricOffsetMs = 0L
+
+    internal fun lyricOffset(track: NeteaseTrack): Long = if (offsetTrack == track.key) lyricOffsetMs else 0L
+
+    internal fun adjustLyricOffset(track: NeteaseTrack, deltaMs: Long) {
+        lyricOffsetMs = (lyricOffset(track) + deltaMs).coerceIn(-30_000L, 30_000L)
+        offsetTrack = track.key
+    }
+
+    internal fun alignedLyricPosition(track: NeteaseTrack, positionMs: Long): Long = positionMs + lyricOffset(track)
+
     private var songPos = 0.0                 // 毫秒，本地平滑时钟
     private var lastSeenNanos = 0L
     private var lastIndex = -1
@@ -351,7 +363,7 @@ class LyricsModule : Module() {
         }
         lastSeenNanos = now
         requestLyrics(s.track)
-        val p = MusicPlayer.positionMs.toDouble()
+        val p = alignedLyricPosition(s.track, MusicPlayer.positionMs).toDouble()
         if (s.key != currentKey) {
             currentKey = s.key
             songPos = p
@@ -411,7 +423,7 @@ class LyricsModule : Module() {
             val pos = songPos.toLong()
             val ktv = ktvMode.get()
             val lyricIndex = if (ktv) lyrics.ktvIndexAt(pos) else lyrics.indexAt(pos)
-            val section = if (ktv && ktvInstrumental.get() && lyricIndex < 0) lyrics.instrumentalAt(pos, MusicPlayer.durationMs) else null
+            val section = if (ktv && ktvInstrumental.get() && lyricIndex < 0) lyrics.instrumentalAt(pos.coerceAtLeast(0L), MusicPlayer.durationMs + lyricOffset(s.track)) else null
             val idx = if (section != null) -2 - section.ordinal else lyricIndex
             if (paused) {
                 // 暂停：当前这句淡出消失，恢复播放时再出现
@@ -422,6 +434,7 @@ class LyricsModule : Module() {
             } else if (idx != lastIndex || wasPaused) {
                 val resumed = wasPaused && idx == lastIndex
                 wasPaused = false
+                val anchor = active?.takeIf { maxLyricLines.value > 1 && lastIndex >= 0 && idx == lastIndex + 1 }
                 lastIndex = idx
                 active?.let { startFade(it) }
                 active = null
@@ -431,7 +444,13 @@ class LyricsModule : Module() {
                     val line = lyrics.lines[idx]
                     if (line.text.isNotBlank()) {
                         val next = lyrics.lines.getOrNull(idx + 1)?.timeMs ?: (line.timeMs + 5000)
-                        active = spawn(line, next).also { if (resumed) it.resumedAt = System.nanoTime() }
+                        active = spawn(line, next).also { nextLine ->
+                            if (resumed) nextLine.resumedAt = System.nanoTime()
+                            if (anchor != null) {
+                                nextLine.x = anchor.x; nextLine.y = anchor.y; nextLine.z = anchor.z
+                                nextLine.yaw = anchor.yaw; nextLine.pitch = anchor.pitch
+                            }
+                        }
                     }
                 }
             }

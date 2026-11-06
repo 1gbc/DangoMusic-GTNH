@@ -101,13 +101,13 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         drawRecord(area.x + leftWidth / 2f, area.y + area.height * 0.55f, minOf(leftWidth * 0.74f, area.height * 0.65f), song)
         lyricArea = LayoutBounds(textX, label.bottom + 12f, textWidth, area.bottom - label.bottom - 29f)
         layout(lyrics?.lines.orEmpty(), textWidth, size)
-        val position = MusicPlayer.positionMs
+        val position = if (song != null && lyricModule != null) lyricModule.alignedLyricPosition(song, MusicPlayer.positionMs) else MusicPlayer.positionMs
         val ktv = lyricModule?.ktvMode?.get() == true
         val current = lyrics?.indexAt(position) ?: -1
         val active = if (ktv) lyrics?.ktvIndexAt(position) ?: -1 else current
         val railY = area.y + (area.height - 6 * 40f - 24f) / 2f
         val popup = menu?.let {
-            val height = if (it == Menu.SIZE) 82f else 214f
+            val height = if (it == Menu.SIZE) 82f else 248f
             LayoutBounds(railX - 246f, railY + 260f - height, 232f, height)
         }
         if (rows.isEmpty()) {
@@ -119,14 +119,14 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             ui.text(I18n.text(message), textX, lyricArea.y + lyricArea.height / 2f - 8f, 17f, white.copy(a = 0.66f))
         } else {
             val target = manualPosition?.coerceAtMost(rows.last().center) ?: (rows.getOrNull(if (active >= 0) active else current)?.center ?: 0f)
-            scrollPosition = if (manualPosition != null) ui.approach(scrollPosition, target, 95f) else target
+            scrollPosition = ui.approach(scrollPosition, target, 95f)
             val section = if (ktv && lyricModule?.ktvInstrumental?.get() == true && manualPosition == null)
-                lyrics?.instrumentalAt(position, MusicPlayer.durationMs) else null
+                lyrics?.instrumentalAt(position.coerceAtLeast(0L), MusicPlayer.durationMs + (song?.let { lyricModule?.lyricOffset(it) } ?: 0L)) else null
             if (section != null) {
                 lyricText("【${I18n.text(section.label)}】", lyricArea.y + lyricArea.height * 0.46f - size / 2f, size,
                     Color.fromRGB(lyricModule?.ktvBaseColor?.value ?: 0xD8D8D8), Theme.FONT_SEMIBOLD, popup)
             } else if (!ktv || active >= 0 || manualPosition != null) {
-                drawLyrics(active, size, popup, lyricModule)
+                drawLyrics(active, position, size, popup, lyricModule)
             }
         }
         drawShortcuts(railX, railY, song)
@@ -156,7 +156,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         }
     }
 
-    private fun drawLyrics(active: Int, size: Float, popup: LayoutBounds?, lyricModule: LyricsModule?) {
+    private fun drawLyrics(active: Int, position: Long, size: Float, popup: LayoutBounds?, lyricModule: LyricsModule?) {
         val a = lyricArea
         val maxLines = (lyricModule?.maxLyricLines?.value ?: 1).coerceAtMost(lyricLineLimit(size))
         val start = if (manualPosition == null && active >= 0) active else
@@ -166,7 +166,11 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         } else minOf(maxLines, rows.size - start)
         val end = start + count
         val height = rows[end - 1].top + rows[end - 1].height - rows[start].top
-        val baseline = a.y + ((a.height - height) / 2f).coerceAtLeast(0f) - rows[start].top
+        val slack = (a.height - height).coerceAtLeast(0f) / 2f
+        val transition = if (manualPosition == null && active >= 0) {
+            (rows[active].center - scrollPosition).coerceIn(-slack, slack)
+        } else 0f
+        val baseline = a.y + slack + transition - rows[start].top
         ui.beginClip(a)
         for (i in start until end) {
             val row = rows[i]
@@ -177,7 +181,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             val ktv = lyricModule?.takeIf { it.ktvMode.get() }
             val line = lines[i]
             val next = lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L
-            val sung = if (ktv != null && i == active) line.sungCharacters(MusicPlayer.positionMs, next) else 0f
+            val sung = if (ktv != null && i == active) line.sungCharacters(position, next) else 0f
             var main = sung
             for (text in row.text) {
                 if (ktv == null) lyricText(text, y, size, color, Theme.FONT_SEMIBOLD, popup)
@@ -331,7 +335,21 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
                     limit.setValue(value + 1)
                 }
             }
-            ui.pill(LayoutBounds(b.x + 14f, b.y + 172f, b.width - 28f, 28f), white.copy(a = 0.13f), I18n.text("Reset lyrics settings")) {
+            val lyricModule = module.lyrics()
+            val song = track
+            if (lyricModule != null && song != null) {
+                val offset = lyricModule.lyricOffset(song) / 1000.0
+                val label = I18n.format("Lyrics offset · %+.1f s", offset)
+                ui.text(label, b.x + 14f, b.y + 175f, 12f, white)
+                button(LayoutBounds(b.right - 84f, b.y + 167f, 28f, 28f), "−", null, enabled = offset > -30) {
+                    lyricModule.adjustLyricOffset(song, -500L)
+                }
+                button(LayoutBounds(b.right - 46f, b.y + 167f, 28f, 28f), "+", null, enabled = offset < 30) {
+                    lyricModule.adjustLyricOffset(song, 500L)
+                }
+            }
+            ui.pill(LayoutBounds(b.x + 14f, b.y + 206f, b.width - 28f, 28f), white.copy(a = 0.13f), I18n.text("Reset lyrics settings")) {
+                if (song != null && lyricModule != null) lyricModule.adjustLyricOffset(song, -lyricModule.lyricOffset(song))
                 module.lyrics()?.maxLyricLines?.setValue(1)
                 module.lyricsPageSize.setValue(22)
                 module.lyricsPageRomanization.set(false)
