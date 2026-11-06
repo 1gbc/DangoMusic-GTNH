@@ -1,0 +1,101 @@
+name: Bug report
+description: 报告 DangoMusic GTNH Edition 的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先搜索已有 issue，并确认使用的是最新开发版。
+        请勿粘贴 Cookie、token、账号信息或带签名的播放地址。
+
+  - type: input
+    id: mod-version
+    attributes:
+      label: 模组版本
+      description: 例如 0.1.0-dev.5.19；可在 `mods` 中的 JAR 文件名或游戏日志里找到
+      placeholder: 0.1.0-dev.5.19
+    validations:
+      required: true
+
+  - type: input
+    id: gtnh-version
+    attributes:
+      label: GTNH 版本
+      description: 例如 2.9.0
+      placeholder: 2.9.0
+    validations:
+      required: true
+
+  - type: input
+    id: forge-version
+    attributes:
+      label: Forge 版本
+      description: 例如 10.13.4.1614
+      placeholder: 10.13.4.1614
+    validations:
+      required: true
+
+  - type: textarea
+    id: mod-list
+    attributes:
+      label: 模组列表
+      description: 请提供完整模组列表，或至少列出与音频、渲染、输入、UI 相关的模组（Angelica、lwjgl3ify、GTNHLib 等）
+      placeholder: |
+        Angelica 2.2.43
+        lwjgl3ify 3.0.42
+        GTNHLib 0.11.54
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 崩溃报告
+      description: 附上 `logs/fml-client-latest.log`、`logs/latest.log` 或 `crash-reports` 中的相关片段。请先脱敏。
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动 GTNH 2.9.0
+        2. 按 M 打开播放器
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 视频
+      description: 可选。请先移除账号信息和签名 URL。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索过已有 issue，并确认使用的是最新开发版
+          required: true
+        - label: 我已移除日志中的 Cookie、token、账号信息和签名 URL
+          required: true

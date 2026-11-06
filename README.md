@@ -20,3 +20,7 @@ Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMu
 ## 许可
 
 项目沿用 GPL-3.0，见 LICENSE。构建模板的许可见 LICENSE-build-template。解码与二维码依赖的许可证位于 `core/src/main/resources/META-INF/licenses`。公开分发前仍需完成 LGPL 库的对应源码及可替换分发核对。
+
+## 贡献
+
+提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请按 [SECURITY.md](SECURITY.md) 私密报告。
