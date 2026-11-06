@@ -42,8 +42,12 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
 
-/** "Above ground"：歌词中心最低在眼睛下面多少格 */
+/** "Above ground"：歌词底边最低在眼睛下面多少格 */
 private const val GROUND_MARGIN = 0.5
+private const val LYRIC_ROW_HEIGHT = 11f
+private const val LYRIC_ROW_GAP = 4f
+private const val ANNOTATION_GAP = 2.5f
+private const val SCROLL_NANOS = 380_000_000L
 
 /** Stay on screen 弹簧的快慢（越大跟得越紧；12 大约 0.3 秒回到位） */
 private const val SPRING = 12.0
@@ -256,6 +260,10 @@ class LyricsModule : Module() {
         /** 这一句的翻译（已经按宽度换好行；没有就是空的），画在原文下面 */
         var translation: List<String> = emptyList()
         var phonetic: List<String> = emptyList()
+        var scrollIn = 0f
+        var scrollStartNanos = 0L
+        var scrollOut = 0f
+        var previousStackLift = 0f
         /** Stay on screen 往回拉时的角速度（度 / 秒），用弹簧算，起步和停下都是平滑的 */
         var vYaw = 0.0
         var vPitch = 0.0
@@ -269,6 +277,29 @@ class LyricsModule : Module() {
 
     private var active: Floating? = null
     private var upcoming = emptyList<Floating>()
+    private data class StackRow(val lyric: Floating, val center: Float)
+
+    private fun phoneticRows(f: Floating) = if (romanization.get()) f.phonetic else emptyList()
+    private fun translationRows(f: Floating) = if (translation.get()) f.translation else emptyList()
+    private fun halfMain(f: Floating) = f.lines.size * LYRIC_ROW_HEIGHT / 2f
+
+    private fun rowBottom(f: Floating): Float {
+        val annotations = phoneticRows(f).size + translationRows(f).size
+        return halfMain(f) + if (annotations == 0) 0f else ANNOTATION_GAP + annotations * LYRIC_ROW_HEIGHT * TRANSLATION_SCALE
+    }
+
+    private fun layoutStack(first: Floating): List<StackRow> = buildList {
+        add(StackRow(first, 0f))
+        var bottom = rowBottom(first)
+        for (next in upcoming) {
+            val center = bottom + LYRIC_ROW_GAP + halfMain(next)
+            val nextBottom = center + rowBottom(next)
+            if (adaptiveLyricLineLimit && nextBottom + halfMain(first) > worldLyricBudget()) break
+            add(StackRow(next, center))
+            bottom = nextBottom
+        }
+    }
+
     private var upcomingKey: Triple<Floating?, Int, Lyrics?>? = null
     /** 左上角小柱子当前颜色（向封面主色渐变） */
     private var barR = 0xF2 / 255f
@@ -352,13 +383,17 @@ class LyricsModule : Module() {
         requestLyrics(s.track)
         val p = MusicPlayer.positionMs.toDouble()
         if (s.key != currentKey) {
+            fading.removeAll { it.scrollOut > 0f }
             currentKey = s.key
             songPos = p
             active?.let { startFade(it) }
             active = null
             lastIndex = -1
         } else {
-            if (abs(p - songPos) > 300) lastIndex = -1   // 拖了进度条
+            if (abs(p - songPos) > 300) {
+                lastIndex = -1
+                fading.removeAll { it.scrollOut > 0f }
+            }
             songPos = p
         }
         current = s
@@ -378,7 +413,7 @@ class LyricsModule : Module() {
     }
 
     @EventHandler
-    fun render(e: WorldRenderEndEvent) {
+    fun render(@Suppress("UNUSED_PARAMETER") e: WorldRenderEndEvent) {
         // 生物跟着节奏摇：每帧把设置同步过去，各版本画生物时读
         Dance.enabled = enabled && dance.get()
         Dance.spin = danceSpin.get()
@@ -406,6 +441,7 @@ class LyricsModule : Module() {
         }
         val lyrics = currentKey?.let { lyricsFor(it) }
         val paused = s != null && !s.playing
+        val frameNanos = System.nanoTime()
         if (s != null && lyrics != null) {
             val pos = songPos.toLong()
             val ktv = ktvMode.get()
@@ -423,6 +459,7 @@ class LyricsModule : Module() {
                 val resumed = wasPaused && idx == lastIndex
                 wasPaused = false
                 val anchor = active?.takeIf { maxLyricLines.value > 1 && lastIndex >= 0 && idx == lastIndex + 1 }
+                val previousStack = anchor?.let(::layoutStack).orEmpty()
                 lastIndex = idx
                 active?.let { startFade(it) }
                 active = null
@@ -435,6 +472,15 @@ class LyricsModule : Module() {
                         active = spawn(line, next).also { nextLine ->
                             if (resumed) nextLine.resumedAt = System.nanoTime()
                             if (anchor != null) {
+                                val stride = rowBottom(anchor) + LYRIC_ROW_GAP + halfMain(nextLine)
+                                anchor.scrollOut = stride
+                                anchor.fadeStartNanos = frameNanos
+                                anchor.previousStackLift = previousStack.lastOrNull()?.let {
+                                    it.center + rowBottom(it.lyric) - rowBottom(anchor)
+                                } ?: 0f
+                                nextLine.previousStackLift = anchor.previousStackLift
+                                nextLine.scrollIn = stride
+                                nextLine.scrollStartNanos = frameNanos
                                 nextLine.x = anchor.x; nextLine.y = anchor.y; nextLine.z = anchor.z
                                 nextLine.yaw = anchor.yaw; nextLine.pitch = anchor.pitch
                             }
@@ -454,8 +500,13 @@ class LyricsModule : Module() {
                 spawn(line, lyrics.lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L)
             }
         }
+        val stack = active?.let(::layoutStack).orEmpty()
+        fading.removeAll { f ->
+            if (f.scrollOut > 0f) frameNanos - f.fadeStartNanos >= SCROLL_NANOS
+            else active != null || frameNanos - f.fadeStartNanos >= 400_000_000L
+        }
         val useFlash = textFlash.get() && !ktvMode.get() && count == 1
-        if (worldMode.get() && !useFlash) keepOnScreen()
+        if (worldMode.get() && !useFlash) keepOnScreen(stack)
 
         val gfx = DangoClient.gfx
         val deepGlow = gfx.glow
@@ -474,7 +525,7 @@ class LyricsModule : Module() {
                         if (deepGlow.begin()) {
                             glowPass = true
                             try {
-                                drawWorld(e.partialTicks, songNow, lyrics, beat)
+                                drawWorld(songNow, stack, frameNanos)
                             } finally {
                                 glowPass = false
                             }
@@ -489,7 +540,7 @@ class LyricsModule : Module() {
                     // 发光画完，把文字需要的渲染状态重新设好
                     gfx.world.resync()
                 }
-                drawWorld(e.partialTicks, songNow, lyrics, beat)
+                drawWorld(songNow, stack, frameNanos)
             }
         }
     }
@@ -587,8 +638,8 @@ class LyricsModule : Module() {
         val lineDur = (nextMs - startMs).coerceAtLeast(400L)
         val reveal = min((chars * 55L).coerceAtLeast(250L), (lineDur * 0.6).toLong())
 
-        val phonetic = line.romanization?.takeIf { romanization.get() && it.isNotBlank() }?.let { wrap(it, TRANSLATION_WRAP) }.orEmpty()
-        val tr = line.annotations(romanization.get(), translation.get()).flatMap { wrap(it, TRANSLATION_WRAP) }
+        val phonetic = line.romanization?.takeIf { it.isNotBlank() }?.let { wrap(it, TRANSLATION_WRAP) }.orEmpty()
+        val tr = line.translation?.takeIf { it.isNotBlank() }?.let { wrap(it, TRANSLATION_WRAP) }.orEmpty()
         val player = DangoClient.platform.player
         if (player == null) return Floating(lines, startMs, reveal, 0.0, 0.0, 0.0, 0f, 0f, ct, line, nextMs).also { it.translation = tr; it.phonetic = phonetic }
         val yaw = player.yaw + (random.nextFloat() * 2f - 1f) * spread.value
@@ -776,16 +827,17 @@ class LyricsModule : Module() {
      * 逐字出现：每个字按顺序在 revealMs 内依次淡入并从下往上浮起一点；
      * 发光由 [DeepGlow] 另外做（先把字画到发光画布上），这里只画字本身。
      */
-    private fun drawKtv(f: Floating, positionMs: Long, alpha: Float) {
-        drawKtvLines(f.lines, f.lyric.sungCharacters(positionMs, f.nextMs), alpha, -f.lines.size * 11f / 2f)
-        val phonetic = if (romanization.get()) f.phonetic else emptyList()
-        val translated = if (translation.get()) f.translation.drop(f.phonetic.size) else emptyList()
+    private fun drawKtv(f: Floating, positionMs: Long, alpha: Float, preview: Boolean) {
+        val sung = if (preview) 0f else f.lyric.sungCharacters(positionMs, f.nextMs)
+        drawKtvLines(f.lines, sung, alpha, -halfMain(f))
+        val phonetic = phoneticRows(f)
+        val translated = translationRows(f)
         if (phonetic.isNotEmpty() || translated.isNotEmpty()) {
             val pen = DangoClient.gfx.text
-            val progress = f.lyric.sungFraction(positionMs, f.nextMs)
+            val progress = if (preview) 0f else f.lyric.sungFraction(positionMs, f.nextMs)
             pen.push()
             try {
-                pen.translate(0f, f.lines.size * 11f / 2f + 2.5f)
+                pen.translate(0f, halfMain(f) + ANNOTATION_GAP)
                 pen.scale(TRANSLATION_SCALE, TRANSLATION_SCALE)
                 val phoneticCount = phonetic.sumOf { line -> line.count { !it.isWhitespace() } }
                 val translatedCount = translated.sumOf { line -> line.count { !it.isWhitespace() } }
@@ -873,8 +925,8 @@ class LyricsModule : Module() {
      * 翻译：画在原文下面，字小一点、淡一点；原文开始出现后整行淡入（不逐字）。
      * 和原文用同一个位置和朝向，发光层也会画到。
      */
-    private fun drawTranslation(lines: List<String>, elapsedMs: Long, revealMs: Long, alphaMul: Float, top: Float, scale: Float) {
-        if (lines.isEmpty() || (!translation.get() && !romanization.get())) return
+    private fun drawTranslation(lines: List<String>, elapsedMs: Long, revealMs: Long, alphaMul: Float, top: Float, scale: Float, settled: Boolean) {
+        if (lines.isEmpty()) return
         val smooth = smoothFont.get()
         val pen = DangoClient.gfx.text
         val lineH = 11f
@@ -884,9 +936,9 @@ class LyricsModule : Module() {
         pen.translate(0f, top)
         pen.scale(scale, scale)
         if (smooth) pen.beginSmooth()
-        if (!animate && !wig) {
+        if (settled || (!animate && !wig)) {
             // 默认：整行一起淡入
-            var a = ((elapsedMs - 120L) / 260f).coerceIn(0f, 1f)
+            var a = if (settled) 1f else ((elapsedMs - 120L) / 260f).coerceIn(0f, 1f)
             a = a * a * (3f - 2f * a)
             val alpha = a * alphaMul * 0.85f
             if (alpha > 0.02f) {
@@ -998,7 +1050,7 @@ class LyricsModule : Module() {
      * 往回拉用的是"临界阻尼弹簧"：有速度、会慢慢加速和减速，不会一碰到边就突然开始动、一回来就突然停，
      * 跳跃 / 飞行这种上下来回的时候也是顺的。"Above ground" 的最低高度也算成一个边界交给同一个弹簧。
      */
-    private fun keepOnScreen() {
+    private fun keepOnScreen(stack: List<StackRow>) {
         val now = System.nanoTime()
         val dt = if (keepNanos == 0L) 0.016 else ((now - keepNanos) / 1e9).coerceIn(0.0, 0.1)
         keepNanos = now
@@ -1074,9 +1126,14 @@ class LyricsModule : Module() {
 
             // 字本身占的角度：留出一半宽 / 高，再多留 2 度边距
             // 翻译在原文下面多占一截：按整体高度算（偏保守，上下都留出来）
-            val rows = f.lines.size + f.translation.size * TRANSLATION_SCALE * 2.0
-            val halfW = Math.toDegrees(atan2(max(f.lines.maxOf { strW(it) }, f.translation.maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f) * s / 2.0, len))
-            val halfH = Math.toDegrees(atan2(rows * 11.0 * s / 2.0, len))
+            val visible = if (f === active) stack.map { it.lyric } else listOf(f)
+            val width = visible.maxOf { row ->
+                max(row.lines.maxOf { strW(it) },
+                    (phoneticRows(row) + translationRows(row)).maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f)
+            }
+            val halfW = Math.toDegrees(atan2(width * s / 2.0, len))
+            val extra = if (f === active) stack.lastOrNull()?.let { it.center + rowBottom(it.lyric) - rowBottom(f) } ?: 0f else f.previousStackLift
+            val halfH = Math.toDegrees(atan2(max(rowBottom(f), extra + halfMain(f)) * s, len))
             val hLim = max(0.0, hHalf - halfW - 2.0)
             val vLim = max(0.0, vHalf - halfH - 2.0)
 
@@ -1132,11 +1189,28 @@ class LyricsModule : Module() {
         fading.forEach { follow(it) }
     }
 
-    private fun drawWorld(partialTicks: Float, songNow: Long, lyrics: Lyrics?, beat: Float) {
+    private fun drawWorld(songNow: Long, stack: List<StackRow>, frameNanos: Long) {
         val world = DangoClient.gfx.world
         world.begin()
 
-        fun draw(f: Floating, alphaMul: Float, lift: Float) {
+        val pen = DangoClient.gfx.text
+        val floor = if (aboveGround.get()) DangoClient.platform.player?.eyeY?.minus(GROUND_MARGIN) else null
+
+        fun drawRow(f: Floating, alpha: Float, preview: Boolean, settled: Boolean) {
+            if (f === active && lastIndex < -1) {
+                drawKtvLines(f.lines, 0f, alpha, -halfMain(f))
+            } else if (ktvMode.get()) {
+                drawKtv(f, songNow, alpha, preview)
+            } else {
+                val elapsed = songNow - f.startMs
+                if (settled) drawKtvLines(f.lines, 0f, alpha, -halfMain(f), useKtvColors = false)
+                else drawAnimated(f.lines, elapsed, f.revealMs, alpha, if (wordPop.get()) f.charTimes else null)
+                drawTranslation(phoneticRows(f) + translationRows(f), elapsed, f.revealMs, alpha,
+                    halfMain(f) + ANNOTATION_GAP, TRANSLATION_SCALE, settled)
+            }
+        }
+
+        fun draw(f: Floating, alphaMul: Float, slide: Float, stackLift: Float) {
             var rx = f.x - world.cameraX
             var ry = f.y - world.cameraY
             var rz = f.z - world.cameraZ
@@ -1164,61 +1238,64 @@ class LyricsModule : Module() {
                 pitch = f.pitch
             }
             val s = 0.03f * scale.value * (distance.value / 6.5f)
+            val bottom = if (f === active) stack.last().let { it.center + rowBottom(it.lyric) } else rowBottom(f) + stackLift
+            val lift = worldStackLift(stackLift, bottom, slide, s, world.cameraY + ry, floor)
             world.push(rx, ry + lift, rz, yaw, pitch, s)
-            if (f === active && lastIndex < -1) {
-                drawKtvLines(f.lines, 0f, alphaMul, -f.lines.size * 11f / 2f)
-            } else if (ktvMode.get()) {
-                drawKtv(f, songNow, alphaMul)
-            } else {
-                drawAnimated(f.lines, songNow - f.startMs, f.revealMs, alphaMul, if (wordPop.get()) f.charTimes else null)
-                drawTranslation(f.translation, songNow - f.startMs, f.revealMs, alphaMul, f.lines.size * 11f / 2f + 2.5f, TRANSLATION_SCALE)
-            }
-            if (f === active && upcoming.isNotEmpty()) {
-                val pen = DangoClient.gfx.text
-                val height = f.lines.size * 11f + f.translation.size * 11f * TRANSLATION_SCALE + 4f
-                var bottom = f.lines.size * 11f / 2f + f.translation.size * 11f * TRANSLATION_SCALE + 4f
-                var used = height
-                for (next in upcoming) {
-                    val h = next.lines.size * 11f + next.translation.size * 11f * TRANSLATION_SCALE + 4f
-                    if (adaptiveLyricLineLimit && used + h > worldLyricBudget()) break
+            try {
+                if (f === active) {
+                    for ((index, row) in stack.withIndex()) {
+                        pen.push()
+                        try {
+                            pen.translate(0f, slide + row.center)
+                            val preview = index > 0
+                            val alpha = if (preview) alphaMul * 0.78f else alphaMul
+                            drawRow(row.lyric, alpha, preview, preview || f.scrollIn > 0f)
+                        } finally {
+                            pen.pop()
+                        }
+                    }
+                } else {
                     pen.push()
                     try {
-                        pen.translate(0f, bottom + next.lines.size * 11f / 2f)
-                        if (ktvMode.get()) drawKtv(next, songNow, alphaMul * 0.78f)
-                        else drawKtvLines(next.lines, 0f, alphaMul * 0.78f, -next.lines.size * 11f / 2f, useKtvColors = false)
+                        pen.translate(0f, slide)
+                        drawRow(f, alphaMul, false, f.scrollOut > 0f)
                     } finally {
                         pen.pop()
                     }
-                    used += h
-                    bottom += h
                 }
+            } finally {
+                world.pop()
             }
-            world.pop()
         }
 
-        drawFading { f, a, lift -> draw(f, a, lift) }
-        active?.let { draw(it, appearOf(it), 0f) }
+        for (f in fading) {
+            val age = (frameNanos - f.fadeStartNanos).coerceAtLeast(0L)
+            if (f.scrollOut > 0f) {
+                val progress = scrollProgress(age)
+                draw(f, 1f - progress, -f.scrollOut * progress, f.previousStackLift)
+            } else if (f === fading.lastOrNull()) {
+                val progress = (age / 400_000_000f).coerceIn(0f, 1f)
+                draw(f, 1f - progress, -progress * 4f, 0f)
+            }
+        }
+        active?.let { f ->
+            val remaining = if (f.scrollIn > 0f) 1f - scrollProgress(frameNanos - f.scrollStartNanos) else 0f
+            val extra = stack.last().let { it.center + rowBottom(it.lyric) - rowBottom(f) }
+            val lift = extra + (f.previousStackLift - extra) * remaining
+            draw(f, appearOf(f), f.scrollIn * remaining, lift)
+        }
     }
 
-    private fun drawFading(draw: (Floating, Float, Float) -> Unit) {
-        val now = System.nanoTime()
-        val skip = if (active != null) fading.size else (fading.size - 1).coerceAtLeast(0)
-        val it = fading.iterator()
-        var index = 0
-        while (it.hasNext()) {
-            val f = it.next()
-            if (index++ < skip) {
-                it.remove()
-                continue
-            }
-            val t = (now - f.fadeStartNanos) / 1e9f
-            val a = 1f - t / 0.4f
-            if (a <= 0f) {
-                it.remove()
-                continue
-            }
-            draw(f, a, t * 0.4f)
-        }
+    private fun worldStackLift(extra: Float, bottom: Float, slide: Float, scale: Float, anchorY: Double, floor: Double?): Double {
+        val lift = extra.toDouble() * scale
+        if (floor == null) return lift
+        // Reserve a little room for the animated glyphs and keep an outgoing line's anchor stable.
+        return max(lift, floor - anchorY + (bottom + slide.coerceAtLeast(0f) + 6f) * scale)
+    }
+
+    private fun scrollProgress(age: Long): Float {
+        val t = (age.toFloat() / SCROLL_NANOS).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
     }
 
     /**
