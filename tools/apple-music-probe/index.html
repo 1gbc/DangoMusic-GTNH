@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>DangoMusic Apple Music 验证</title>
+<h1>Apple Music 验证</h1>
+<p id="status" role="status">正在连接本机原型…</p>
+<button id="authorize" disabled>通过 Apple 授权</button>
+<button id="library" disabled>读取媒体库歌曲</button>
+<button id="play" disabled>开始播放已加载的曲目</button>
+<p>在终端用 load 命令加载目录曲目 ID。首次播放请点击本页按钮，随后在终端测试播放控制。</p>
+<ul id="tracks"></ul>
+<script src="/probe.js" defer></script>
+<script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" defer></script>
+</html>
