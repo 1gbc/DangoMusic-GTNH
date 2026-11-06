@@ -133,8 +133,11 @@ class LyricsModule : Module() {
         return viewHeight * 0.38f / scale.value * (platform.windowHeight / 480f).coerceIn(0.55f, 1f)
     }
 
-    internal fun worldLyricLimit(): Int = (worldLyricBudget() / (14f +
-        (if (romanization.get()) 8f else 0f) + (if (translation.get()) 8f else 0f))).toInt().coerceIn(1, maxLyricLines.maxRange)
+    internal fun worldLyricLimit(): Int {
+        if (!adaptiveLyricLineLimit) return maxLyricLines.maxRange
+        return (worldLyricBudget() / (14f +
+            (if (romanization.get()) 8f else 0f) + (if (translation.get()) 8f else 0f))).toInt().coerceIn(1, maxLyricLines.maxRange)
+    }
 
     @ModuleValue("KTV mode", "Show the full line and highlight it as the song plays")
     internal val ktvMode = BooleanValue(false)
@@ -423,7 +426,7 @@ class LyricsModule : Module() {
                 active?.let { startFade(it) }
                 active = null
                 if (section != null) {
-                    active = spawn(LyricLine(pos, I18n.text(section.label)), pos + 3500L)
+                    active = spawn(LyricLine(pos, "【${I18n.text(section.label)}】"), pos + 3500L)
                 } else if (idx >= 0) {
                     val line = lyrics.lines[idx]
                     if (line.text.isNotBlank()) {
@@ -1170,7 +1173,7 @@ class LyricsModule : Module() {
                 var used = height
                 for (next in upcoming) {
                     val h = next.lines.size * 11f + next.translation.size * 11f * TRANSLATION_SCALE + 4f
-                    if (used + h > worldLyricBudget()) break
+                    if (adaptiveLyricLineLimit && used + h > worldLyricBudget()) break
                     pen.push()
                     try {
                         pen.translate(0f, bottom + next.lines.size * 11f / 2f)
@@ -1276,6 +1279,9 @@ class LyricsModule : Module() {
 }
 
 /** 歌词配色：自定义颜色 / 封面主色 / 封面渐变 / 彩虹 */
+// Keep the adaptive layout available without overriding the manual line count.
+internal val adaptiveLyricLineLimit = false
+
 private const val COLORS_CUSTOM = 0
 private const val COLORS_COVER = 1
 private const val COLORS_GRADIENT = 2

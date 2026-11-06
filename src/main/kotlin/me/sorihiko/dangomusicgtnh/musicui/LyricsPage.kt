@@ -3,6 +3,7 @@ package me.sorihiko.dangomusicgtnh.musicui
 import me.sorihiko.dangomusicgtnh.client.ClientMusic
 import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.module.impls.music.LyricsModule
+import me.sorihiko.dangomusicgtnh.module.impls.music.adaptiveLyricLineLimit
 import me.sorihiko.dangomusicgtnh.lyrics.LyricLine
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.music.CoverCache
@@ -32,6 +33,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
     private var layoutSize = 0f
 
     private fun lyricLineLimit(size: Float): Int {
+        if (!adaptiveLyricLineLimit) return module.lyrics()?.maxLyricLines?.maxRange ?: 1
         val row = size * (1.32f + (if (showTranslation) 1f else 0f) + (if (showRomanization) 1f else 0f)) + 17f
         return (lyricArea.height / row).toInt().coerceIn(1, 8)
     }
@@ -121,7 +123,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             val section = if (ktv && lyricModule?.ktvInstrumental?.get() == true && manualPosition == null)
                 lyrics?.instrumentalAt(position, MusicPlayer.durationMs) else null
             if (section != null) {
-                lyricText(I18n.text(section.label), lyricArea.y + lyricArea.height * 0.46f - size / 2f, size,
+                lyricText("【${I18n.text(section.label)}】", lyricArea.y + lyricArea.height * 0.46f - size / 2f, size,
                     Color.fromRGB(lyricModule?.ktvBaseColor?.value ?: 0xD8D8D8), Theme.FONT_SEMIBOLD, popup)
             } else if (!ktv || active >= 0 || manualPosition != null) {
                 drawLyrics(active, size, popup, lyricModule)
@@ -159,7 +161,10 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         val maxLines = (lyricModule?.maxLyricLines?.value ?: 1).coerceAtMost(lyricLineLimit(size))
         val start = if (manualPosition == null && active >= 0) active else
             rows.binarySearchBy(scrollPosition) { it.center }.let { if (it < 0) -it - 1 else it }.coerceAtMost(rows.lastIndex)
-        val end = start + visibleLyricRows(maxLines, rows.size - start, a.height) { rows[start + it].height }
+        val count = if (adaptiveLyricLineLimit) {
+            visibleLyricRows(maxLines, rows.size - start, a.height) { rows[start + it].height }
+        } else minOf(maxLines, rows.size - start)
+        val end = start + count
         val height = rows[end - 1].top + rows[end - 1].height - rows[start].top
         val baseline = a.y + ((a.height - height) / 2f).coerceAtLeast(0f) - rows[start].top
         ui.beginClip(a)
