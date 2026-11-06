@@ -5,7 +5,6 @@ import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
-import me.sorihiko.dangomusicgtnh.gfx.ViewAngles
 import me.sorihiko.dangomusicgtnh.gfx.CjkStyle
 import me.sorihiko.dangomusicgtnh.lyrics.LyricLine
 import me.sorihiko.dangomusicgtnh.lyrics.LyricSplit
@@ -477,10 +476,9 @@ class LyricsModule : Module() {
                                 val stride = rowBottom(anchor) + LYRIC_ROW_GAP + halfMain(nextLine)
                                 anchor.scrollOut = stride
                                 anchor.fadeStartNanos = frameNanos
-                                anchor.previousStackLift = previousStack.lastOrNull()?.let {
+                                nextLine.previousStackLift = previousStack.lastOrNull()?.let {
                                     it.center + rowBottom(it.lyric) - rowBottom(anchor)
                                 } ?: 0f
-                                nextLine.previousStackLift = anchor.previousStackLift
                                 nextLine.previousTail = previousStack.lastOrNull()?.lyric?.lyric
                                 nextLine.vYaw = anchor.vYaw
                                 nextLine.vPitch = anchor.vPitch
@@ -519,9 +517,6 @@ class LyricsModule : Module() {
         val gfx = DangoClient.gfx
         val deepGlow = gfx.glow
         val floor = e.playerEyeY?.minus(GROUND_MARGIN)?.takeIf { aboveGround.get() }
-        val stackFacing = if (count > 1 && facePlayer.get() && (stack.isNotEmpty() || fading.isNotEmpty())) {
-            gfx.world.cameraAngles().takeIf { it.yaw.isFinite() && it.pitch.isFinite() }
-        } else null
         gfx.guarded {
             val songNow = songPos.toLong()
             val beat = if (s != null) MusicPlayer.beatPulse(MusicPlayer.positionMs) else 0f
@@ -537,7 +532,7 @@ class LyricsModule : Module() {
                         if (deepGlow.begin()) {
                             glowPass = true
                             try {
-                                drawWorld(songNow, stack, frameNanos, floor, stackFacing)
+                                drawWorld(songNow, stack, frameNanos, floor)
                             } finally {
                                 glowPass = false
                             }
@@ -552,7 +547,7 @@ class LyricsModule : Module() {
                     // 发光画完，把文字需要的渲染状态重新设好
                     gfx.world.resync()
                 }
-                drawWorld(songNow, stack, frameNanos, floor, stackFacing)
+                drawWorld(songNow, stack, frameNanos, floor)
             }
         }
     }
@@ -1182,7 +1177,7 @@ class LyricsModule : Module() {
         }
 
         active?.let { follow(it) }
-        fading.forEach { if (it.scrollOut == 0f || active == null) follow(it) }
+        fading.forEach { if (it.scrollOut == 0f) follow(it) }
     }
 
     private fun rowWidth(f: Floating): Float = max(
@@ -1190,7 +1185,7 @@ class LyricsModule : Module() {
         (phoneticRows(f) + translationRows(f)).maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f,
     )
 
-    private fun drawWorld(songNow: Long, stack: List<StackRow>, frameNanos: Long, floor: Double?, stackFacing: ViewAngles?) {
+    private fun drawWorld(songNow: Long, stack: List<StackRow>, frameNanos: Long, floor: Double?) {
         val world = DangoClient.gfx.world
         world.begin()
 
@@ -1213,10 +1208,9 @@ class LyricsModule : Module() {
         }
 
         fun draw(f: Floating, alphaMul: Float, slide: Float, stackLift: Float, tailAlpha: Float = 1f) {
-            val anchor = if (f.scrollOut > 0f) active ?: f else f
-            var rx = anchor.x - world.cameraX
-            var ry = anchor.y - world.cameraY
-            var rz = anchor.z - world.cameraZ
+            var rx = f.x - world.cameraX
+            var ry = f.y - world.cameraY
+            var rz = f.z - world.cameraZ
             val len = sqrt(rx * rx + ry * ry + rz * rz)
 
             // 离得太近（走过去 / 疾跑）就沿视线方向把歌词往后推，保持最小距离
@@ -1227,18 +1221,35 @@ class LyricsModule : Module() {
             }
 
             val s = 0.03f * scale.value * (distance.value / 6.5f)
-            val bottom = if (f === active) stack.last().let { it.center + rowBottom(it.lyric) } else rowBottom(f) + stackLift
+            val bottom = if (f === active) stack.last().let { it.center + rowBottom(it.lyric) } else rowBottom(f)
             val lift = worldStackLift(stackLift, bottom, slide, s, world.cameraY + ry, floor)
             val horizontal = sqrt(rx * rx + rz * rz)
-            val yaw = stackFacing?.yaw ?: if (facePlayer.get() && horizontal > 1e-4) {
+            val yaw = if (facePlayer.get() && horizontal > 1e-4) {
                 Math.toDegrees(atan2(-rx, rz)).toFloat()
-            } else anchor.yaw
-            val pitch = stackFacing?.pitch ?: if (facePlayer.get() && len > 1e-4) {
-                Math.toDegrees(atan2(-(ry + lift), horizontal)).toFloat()
-            } else anchor.pitch
+            } else f.yaw
+            // Face the settled anchor so the lyric slide itself cannot tilt the stack.
+            val facingLift = if (f === active && f.scrollIn > 0f) {
+                worldStackLift(bottom - rowBottom(f), bottom, 0f, s, world.cameraY + ry, floor)
+            } else lift
+            val pitch = if (facePlayer.get() && len > 1e-4) {
+                Math.toDegrees(atan2(-(ry + facingLift), horizontal)).toFloat()
+            } else f.pitch
             world.push(rx, ry + lift, rz, yaw, pitch, s)
             try {
                 if (f === active) {
+                    val outgoing = fading.lastOrNull()?.takeIf {
+                        it.scrollOut > 0f && it.fadeStartNanos == f.scrollStartNanos
+                    }
+                    if (outgoing != null) {
+                        val progress = scrollProgress(frameNanos - outgoing.fadeStartNanos)
+                        pen.push()
+                        try {
+                            pen.translate(0f, outgoingRowCenter(slide, outgoing.scrollOut, progress))
+                            drawRow(outgoing, alphaMul * (1f - progress), false, true)
+                        } finally {
+                            pen.pop()
+                        }
+                    }
                     for ((index, row) in stack.withIndex()) {
                         pen.push()
                         try {
@@ -1264,15 +1275,10 @@ class LyricsModule : Module() {
             }
         }
 
-        for (f in fading) {
+        if (active == null) fading.lastOrNull { it.scrollOut == 0f }?.let { f ->
             val age = (frameNanos - f.fadeStartNanos).coerceAtLeast(0L)
-            if (f.scrollOut > 0f) {
-                val progress = scrollProgress(age)
-                draw(f, 1f - progress, -f.scrollOut * progress, f.previousStackLift)
-            } else if (f === fading.lastOrNull()) {
-                val progress = (age / 400_000_000f).coerceIn(0f, 1f)
-                draw(f, 1f - progress, -progress * 4f, 0f)
-            }
+            val progress = (age / 400_000_000f).coerceIn(0f, 1f)
+            draw(f, 1f - progress, -progress * 4f, 0f)
         }
         active?.let { f ->
             val remaining = if (f.scrollIn > 0f) 1f - scrollProgress(frameNanos - f.scrollStartNanos) else 0f
@@ -1283,10 +1289,14 @@ class LyricsModule : Module() {
         }
     }
 
+    // Keep a full row of separation even when the ground constraint limits the stack's upward travel.
+    private fun outgoingRowCenter(slide: Float, stride: Float, progress: Float): Float =
+        slide - stride * (1f + progress * 0.5f)
+
     private fun worldStackLift(extra: Float, bottom: Float, slide: Float, scale: Float, anchorY: Double, floor: Double?): Double {
         val lift = extra.toDouble() * scale
         if (floor == null) return lift
-        // Reserve a little room for the animated glyphs and keep an outgoing line's anchor stable.
+        // Reserve a little room for the animated glyphs.
         return max(lift, floor - anchorY + (bottom + slide.coerceAtLeast(0f) + 6f) * scale)
     }
 
