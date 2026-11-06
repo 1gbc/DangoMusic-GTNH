@@ -22,13 +22,24 @@ class LyricLine @JvmOverloads constructor(
     val translation: String? = null,
     val romanization: String? = null,
 ) {
+    fun ktvEndMs(nextLineMs: Long): Long {
+        val lastWord = words?.maxOfOrNull { it.startMs + it.durMs.coerceAtLeast(1L) }
+        return lastWord?.coerceAtLeast(timeMs + 1L)
+            ?: if (nextLineMs - timeMs > 5000L) timeMs + 3500L else nextLineMs.coerceAtLeast(timeMs + 1L)
+    }
+
+    fun sungFraction(positionMs: Long, nextLineMs: Long): Float {
+        val count = text.count { !it.isWhitespace() }
+        return if (count == 0) 0f else sungCharacters(positionMs, nextLineMs) / count
+    }
+
     /** Sung non-whitespace characters, including the fractional part of the current character. */
     fun sungCharacters(positionMs: Long, nextLineMs: Long): Float {
         val length = text.count { !it.isWhitespace() }
         if (length == 0 || positionMs < timeMs) return 0f
         val timed = words.orEmpty()
         if (timed.isEmpty()) {
-            return length * ((positionMs - timeMs).toFloat() / (nextLineMs - timeMs).coerceAtLeast(1L)).coerceIn(0f, 1f)
+            return length * ((positionMs - timeMs).toFloat() / (ktvEndMs(nextLineMs) - timeMs).coerceAtLeast(1L)).coerceIn(0f, 1f)
         }
         var sung = 0f
         for (word in timed) {
@@ -64,6 +75,16 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
 
     /** 当前用的歌词行：开了 Split lines 就是拆开后的 */
     val lines: List<LyricLine> get() = if (LyricSplit.enabled) split else raw
+
+    /** Preview the next line during a vocal gap, without moving its sung timing. */
+    fun ktvIndexAt(pos: Long): Int {
+        val current = indexAt(pos)
+        val next = lines.getOrNull(current + 1)
+        val line = lines.getOrNull(current)
+        val end = line?.ktvEndMs(next?.timeMs ?: (line.timeMs + 3500L))
+        if (next != null && next.timeMs - pos <= 1500L && (end == null || pos >= end)) return current + 1
+        return if (end != null && pos - end >= 700L) -1 else current
+    }
 
     /** 最后一句开始时间 <= pos 的下标，没有则 -1 */
     fun indexAt(pos: Long): Int {

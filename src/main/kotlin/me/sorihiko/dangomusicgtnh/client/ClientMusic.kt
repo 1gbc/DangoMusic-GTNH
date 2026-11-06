@@ -159,6 +159,8 @@ private class ClientPlatform(override val configDir: Path) : Platform {
 
     override fun isMouseDown(button: Int) = Mouse.isButtonDown(button)
     override fun syncKeyBindings(bindings: Collection<PlayerKeyBinding>) = LegacyKeyBindings.sync(bindings)
+    override fun isPlayerKeyModifier(keyCode: Int) = LegacyKeyBindings.isModifierKey(keyCode)
+    override fun activePlayerKeyModifier() = LegacyKeyBindings.activeModifier()
     override fun playerKeyModifierActive(action: PlayerAction) = LegacyKeyBindings.modifierActive(action)
     override fun playerKeyDisplayName(action: PlayerAction) = LegacyKeyBindings.displayName(action)
     override fun isKeyDown(key: Int): Boolean = when {

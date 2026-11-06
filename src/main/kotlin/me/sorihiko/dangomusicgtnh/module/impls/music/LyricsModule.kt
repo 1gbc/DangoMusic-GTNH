@@ -233,6 +233,7 @@ class LyricsModule : Module() {
         var fadeStartNanos = 0L
         /** 这一句的翻译（已经按宽度换好行；没有就是空的），画在原文下面 */
         var translation: List<String> = emptyList()
+        var phonetic: List<String> = emptyList()
         /** Stay on screen 往回拉时的角速度（度 / 秒），用弹簧算，起步和停下都是平滑的 */
         var vYaw = 0.0
         var vPitch = 0.0
@@ -383,7 +384,7 @@ class LyricsModule : Module() {
         val paused = s != null && !s.playing
         if (s != null && lyrics != null) {
             val pos = songPos.toLong()
-            val idx = lyrics.indexAt(pos)
+            val idx = if (ktvMode.get()) lyrics.ktvIndexAt(pos) else lyrics.indexAt(pos)
             if (paused) {
                 // 暂停：当前这句淡出消失，恢复播放时再出现
                 active?.let { startFade(it) }
@@ -406,7 +407,7 @@ class LyricsModule : Module() {
             }
         }
 
-        if (worldMode.get() && !textFlash.get()) keepOnScreen()
+        if (worldMode.get() && (!textFlash.get() || ktvMode.get())) keepOnScreen()
 
         val gfx = DangoClient.gfx
         val deepGlow = gfx.glow
@@ -415,7 +416,7 @@ class LyricsModule : Module() {
             val beat = if (s != null) MusicPlayer.beatPulse(MusicPlayer.positionMs) else 0f
             if (!worldMode.get()) {
                 // 3D lyrics 关掉 = 不显示歌词
-            } else if (textFlash.get()) {
+            } else if (textFlash.get() && !ktvMode.get()) {
                 flash.draw(if (s != null && !paused) lyrics else null, songNow, beat, flashSize.value)
             } else {
                 // 先把歌词画到发光画布上做出光晕，再正常画一遍清晰的字
@@ -538,9 +539,10 @@ class LyricsModule : Module() {
         val lineDur = (nextMs - startMs).coerceAtLeast(400L)
         val reveal = min((chars * 55L).coerceAtLeast(250L), (lineDur * 0.6).toLong())
 
+        val phonetic = line.romanization?.takeIf { romanization.get() && it.isNotBlank() }?.let { wrap(it, TRANSLATION_WRAP) }.orEmpty()
         val tr = line.annotations(romanization.get(), translation.get()).flatMap { wrap(it, TRANSLATION_WRAP) }
         val player = DangoClient.platform.player
-        if (player == null) return Floating(lines, startMs, reveal, 0.0, 0.0, 0.0, 0f, 0f, ct, line, nextMs).also { it.translation = tr }
+        if (player == null) return Floating(lines, startMs, reveal, 0.0, 0.0, 0.0, 0f, 0f, ct, line, nextMs).also { it.translation = tr; it.phonetic = phonetic }
         val yaw = player.yaw + (random.nextFloat() * 2f - 1f) * spread.value
         val d = distance.value.toDouble()
         var pitch = (player.pitch - 3f - random.nextFloat() * 10f).coerceIn(-60f, 30f)
@@ -553,7 +555,7 @@ class LyricsModule : Module() {
         val ex = player.eyeX
         val ey = player.eyeY
         val ez = player.eyeZ
-        return Floating(lines, startMs, reveal, ex + dx * d, ey + dy * d, ez + dz * d, yaw, pitch, ct, line, nextMs).also { it.translation = tr }
+        return Floating(lines, startMs, reveal, ex + dx * d, ey + dy * d, ez + dz * d, yaw, pitch, ct, line, nextMs).also { it.translation = tr; it.phonetic = phonetic }
     }
 
 
@@ -721,12 +723,27 @@ class LyricsModule : Module() {
      * 发光由 [DeepGlow] 另外做（先把字画到发光画布上），这里只画字本身。
      */
     private fun drawKtv(f: Floating, positionMs: Long, alpha: Float) {
+        drawKtvLines(f.lines, f.lyric.sungCharacters(positionMs, f.nextMs), alpha, -f.lines.size * 11f / 2f)
+        if (romanization.get() && f.phonetic.isNotEmpty()) {
+            val pen = DangoClient.gfx.text
+            val count = f.phonetic.sumOf { line -> line.count { !it.isWhitespace() } }
+            pen.push()
+            try {
+                pen.translate(0f, f.lines.size * 11f / 2f + 2.5f)
+                pen.scale(TRANSLATION_SCALE, TRANSLATION_SCALE)
+                drawKtvLines(f.phonetic, f.lyric.sungFraction(positionMs, f.nextMs) * count, alpha * 0.85f, 0f)
+            } finally {
+                pen.pop()
+            }
+        }
+    }
+
+    private fun drawKtvLines(lines: List<String>, sung: Float, alpha: Float, top: Float) {
         val smooth = smoothFont.get()
-        val sung = f.lyric.sungCharacters(positionMs, f.nextMs)
         var index = 0
-        var y = -f.lines.size * 11f / 2f
+        var y = top
         if (smooth) DangoClient.gfx.text.beginSmooth()
-        for (line in f.lines) {
+        for (line in lines) {
             var x = -strW(line) / 2f
             for (c in line) {
                 if (!c.isWhitespace()) {
@@ -1087,7 +1104,10 @@ class LyricsModule : Module() {
             world.push(rx, ry + lift, rz, yaw, pitch, s)
             if (ktvMode.get()) drawKtv(f, songNow, alphaMul)
             else drawAnimated(f.lines, songNow - f.startMs, f.revealMs, alphaMul, if (wordPop.get()) f.charTimes else null)
-            drawTranslation(f.translation, songNow - f.startMs, f.revealMs, alphaMul, f.lines.size * 11f / 2f + 2.5f, TRANSLATION_SCALE)
+            val ktv = ktvMode.get()
+            val annotations = if (ktv) f.translation.drop(f.phonetic.size) else f.translation
+            val top = f.lines.size * 11f / 2f + 2.5f + if (ktv) f.phonetic.size * 11f * TRANSLATION_SCALE else 0f
+            drawTranslation(annotations, songNow - f.startMs, f.revealMs, alphaMul, top, TRANSLATION_SCALE)
             world.pop()
         }
 

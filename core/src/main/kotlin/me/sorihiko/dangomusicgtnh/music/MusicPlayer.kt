@@ -132,12 +132,23 @@ object MusicPlayer {
     }
 
     @Synchronized fun selectMode(mode: Mode) {
+        if (!heartMode && this.mode == mode) return
+        val selected = queue.getOrNull(index)
         heartMode = false
         shuffle = mode == Mode.SHUFFLE
         repeatOne = mode == Mode.REPEAT_ONE
         if (repeatOne || radio != null || originalQueue.isEmpty()) return
+
+        if (shuffle && selected != null) {
+            val remaining = originalQueue.toMutableList()
+            if (remaining.remove(selected)) {
+                queue = listOf(selected) + remaining.shuffled()
+                index = 0
+                return
+            }
+        }
         queue = if (shuffle) originalQueue.shuffled() else originalQueue
-        playIndex(0)
+        index = queue.indexOf(selected)
     }
 
     @Synchronized fun startHeartMode(

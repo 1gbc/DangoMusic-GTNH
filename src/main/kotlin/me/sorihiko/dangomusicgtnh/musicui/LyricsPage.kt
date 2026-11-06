@@ -18,7 +18,7 @@ import me.sorihiko.dangomusicgtnh.utils.Color
 internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicModule) {
     private enum class Menu { SIZE, MORE }
 
-    private data class Row(val top: Float, val text: List<String>, val annotations: List<String>, val height: Float) {
+    private data class Row(val top: Float, val text: List<String>, val phonetic: List<String>, val translation: List<String>, val height: Float) {
         val center get() = top + height / 2f
     }
 
@@ -94,7 +94,10 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         drawRecord(area.x + leftWidth / 2f, area.y + area.height * 0.55f, minOf(leftWidth * 0.74f, area.height * 0.65f), song)
         lyricArea = LayoutBounds(textX, label.bottom + 12f, textWidth, area.bottom - label.bottom - 29f)
         layout(lyrics?.lines.orEmpty(), textWidth, size)
-        val active = lyrics?.indexAt(MusicPlayer.positionMs) ?: -1
+        val position = MusicPlayer.positionMs
+        val ktv = lyricModule?.ktvMode?.get() == true
+        val current = lyrics?.indexAt(position) ?: -1
+        val active = if (ktv) lyrics?.ktvIndexAt(position) ?: -1 else current
         val railY = area.y + (area.height - 6 * 40f - 24f) / 2f
         val popup = menu?.let {
             val height = if (it == Menu.SIZE) 82f else 180f
@@ -108,9 +111,9 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             }
             ui.text(I18n.text(message), textX, lyricArea.y + lyricArea.height / 2f - 8f, 17f, white.copy(a = 0.66f))
         } else {
-            val target = manualPosition?.coerceAtMost(rows.last().center) ?: (rows.getOrNull(active)?.center ?: 0f)
+            val target = manualPosition?.coerceAtMost(rows.last().center) ?: (rows.getOrNull(if (active >= 0) active else current)?.center ?: 0f)
             scrollPosition = ui.approach(scrollPosition, target, 95f)
-            drawLyrics(active, size, popup, lyricModule)
+            if (!ktv || active >= 0 || manualPosition != null) drawLyrics(active, size, popup, lyricModule)
         }
         drawShortcuts(railX, railY, song)
         if (popup != null) drawMenu(popup)
@@ -132,9 +135,10 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         var top = 0f
         rows = lines.map { line ->
             val original = ui.wrap2(line.text, width, size, Theme.FONT_SEMIBOLD)
-            val annotations = line.annotations(romanize, translate).flatMap { ui.wrap2(it, width, size * 0.74f) }
-            val height = original.size * size * 1.32f + annotations.size * size + 17f
-            Row(top, original, annotations, height).also { top += height }
+            val phonetic = line.annotations(romanize, false).flatMap { ui.wrap2(it, width, size * 0.74f) }
+            val translation = line.annotations(false, translate).flatMap { ui.wrap2(it, width, size * 0.74f) }
+            val height = original.size * size * 1.32f + (phonetic.size + translation.size) * size + 17f
+            Row(top, original, phonetic, translation, height).also { top += height }
         }
     }
 
@@ -151,47 +155,60 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             val edge = minOf(center - a.y, a.bottom - center).div(48f).coerceIn(0.22f, 1f)
             val color = white.copy(a = (if (i == active) 1f else 0.53f) * edge)
             val ktv = lyricModule?.takeIf { it.ktvMode.get() }
-            var sung = if (ktv != null && i == active) {
-                val line = lines[i]
-                val next = lines.getOrNull(i + 1)?.timeMs ?: MusicPlayer.durationMs.coerceAtLeast(line.timeMs + 3000L)
-                line.sungCharacters(MusicPlayer.positionMs, next)
-            } else 0f
+            val line = lines[i]
+            val next = lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L
+            val sung = if (ktv != null && i == active) line.sungCharacters(MusicPlayer.positionMs, next) else 0f
+            var main = sung
             for (text in row.text) {
-                val font = Theme.FONT_SEMIBOLD
-                if (ktv == null) {
-                    lyricText(text, y, size, color, font, popup)
-                } else {
-                    if (ktv.ktvBaseShadow.get()) lyricText(text, y + 1f, size, Color(0f, 0f, 0f, color.a * 0.65f), font, popup)
-                    lyricText(text, y, size, Color.fromRGB(ktv.ktvBaseColor.value).copy(a = color.a), font, popup)
-                    if (sung > 0f) {
-                        var index = 0
-                        while (index < text.length && (text[index].isWhitespace() || sung >= 1f)) {
-                            if (!text[index].isWhitespace()) sung -= 1f
-                            index++
-                        }
-                        val prefix = ui.width(text.take(index), size, font)
-                        val width = if (index < text.length) {
-                            prefix + (ui.width(text.take(index + 1), size, font) - prefix) * sung
-                        } else prefix
-                        val top = maxOf(y - 2f, a.y)
-                        val bottom = minOf(y + size * 1.32f, a.bottom)
-                        if (width > 0f && bottom > top) {
-                            ui.beginClip(LayoutBounds(a.x, top, width.coerceAtMost(a.width), bottom - top))
-                            if (ktv.ktvSungShadow.get()) lyricText(text, y + 1f, size, Color(0f, 0f, 0f, color.a * 0.65f), font, popup)
-                            lyricText(text, y, size, Color.fromRGB(ktv.ktvSungColor.value).copy(a = color.a), font, popup)
-                            ui.beginClip(a)
-                        }
-                        if (index < text.length) sung = 0f
-                    }
-                }
+                if (ktv == null) lyricText(text, y, size, color, Theme.FONT_SEMIBOLD, popup)
+                else main = ktvText(ktv, text, y, size, Theme.FONT_SEMIBOLD, color.a, popup, main)
                 y += size * 1.32f
             }
-            for (text in row.annotations) {
-                lyricText(text, y, size * 0.74f, color.copy(a = color.a * 0.85f), Theme.FONT_REGULAR, popup)
+            val phoneticSize = size * 0.74f
+            val annotationColor = color.copy(a = color.a * 0.85f)
+            val total = line.text.count { !it.isWhitespace() }.coerceAtLeast(1)
+            var phonetic = sung / total * row.phonetic.sumOf { text -> text.count { !it.isWhitespace() } }
+            for (text in row.phonetic) {
+                if (ktv == null) lyricText(text, y, phoneticSize, annotationColor, Theme.FONT_REGULAR, popup)
+                else phonetic = ktvText(ktv, text, y, phoneticSize, Theme.FONT_REGULAR, annotationColor.a, popup, phonetic)
+                y += size
+            }
+            for (text in row.translation) {
+                lyricText(text, y, phoneticSize, annotationColor, Theme.FONT_REGULAR, popup)
                 y += size
             }
         }
         ui.endClip()
+    }
+
+    private fun ktvText(
+        ktv: LyricsModule, text: String, y: Float, size: Float, font: String, alpha: Float,
+        popup: LayoutBounds?, sung: Float,
+    ): Float {
+        val base = Color.fromRGB(ktv.ktvBaseColor.value).copy(a = alpha)
+        val shadow = Color(0f, 0f, 0f, alpha * 0.65f)
+        if (ktv.ktvBaseShadow.get()) lyricText(text, y + 1f, size, shadow, font, popup)
+        lyricText(text, y, size, base, font, popup)
+        if (sung <= 0f) return 0f
+
+        var remaining = sung
+        var index = 0
+        while (index < text.length && (text[index].isWhitespace() || remaining >= 1f)) {
+            if (!text[index].isWhitespace()) remaining -= 1f
+            index++
+        }
+        val prefix = ui.width(text.take(index), size, font)
+        val width = if (index == text.length) prefix
+            else prefix + (ui.width(text.take(index + 1), size, font) - prefix) * remaining
+        val top = maxOf(y - 2f, lyricArea.y)
+        val bottom = minOf(y + size * 1.32f, lyricArea.bottom)
+        if (width > 0f && bottom > top) {
+            ui.beginClip(LayoutBounds(lyricArea.x, top, width.coerceAtMost(lyricArea.width), bottom - top))
+            if (ktv.ktvSungShadow.get()) lyricText(text, y + 1f, size, shadow, font, popup)
+            lyricText(text, y, size, Color.fromRGB(ktv.ktvSungColor.value).copy(a = alpha), font, popup)
+            ui.beginClip(lyricArea)
+        }
+        return if (index == text.length) remaining else 0f
     }
 
     private fun lyricText(text: String, y: Float, size: Float, color: Color, font: String, popup: LayoutBounds?) {

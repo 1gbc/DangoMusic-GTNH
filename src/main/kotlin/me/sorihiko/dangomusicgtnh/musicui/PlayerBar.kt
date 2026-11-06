@@ -46,6 +46,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private val modeA = Anim()
     private val stopA = Anim()
     private var modeOpen = false
+    private var modeSlider = Spring(300f, 30f)
     private var modeMenu = LayoutBounds()
     private var modeButton = LayoutBounds()
     private val playA = Anim()
@@ -144,6 +145,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             val opening = !modeOpen
             dismissQualityMenu()
             modeOpen = opening
+            if (opening) modeSlider = Spring(300f, 30f)
         }
         val stopScale = button(stopB, stopA)
         ui.icon("■", stopB.x + 14f, cy, 12f * stopScale, Theme.TEXT_PRIMARY)
@@ -224,11 +226,13 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         if (modeOpen) {
             modeMenu = LayoutBounds(modeButton.x, bar.y - 99f, modeButton.width, 95f)
             ui.ctx.drawGlass(modeMenu, BAR_GLASS.copy(radius = 11f))
+            val sliderY = modeMenu.y + 4f + modeSlider.tick(mode.ordinal.toFloat()).coerceIn(0f, 2f) * 29f
+            ui.card(LayoutBounds(modeMenu.x + 3f, sliderY, modeMenu.width - 6f, 27f), RED, 7f)
             for ((i, option) in MusicPlayer.Mode.values().withIndex()) {
                 val row = LayoutBounds(modeMenu.x + 3f, modeMenu.y + 4f + i * 29f, modeMenu.width - 6f, 27f)
-                if (option == mode || ui.hover(row)) ui.card(row, if (option == mode) RED else Theme.CARD_HOVER, 7f)
+                if (option != mode && ui.hover(row)) ui.card(row, Theme.CARD_HOVER.copy(a = 0.35f), 7f)
                 ui.icon(option.glyph, row.x + row.width / 2f, row.y + row.height / 2f, 15f, Theme.TEXT_PRIMARY)
-                ui.hits += row to { module.selectPlaybackMode(option); dismissQualityMenu() }
+                ui.hits += row to { module.selectPlaybackMode(option) }
             }
             ui.hits += modeMenu to {}
         }

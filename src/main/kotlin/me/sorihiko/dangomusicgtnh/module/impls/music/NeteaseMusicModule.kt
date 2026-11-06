@@ -168,8 +168,8 @@ class NeteaseMusicModule : Module() {
         binding.rebind(binding.action.defaultKey)
     }
 
-    fun rebindKey(value: IntValue, keyCode: Int) {
-        keyBindings.values.firstOrNull { it.value === value }?.rebind(keyCode)
+    fun rebindKey(value: IntValue, keyCode: Int, modifier: String? = null) {
+        keyBindings.values.firstOrNull { it.value === value }?.rebind(keyCode, modifier)
     }
 
     fun keyDisplayName(value: IntValue): String? {
@@ -198,7 +198,11 @@ class NeteaseMusicModule : Module() {
 
     override fun onEnable() {
         NeteaseApi.ensureCookieFile()
-        ClientMusic.control { MusicPlayer.setNeteaseQuality(preferredQuality) }
+        ClientMusic.control {
+            MusicPlayer.repeatOne = repeatOne.get()
+            MusicPlayer.shuffle = shuffle.get() && !repeatOne.get()
+            MusicPlayer.setNeteaseQuality(preferredQuality)
+        }
     }
 
     override fun onDisable() {
@@ -215,9 +219,11 @@ class NeteaseMusicModule : Module() {
     }
 
     fun selectPlaybackMode(mode: MusicPlayer.Mode) {
-        shuffle.set(mode == MusicPlayer.Mode.SHUFFLE)
-        repeatOne.set(mode == MusicPlayer.Mode.REPEAT_ONE)
-        ClientMusic.control { MusicPlayer.selectMode(mode) }
+        ClientMusic.control {
+            MusicPlayer.selectMode(mode)
+            shuffle.set(mode == MusicPlayer.Mode.SHUFFLE)
+            repeatOne.set(mode == MusicPlayer.Mode.REPEAT_ONE)
+        }
     }
 
     /** 播放器界面里按键时调用：是某个快捷键就执行并返回 true */
@@ -339,10 +345,6 @@ class NeteaseMusicModule : Module() {
         MusicPlayer.volume = volume.value
         val mode = audioOutput.value
         if (MusicPlayer.outputMode != mode) ClientMusic.control { MusicPlayer.outputMode = mode }
-        MusicPlayer.shuffle = shuffle.get()
-
-        MusicPlayer.repeatOne = repeatOne.get()
-
         MusicPlayer.normalize = normalize.get()
         MusicPlayer.playbackFades = playbackFades.get()
 

@@ -72,7 +72,12 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     private var editRect = LayoutBounds()
 
     // 正在录快捷键的那一项，以及本帧所有快捷键按钮的区域（点别处就取消录制）
+    private var pendingModifierKey = Keys.NONE
     var bindingKey: IntValue? = null
+        set(value) {
+            field = value
+            pendingModifierKey = Keys.NONE
+        }
     private val keyButtons = mutableListOf<LayoutBounds>()
     private val keyResetButtons = mutableListOf<Hit>()
 
@@ -112,6 +117,12 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     // ---------------------------------------------------------------- 每帧
 
     fun tick() {
+        val key = pendingModifierKey
+        val binding = bindingKey
+        if (binding != null && key != Keys.NONE && !DangoClient.platform.isKeyDown(key)) {
+            module.rebindKey(binding, key)
+            bindingKey = null
+        }
         pos = ui.approach(pos, target, 70f)
         // 滑条：按住拖动
         if (dragValue != null) {
@@ -838,7 +849,12 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         when {
             keyCode == Keys.ESCAPE -> {}
             (keyCode == Keys.BACK || keyCode == Keys.DELETE) && v.minRange <= 0 -> module.rebindKey(v, Keys.NONE)
-            keyCode != Keys.NONE -> module.rebindKey(v, keyCode)
+            DangoClient.platform.isPlayerKeyModifier(keyCode) -> {
+                pendingModifierKey = keyCode
+                return true
+            }
+            keyCode == Keys.NONE -> return true
+            else -> module.rebindKey(v, keyCode, DangoClient.platform.activePlayerKeyModifier())
         }
         bindingKey = null
         return true
@@ -848,7 +864,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val value = bindingKey ?: return false
         // 左键 / 右键不能绑（绑上以后界面点不了），照常当点击处理
         if (allowedPlayerKey(Keys.mouse(button)) == Keys.NONE) return false
-        module.rebindKey(value, Keys.mouse(button))
+        module.rebindKey(value, Keys.mouse(button), DangoClient.platform.activePlayerKeyModifier())
         bindingKey = null
         return true
     }

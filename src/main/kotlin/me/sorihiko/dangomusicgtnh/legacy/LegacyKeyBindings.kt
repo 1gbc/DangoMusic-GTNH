@@ -32,8 +32,10 @@ object LegacyKeyBindings {
         private val isModifierActive = type.getMethod("controlling\$isModifierActive")
         private val getDisplayName = type.getMethod("controlling\$getDisplayName")
         private val modifierKey = getModifier.returnType.getMethod("isKeyCodeModifier", Int::class.javaPrimitiveType)
+        private val activeModifier = getModifier.returnType.getMethod("getActiveModifier")
         private val values = getModifier.returnType.enumConstants.associateBy { (it as Enum<*>).name }
 
+        fun activeModifier(): String? = (activeModifier.invoke(null) as? Enum<*>)?.name?.let(::supported)
         fun modifier(mapping: KeyBinding) = (getModifier.invoke(mapping) as Enum<*>).name.takeUnless { it == "NONE" }
         fun supported(name: String) = name.takeIf { it != "NONE" && it in values }
         fun write(mapping: KeyBinding, key: NativePlayerKey) {
@@ -73,6 +75,10 @@ object LegacyKeyBindings {
         if (refresh || dirty) KeyBinding.resetKeyBindingArrayAndHash()
         if (dirty) settings.saveOptions()
     }
+
+    fun isModifierKey(keyCode: Int): Boolean = modifiers?.isModifierKey(keyCode) == true
+
+    fun activeModifier(): String? = modifiers?.activeModifier()
 
     fun modifierActive(action: PlayerAction): Boolean {
         val access = modifiers ?: return true

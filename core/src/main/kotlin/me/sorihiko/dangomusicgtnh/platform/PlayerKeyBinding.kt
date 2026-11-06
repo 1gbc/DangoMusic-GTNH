@@ -13,16 +13,15 @@ enum class PlayerAction(val id: String, val defaultKey: Int = Keys.NONE) {
 }
 
 class PlayerKeyBinding(val action: PlayerAction, val value: IntValue) {
-    internal var rebound = false
+    internal var rebound: NativePlayerKey? = null
         private set
 
-    /** 模组界面录入的是单键，即使键码相同也要清掉原版组合键的修饰键。 */
-    fun rebind(key: Int) {
+    fun rebind(key: Int, modifier: String? = null) {
         value.setValue(allowedPlayerKey(key))
-        rebound = true
+        rebound = NativePlayerKey(value.value, modifier.takeIf { value.value != Keys.NONE && value.value == key })
     }
 
-    internal fun markSynced() { rebound = false }
+    internal fun markSynced() { rebound = null }
 }
 
 data class NativePlayerKey(val code: Int, val modifier: String? = null)
@@ -43,7 +42,7 @@ class KeyBindingLink(
     private var previous: NativePlayerKey
 
     init {
-        val initial = if (setting.rebound) null else savedNative
+        val initial = setting.rebound ?: savedNative
         previous = acceptNative(initial ?: NativePlayerKey(setting.value.value))
         setting.markSynced()
         if (previous != readNative()) writeNative(previous)
@@ -55,8 +54,8 @@ class KeyBindingLink(
         if (configured != setting.value.value) setting.value.setValue(configured)
         val native = readNative()
         return when {
-            setting.rebound || configured != previous.code -> {
-                val target = NativePlayerKey(configured)
+            setting.rebound != null || configured != previous.code -> {
+                val target = setting.rebound?.takeIf { it.code == configured } ?: NativePlayerKey(configured)
                 if (native != target) writeNative(target)
                 previous = target
                 setting.markSynced()

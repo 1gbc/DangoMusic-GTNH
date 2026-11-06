@@ -37,6 +37,10 @@ interface Platform {
     fun syncKeyBindings(bindings: Collection<PlayerKeyBinding>) {}
 
     /** 按动作查询原版组合键的修饰键，允许不同动作共用同一个主键。 */
+    fun isPlayerKeyModifier(keyCode: Int): Boolean = false
+
+    fun activePlayerKeyModifier(): String? = null
+
     fun playerKeyModifierActive(action: PlayerAction): Boolean = true
 
     fun playerKeyDisplayName(action: PlayerAction): String? = null
