@@ -19,6 +19,7 @@ import me.sorihiko.dangomusicgtnh.ui.Vec2
 import me.sorihiko.dangomusicgtnh.utils.Color
 
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** 底部播放栏：左边当前歌曲，中间控制按钮 + 进度条，右边单曲循环 / 随机 + 音量 */
 internal class PlayerBar(private val screen: MusicScreen, private val module: NeteaseMusicModule) {
@@ -29,6 +30,10 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private var lastSkipNotice = 0L
     private var progRect = LayoutBounds()
     private var volRect = LayoutBounds()
+    private var volumeOpen = false
+    private var volumeDragging = false
+    private var volumeButton = LayoutBounds()
+    private var volumeMenu = LayoutBounds()
     private var qualityOpen = false
     private var qualityButton = LayoutBounds()
     private var qualityMenu = LayoutBounds()
@@ -143,7 +148,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val mode = MusicPlayer.mode
         toggleButton(modeButton, cy, modeOpen, modeA, mode.glyph) {
             val opening = !modeOpen
-            dismissQualityMenu()
+            dismissMenu()
             modeOpen = opening
             if (opening) modeSlider = Spring(300f, 30f)
         }
@@ -208,21 +213,9 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             }
         }
 
-        // 右：单曲循环 / 随机 + 音量
-        val vy = ry
-        // 窗口窄时先缩短音量条，再藏掉单曲循环 / 随机（右边从队列按钮之后到栏的右边）
-        // 右边喇叭图标的右边缘对齐进度条的右端
-        val rightEdge = bar.right - (if (screen.canOpenLyrics) 86f else 32f)
-        val volW = (rightEdge - stopB.right - 28f).coerceIn(16f, 110f)
-        volRect = LayoutBounds(rightEdge - volW, vy - 2f, volW, 4f)
-        speaker(volRect.x - 22f, vy, false)
-        speaker(volRect.right + 9f, vy, true)
-        ui.card(volRect, Theme.TRACK, 2f)
-        ui.card(LayoutBounds(volRect.x, volRect.y, max(4f, volRect.width * MusicPlayer.volume), volRect.height), RED, 2f)
-        val knobX = volRect.x + volRect.width * MusicPlayer.volume
-        ctx.drawShape(LayoutBounds(knobX - 5f, volRect.y - 3f, 10f, 10f), ShapeStyle(Theme.TEXT_PRIMARY, 5f))
-
-        if (screen.canOpenLyrics) drawQuality(bar, vy) else if (qualityOpen) dismissQualityMenu()
+        drawVolume(bar, ry)
+        if (screen.canOpenLyrics) drawQuality(bar, ry) else if (qualityOpen) dismissMenu()
+        if (volumeOpen) drawVolumeMenu(bar)
         if (modeOpen) {
             modeMenu = LayoutBounds(modeButton.x, bar.y - 99f, modeButton.width, 95f)
             ui.ctx.drawGlass(modeMenu, BAR_GLASS.copy(radius = 11f))
@@ -236,6 +229,41 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             }
             ui.hits += modeMenu to {}
         }
+    }
+
+    private fun drawVolume(bar: LayoutBounds, cy: Float) {
+        val inset = if (screen.canOpenLyrics) 70f else 13f
+        volumeButton = LayoutBounds(bar.right - inset - 32f, cy - 16f, 32f, 32f)
+        if (volumeOpen || ui.hover(volumeButton)) {
+            ui.card(volumeButton, if (volumeOpen) RED.copy(a = 0.3f) else Theme.CARD_HOVER, 9f)
+        }
+        speaker(volumeButton.x + 9.5f, cy, MusicPlayer.volume > 0f)
+        ui.hits += volumeButton to {
+            val opening = !volumeOpen
+            dismissMenu()
+            volumeOpen = opening
+        }
+    }
+
+    private fun drawVolumeMenu(bar: LayoutBounds) {
+        volumeMenu = LayoutBounds(volumeButton.x - 4f, bar.y - 118f, 40f, 114f)
+        ui.ctx.drawGlass(volumeMenu, BAR_GLASS.copy(radius = 11f))
+        val cx = volumeMenu.x + volumeMenu.width / 2f
+        val volume = MusicPlayer.volume.coerceIn(0f, 1f)
+        val percent = "${(volume * 100).roundToInt()}%"
+        val width = ui.width(percent, 11f, Theme.FONT_SEMIBOLD)
+        ui.text(percent, cx - width / 2f, volumeMenu.y + 9f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        volRect = LayoutBounds(cx - 2f, volumeMenu.y + 32f, 4f, 69f)
+        ui.card(volRect, Theme.TRACK, 2f)
+        val fill = volRect.height * volume
+        val y = volRect.bottom - fill
+        if (fill > 0f) ui.card(LayoutBounds(volRect.x, y, volRect.width, fill), RED, 2f)
+        ui.card(LayoutBounds(cx - 5f, y - 5f, 10f, 10f), Theme.TEXT_PRIMARY, 5f)
+        ui.hits += volRect.expand(13f, 6f) to {
+            volumeDragging = true
+            setVolumeAt(ui.my)
+        }
+        ui.hits += volumeMenu to {}
     }
 
     private fun drawQuality(bar: LayoutBounds, y: Float) {
@@ -254,7 +282,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             badge.y + 8f, size, color, Theme.FONT_SEMIBOLD)
         ui.hits += badge to {
             val opening = !qualityOpen
-            dismissQualityMenu()
+            dismissMenu()
             qualityOpen = opening
         }
         if (!qualityOpen) return
@@ -298,19 +326,22 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         ).joinToString("  ").ifEmpty { I18n.text("Unknown quality") }
     }
 
-    fun dismissQualityMenu(): Boolean {
-        if (!qualityOpen && !modeOpen) return false
+    fun dismissMenu(): Boolean {
+        if (!qualityOpen && !modeOpen && !volumeOpen) return false
+        volumeOpen = false
+        volumeDragging = false
         modeOpen = false
         qualityOpen = false
         qualityMenu = LayoutBounds()
         return true
     }
 
-    fun qualityMenuContains(x: Int, y: Int) = (qualityOpen && qualityMenu.contains(x, y)) || (modeOpen && modeMenu.contains(x, y))
+    fun menuContains(x: Int, y: Int) = (qualityOpen && qualityMenu.contains(x, y)) || (modeOpen && modeMenu.contains(x, y)) ||
+        (volumeOpen && volumeMenu.contains(x, y))
 
-    fun closeQualityMenuOutside(x: Int, y: Int) {
-        if (!qualityMenuContains(x, y) && !(qualityOpen && qualityButton.contains(x, y)) &&
-            !(modeOpen && modeButton.contains(x, y))) dismissQualityMenu()
+    fun closeMenuOutside(x: Int, y: Int) {
+        if (!menuContains(x, y) && !(qualityOpen && qualityButton.contains(x, y)) &&
+            !(modeOpen && modeButton.contains(x, y)) && !(volumeOpen && volumeButton.contains(x, y))) dismissMenu()
     }
 
     /**
@@ -387,10 +418,6 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             }
             return true
         }
-        if (volRect.expand(6f, 8f).contains(mx, my)) {
-            setVolumeAt(mx)
-            return true
-        }
         return false
     }
 
@@ -400,11 +427,12 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             seekFraction = fractionAt(mx)
             return
         }
-        if (volRect.expand(12f, 12f).contains(mx, my)) setVolumeAt(mx)
+        if (volumeOpen && volumeDragging) setVolumeAt(my)
     }
 
     /** 松开鼠标：拖进度条的话现在才跳过去 */
     fun mouseUp() {
+        volumeDragging = false
         if (!seeking) return
         seeking = false
         val dur = MusicPlayer.durationMs
@@ -417,12 +445,11 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private fun fractionAt(x: Int): Float =
         if (progRect.width <= 0f) 0f else ((x - progRect.x) / progRect.width).coerceIn(0f, 1f)
 
-    private fun setVolumeAt(x: Int) {
-        // 音量条还没画出来（宽度是 0）时算出来是 NaN
-        if (volRect.width <= 0f) return
-        val v = ((x - volRect.x) / volRect.width).coerceIn(0f, 1f)
-        module.setVolume(v)
-        MusicPlayer.volume = v
+    private fun setVolumeAt(y: Int) {
+        if (volRect.height <= 0f) return
+        val volume = ((volRect.bottom - y) / volRect.height).coerceIn(0f, 1f)
+        module.setVolume(volume)
+        MusicPlayer.volume = volume
     }
 }
 

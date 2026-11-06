@@ -558,8 +558,8 @@ class MusicScreen(
             login.mouseClicked(mx, my, mouseButton)
             return
         }
-        bar.closeQualityMenuOutside(mx, my)
-        if (mouseButton == 0 && bar.qualityMenuContains(mx, my)) {
+        bar.closeMenuOutside(mx, my)
+        if (mouseButton == 0 && bar.menuContains(mx, my)) {
             ui.hits.firstOrNull { it.first.contains(mx, my) }?.second?.invoke()
             return
         }
@@ -624,7 +624,7 @@ class MusicScreen(
         if (wheel == 0 || login.visible) return
         val lx = (x / ui.scale).toInt()
         val ly = (y / ui.scale).toInt()
-        if (bar.qualityMenuContains(lx, ly)) return
+        if (bar.menuContains(lx, ly)) return
         if (lyricsOpen) {
             lyricsPage.scroll(wheel, lx, ly)
             return
@@ -652,7 +652,7 @@ class MusicScreen(
             login.keyTyped(keyCode)
             return
         }
-        if (keyCode == Keys.ESCAPE && bar.dismissQualityMenu()) return
+        if (keyCode == Keys.ESCAPE && bar.dismissMenu()) return
         // 正在输入 / 录按键的地方先拿走按键
         if (!lyricsOpen) {
             if (settings.keyTyped(typedChar, keyCode)) return
