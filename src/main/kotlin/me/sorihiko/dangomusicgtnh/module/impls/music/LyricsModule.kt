@@ -1,5 +1,6 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
+import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.DangoClient
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
@@ -116,8 +117,24 @@ class LyricsModule : Module() {
     @ModuleValue("Word pop", "Words pop in one by one as they are sung")
     private val wordPop = BooleanValue(true)
 
-    @ModuleValue("Maximum lyric lines", "Limit visible lyric entries; 0 means unlimited")
-    internal val maxLyricLines = IntValue(0, 8, 0)
+    @ModuleValue("Simultaneous lyric lines", "Show the current lyric and upcoming lines")
+    internal val maxLyricLines = IntValue(1, 8, 1)
+
+    @ModuleValue("Show instrumental sections", "Label the intro, interlude and outro in KTV mode")
+    internal val ktvInstrumental = BooleanValue(true)
+
+    @ModuleValue("Lyric colors", "Choose the color of the KTV highlight")
+    internal val ktvLyricColors = IntValue(COLORS_CUSTOM, COLORS_RAINBOW, COLORS_CUSTOM)
+
+    private fun worldLyricBudget(): Float {
+        val platform = DangoClient.platform
+        val fov = platform.fov.coerceIn(30f, 110f)
+        val viewHeight = (2.0 * tan(Math.toRadians(fov / 2.0)) * 0.6 * 6.5 / 0.03).toFloat()
+        return viewHeight * 0.38f / scale.value * (platform.windowHeight / 480f).coerceIn(0.55f, 1f)
+    }
+
+    internal fun worldLyricLimit(): Int = (worldLyricBudget() / (14f +
+        (if (romanization.get()) 8f else 0f) + (if (translation.get()) 8f else 0f))).toInt().coerceIn(1, maxLyricLines.maxRange)
 
     @ModuleValue("KTV mode", "Show the full line and highlight it as the song plays")
     internal val ktvMode = BooleanValue(false)
@@ -249,6 +266,8 @@ class LyricsModule : Module() {
         if (f.resumedAt == 0L) 1f else ((System.nanoTime() - f.resumedAt) / 3e8f).coerceIn(0f, 1f)
 
     private var active: Floating? = null
+    private var upcoming = emptyList<Floating>()
+    private var upcomingKey: Triple<Floating?, Int, Lyrics?>? = null
     /** 左上角小柱子当前颜色（向封面主色渐变） */
     private var barR = 0xF2 / 255f
     private var barG = 0xA7 / 255f
@@ -374,7 +393,7 @@ class LyricsModule : Module() {
         updateClock()
         val s = current
         // 小柱子的颜色取自封面，所以只开 Now playing 也要加载封面
-        if (s != null && (showCover.get() || nowPlaying.get() || lyricColors.value == COLORS_COVER || lyricColors.value == COLORS_GRADIENT)) {
+        if (s != null && (showCover.get() || nowPlaying.get() || lyricColors.value == COLORS_COVER || lyricColors.value == COLORS_GRADIENT || (ktvMode.get() && ktvLyricColors.value in COLORS_COVER..COLORS_GRADIENT))) {
             s.track.coverUrl.takeIf { it.isNotEmpty() }?.let { cover.requestUrl(s.key, it) }
         }
         cover.upload()
@@ -387,7 +406,10 @@ class LyricsModule : Module() {
         val paused = s != null && !s.playing
         if (s != null && lyrics != null) {
             val pos = songPos.toLong()
-            val idx = if (ktvMode.get()) lyrics.ktvIndexAt(pos) else lyrics.indexAt(pos)
+            val ktv = ktvMode.get()
+            val lyricIndex = if (ktv) lyrics.ktvIndexAt(pos) else lyrics.indexAt(pos)
+            val section = if (ktv && ktvInstrumental.get() && lyricIndex < 0) lyrics.instrumentalAt(pos, MusicPlayer.durationMs) else null
+            val idx = if (section != null) -2 - section.ordinal else lyricIndex
             if (paused) {
                 // 暂停：当前这句淡出消失，恢复播放时再出现
                 active?.let { startFade(it) }
@@ -400,7 +422,9 @@ class LyricsModule : Module() {
                 lastIndex = idx
                 active?.let { startFade(it) }
                 active = null
-                if (idx >= 0) {
+                if (section != null) {
+                    active = spawn(LyricLine(pos, I18n.text(section.label)), pos + 3500L)
+                } else if (idx >= 0) {
                     val line = lyrics.lines[idx]
                     if (line.text.isNotBlank()) {
                         val next = lyrics.lines.getOrNull(idx + 1)?.timeMs ?: (line.timeMs + 5000)
@@ -410,7 +434,18 @@ class LyricsModule : Module() {
             }
         }
 
-        if (worldMode.get() && (!textFlash.get() || ktvMode.get())) keepOnScreen()
+        val count = minOf(maxLyricLines.value, worldLyricLimit())
+        val nextKey = Triple(active, count, lyrics)
+        if (upcomingKey != nextKey) {
+            upcomingKey = nextKey
+            upcoming = if (active == null || lyrics == null || lastIndex < 0 || count == 1) emptyList()
+            else (lastIndex + 1 until minOf(lastIndex + count, lyrics.lines.size)).map { i ->
+                val line = lyrics.lines[i]
+                spawn(line, lyrics.lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L)
+            }
+        }
+        val useFlash = textFlash.get() && !ktvMode.get() && count == 1
+        if (worldMode.get() && !useFlash) keepOnScreen()
 
         val gfx = DangoClient.gfx
         val deepGlow = gfx.glow
@@ -419,8 +454,8 @@ class LyricsModule : Module() {
             val beat = if (s != null) MusicPlayer.beatPulse(MusicPlayer.positionMs) else 0f
             if (!worldMode.get()) {
                 // 3D lyrics 关掉 = 不显示歌词
-            } else if (textFlash.get() && !ktvMode.get()) {
-                flash.draw(if (s != null && !paused) lyrics else null, songNow, beat, flashSize.value, maxLyricLines.value)
+            } else if (useFlash) {
+                flash.draw(if (s != null && !paused) lyrics else null, songNow, beat, flashSize.value, 1)
             } else {
                 // 先把歌词画到发光画布上做出光晕，再正常画一遍清晰的字
                 val glowAmount = glowStrength.value * nightGlow()
@@ -590,8 +625,8 @@ class LyricsModule : Module() {
 
     // 默认暖白偏粉；翻译默认比原文稍灰一点（设置里可以改）
     /** 封面的代表色（选了封面主色 / 封面渐变、并且这首歌的封面已经出来时才有） */
-    private fun coverColors(): List<Int>? {
-        if (lyricColors.value != COLORS_COVER && lyricColors.value != COLORS_GRADIENT) return null
+    private fun coverColors(mode: Int = lyricColors.value): List<Int>? {
+        if (mode != COLORS_COVER && mode != COLORS_GRADIENT) return null
         if (currentKey == null || cover.shownKey != currentKey) return null
         return cover.palette.takeIf { it.isNotEmpty() }
     }
@@ -607,17 +642,23 @@ class LyricsModule : Module() {
      * 一个字的颜色：[center] 是这个字的中心离行首多远，[width] 是整行宽。
      * 彩虹按位置铺开色相再随时间流动；封面渐变在几种封面颜色之间从左到右过渡；其他情况整句一个颜色 [base]。
      */
-    private fun charRgb(center: Float, width: Float, base: Int): Int {
+    private fun charRgb(center: Float, width: Float, base: Int, mode: Int = lyricColors.value): Int {
         val u = if (width > 0f) (center / width).coerceIn(0f, 1f) else 0.5f
-        if (lyricColors.value == COLORS_RAINBOW) {
+        if (mode == COLORS_RAINBOW) {
             val hue = ((u * RAINBOW_SPAN + rainbowPhase) % 1f + 1f) % 1f
             return java.awt.Color.HSBtoRGB(hue, 0.55f, 1f) and 0xFFFFFF
         }
-        val colors = if (lyricColors.value == COLORS_GRADIENT) coverColors() else null
+        val colors = if (mode == COLORS_GRADIENT) coverColors(mode) else null
         if (colors == null || colors.size < 2) return base
         val at = u * (colors.size - 1)
         val i = at.toInt().coerceAtMost(colors.size - 2)
         return mixRgb(colors[i], colors[i + 1], at - i)
+    }
+
+    internal fun ktvHighlight(center: Float, width: Float): Int {
+        val mode = ktvLyricColors.value
+        val base = coverColors(mode)?.firstOrNull() ?: ktvSungColor.value
+        return charRgb(center, width, base, mode)
     }
 
     /** 两个颜色按 [t]（0..1）混合，分通道线性插值 */
@@ -746,20 +787,24 @@ class LyricsModule : Module() {
         }
     }
 
-    private fun drawKtvLines(lines: List<String>, sung: Float, alpha: Float, top: Float) {
+    private fun drawKtvLines(lines: List<String>, sung: Float, alpha: Float, top: Float, useKtvColors: Boolean = true) {
         val smooth = smoothFont.get()
         var index = 0
         var y = top
         if (smooth) DangoClient.gfx.text.beginSmooth()
         for (line in lines) {
-            var x = -strW(line) / 2f
+            val width = strW(line)
+            var x = -width / 2f
             for (c in line) {
+                val w = charW(c)
                 if (!c.isWhitespace()) {
                     val progress = (sung - index++).coerceIn(0f, 1f)
-                    if (progress < 1f) drawGlyph(c, x, y, ktvBaseColor.value, alpha, smooth, !glowPass && ktvBaseShadow.get())
-                    if (progress > 0f) drawGlyph(c, x, y, ktvSungColor.value, alpha * progress, smooth, !glowPass && ktvSungShadow.get())
+                    val center = x + width / 2f + w / 2f
+                    val base = if (useKtvColors) ktvBaseColor.value else charRgb(center, width, textRgb)
+                    if (progress < 1f) drawGlyph(c, x, y, base, alpha, smooth, !glowPass && (!useKtvColors || ktvBaseShadow.get()))
+                    if (progress > 0f) drawGlyph(c, x, y, ktvHighlight(center, width), alpha * progress, smooth, !glowPass && ktvSungShadow.get())
                 }
-                x += charW(c)
+                x += w
             }
             y += 11f
         }
@@ -1110,11 +1155,33 @@ class LyricsModule : Module() {
             }
             val s = 0.03f * scale.value * (distance.value / 6.5f)
             world.push(rx, ry + lift, rz, yaw, pitch, s)
-            if (ktvMode.get()) {
+            if (f === active && lastIndex < -1) {
+                drawKtvLines(f.lines, 0f, alphaMul, -f.lines.size * 11f / 2f)
+            } else if (ktvMode.get()) {
                 drawKtv(f, songNow, alphaMul)
             } else {
                 drawAnimated(f.lines, songNow - f.startMs, f.revealMs, alphaMul, if (wordPop.get()) f.charTimes else null)
                 drawTranslation(f.translation, songNow - f.startMs, f.revealMs, alphaMul, f.lines.size * 11f / 2f + 2.5f, TRANSLATION_SCALE)
+            }
+            if (f === active && upcoming.isNotEmpty()) {
+                val pen = DangoClient.gfx.text
+                val height = f.lines.size * 11f + f.translation.size * 11f * TRANSLATION_SCALE + 4f
+                var bottom = f.lines.size * 11f / 2f + f.translation.size * 11f * TRANSLATION_SCALE + 4f
+                var used = height
+                for (next in upcoming) {
+                    val h = next.lines.size * 11f + next.translation.size * 11f * TRANSLATION_SCALE + 4f
+                    if (used + h > worldLyricBudget()) break
+                    pen.push()
+                    try {
+                        pen.translate(0f, bottom + next.lines.size * 11f / 2f)
+                        if (ktvMode.get()) drawKtv(next, songNow, alphaMul * 0.78f)
+                        else drawKtvLines(next.lines, 0f, alphaMul * 0.78f, -next.lines.size * 11f / 2f, useKtvColors = false)
+                    } finally {
+                        pen.pop()
+                    }
+                    used += h
+                    bottom += h
+                }
             }
             world.pop()
         }
@@ -1125,8 +1192,7 @@ class LyricsModule : Module() {
 
     private fun drawFading(draw: (Floating, Float, Float) -> Unit) {
         val now = System.nanoTime()
-        val limit = maxLyricLines.value
-        val skip = if (limit == 0) 0 else (fading.size + (if (active != null) 1 else 0) - limit).coerceAtLeast(0)
+        val skip = if (active != null) fading.size else (fading.size - 1).coerceAtLeast(0)
         val it = fading.iterator()
         var index = 0
         while (it.hasNext()) {

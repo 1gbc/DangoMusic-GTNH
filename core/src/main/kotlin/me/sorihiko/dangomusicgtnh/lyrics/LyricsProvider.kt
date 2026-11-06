@@ -76,6 +76,19 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
     /** 当前用的歌词行：开了 Split lines 就是拆开后的 */
     val lines: List<LyricLine> get() = if (LyricSplit.enabled) split else raw
 
+    enum class Instrumental(val label: String) {
+        INTRO("Instrumental intro"), INTERLUDE("Instrumental interlude"), OUTRO("Instrumental outro"),
+    }
+
+    fun instrumentalAt(pos: Long, durationMs: Long): Instrumental? {
+        if (lines.isEmpty() || pos < 0L || (durationMs > 0L && pos >= durationMs) || ktvIndexAt(pos) >= 0) return null
+        return when (indexAt(pos)) {
+            -1 -> Instrumental.INTRO
+            lines.lastIndex -> Instrumental.OUTRO.takeIf { durationMs > pos }
+            else -> Instrumental.INTERLUDE
+        }
+    }
+
     /** Preview the next line during a vocal gap, without moving its sung timing. */
     fun ktvIndexAt(pos: Long): Int {
         val current = indexAt(pos)

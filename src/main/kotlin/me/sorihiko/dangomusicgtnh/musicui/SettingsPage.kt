@@ -47,6 +47,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     /** 用 ◀ ▶ 切换的选项：设置名 → 每个值的显示名（从最小值开始） */
     private val choiceLabels = mapOf(
         "lyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
+        "ktvLyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "audioOutput" to listOf("Auto", "Java Sound", "Game audio (OpenAL)"),
     )
 
@@ -244,13 +245,13 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 "glowNightOnly" to "glow", "glowStrength" to "glow", "glowRadius" to "glow",
                 "wiggleFps" to "wiggle", "wiggleAmount" to "wiggle",
                 "flashSize" to "textFlash",
+                "ktvLyricColors" to "ktvMode", "ktvInstrumental" to "ktvMode",
                 "ktvBaseColor" to "ktvMode", "ktvSungColor" to "ktvMode",
                 "ktvBaseShadow" to "ktvMode", "ktvSungShadow" to "ktvMode",
                 "danceAuto" to "dance", "danceTap" to "dance", "danceSpin" to "dance", "danceAmount" to "dance", "danceOffset" to "dance",
                 "translationColor" to "translation", "translationAnimation" to "translation", "translationWiggle" to "translation",
             ),
             fmts = mapOf(
-                "maxLyricLines" to { v: Any -> (v as IntValue).value.takeIf { it > 0 }?.toString() ?: I18n.text("Unlimited") },
                 "spread" to { v: Any -> "${(v as FloatValue).value.roundToInt()}°" },
                 "glowRadius" to ::percent,
                 "danceOffset" to { v: Any -> "${(v as IntValue).value} ms" },
@@ -259,7 +260,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         ly.left.remove("smoothFont")   // 合进了"歌词字体"那一行
         val lyrics = mutableListOf(
             Group("Appearance", "Font and colors", ly.m, false, ly.take(listOf("worldMode", "maxLyricLines", "scale", "lyricFont", "lyricColors", "textColor", "rainbowSpeed", "splitLines"))),
-            Group("KTV mode", "Font and colors", ly.m, false, ly.take(listOf("ktvMode", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow"))),
+            Group("KTV mode", "Font and colors", ly.m, false, ly.take(listOf("ktvMode", "ktvInstrumental", "ktvLyricColors", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow"))),
             Group("Position", "Where the lyrics float", ly.m, false, ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "spread"))),
             Group("Translation", "Under each line", ly.m, false, ly.take(listOf("translation", "romanization", "translationColor", "translationAnimation", "translationWiggle"))),
             Group("Glow", "Deep Glow", ly.m, false, ly.take(listOf("glow", "glowNightOnly", "glowStrength", "glowRadius"))),
@@ -633,7 +634,14 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 val v = r.value as BooleanValue
                 ui.toggleSwitch(LayoutBounds(cx, cy - 10f, 34f, 20f), v.get(), clip, key = v) { v.toggle() }
             }
-            Ctl.SLIDER -> drawSlider(b, r, clip, cx, cy)
+            Ctl.SLIDER -> if (r.key == "maxLyricLines") {
+                val v = r.value as IntValue
+                val max = module.lyrics()?.worldLyricLimit() ?: 1
+                val current = v.value.coerceAtMost(max)
+                stepper(clip, cx, cy, current.toString(), max > 1) { delta ->
+                    v.setValue((current + delta).coerceIn(1, max))
+                }
+            } else drawSlider(b, r, clip, cx, cy)
             Ctl.KEY -> drawKeyButton(r.value as IntValue, clip, cx, cy)
             Ctl.COLOR -> {
                 // 颜色块 + 十六进制值，点一下弹出取色器

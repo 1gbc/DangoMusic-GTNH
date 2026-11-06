@@ -482,3 +482,11 @@ Bypass volume normalization and in-game environment effects	绕过音量均衡�
 Output · %s-bit · %d Hz · %s	输出 · %s 位 · %d Hz · %s
 Requested · %s	请求档位 · %s
 Audio output inactive	音频输出尚未打开
+Simultaneous lyric lines	同时显示句数
+Show the current lyric and upcoming lines	同时显示当前句和后续歌词
+Show instrumental sections	显示前奏、间奏和尾声
+Label the intro, interlude and outro in KTV mode	在 KTV 模式的无人声区间显示提示
+Instrumental intro	前奏
+Instrumental interlude	间奏
+Instrumental outro	尾声
+Choose the color of the KTV highlight	设置 KTV 已唱文字的配色
