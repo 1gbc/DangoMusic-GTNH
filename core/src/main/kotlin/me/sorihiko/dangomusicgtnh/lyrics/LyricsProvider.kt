@@ -26,7 +26,7 @@ class LyricLine @JvmOverloads constructor(
     fun ktvEndMs(nextLineMs: Long): Long {
         val lastWord = words?.maxOfOrNull { it.startMs + it.durMs.coerceAtLeast(1L) }
         return lastWord?.coerceAtLeast(timeMs + 1L)
-            ?: if (nextLineMs - timeMs > 5000L) timeMs + 3500L else nextLineMs.coerceAtLeast(timeMs + 1L)
+            ?: nextLineMs.coerceAtLeast(timeMs + 1L)
     }
 
     fun sungFraction(positionMs: Long, nextLineMs: Long): Float {
@@ -97,8 +97,10 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
         val current = indexAt(pos)
         val next = lines.getOrNull(current + 1)
         val line = lines.getOrNull(current)
-        val end = line?.ktvEndMs(next?.timeMs ?: (line.timeMs + 3500L))
-        if (next != null && next.timeMs - pos <= 1500L && (end == null || pos >= end)) return current + 1
+        // A line-only timestamp does not say when the voice stops. Use word timings
+        // to identify gaps, otherwise retain this line until the next timestamp.
+        val end = line?.takeIf { !it.words.isNullOrEmpty() }?.ktvEndMs(next?.timeMs ?: Long.MAX_VALUE)
+        if (next != null && next.timeMs - pos <= 1500L && (line == null || (end != null && pos >= end))) return current + 1
         // Keep the previous lyric through short breaths and backing vocals.
         if (next != null && end != null && next.timeMs - end < 4000L) return current
         return if (end != null && pos - end >= 700L) -1 else current
@@ -126,7 +128,7 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
  * 把"两句写在一行"的歌词拆开：
  *   今はまだ知らない 出会ってすらいない  →  今はまだ知らない / 出会ってすらいない
  * 只在空格两边都是中日韩文字时拆（英文本来就用空格分词，不拆）；全角空格也拆。
- * 有逐字时间（yrc）时，后半句从它第一个字开唱时出现；普通 LRC 按字数比例估时间。
+ * 有逐字时间（yrc）时，后半句从它第一个字开唱时出现；普通 LRC 保留原句和原始时间。
  * 拆出来太短（不到 2 个字或不到 0.5 秒）的就并回前一半，不拆。
  */
 object LyricSplit {
@@ -170,12 +172,12 @@ object LyricSplit {
         val out = ArrayList<LyricLine>(lines.size)
         for ((li, line) in lines.withIndex()) {
             // 翻译和音译是对着整句的。
-            if (line.translation != null || line.romanization != null) {
+            if (line.translation != null || line.romanization != null || line.words.isNullOrEmpty()) {
                 out += line
                 continue
             }
             val nextMs = lines.getOrNull(li + 1)?.timeMs
-            val segs = segments(line, nextMs)
+            val segs = segments(line)
             if (segs.size <= 1) {
                 out += line
                 continue
@@ -208,43 +210,26 @@ object LyricSplit {
         return out
     }
 
-    private fun segments(line: LyricLine, nextMs: Long?): List<Seg> {
-        val words = line.words
-        if (words != null) {
-            // 逐字歌词：按每个字在整行里的位置分到各段，段的开始时间 = 段里第一个字的时间
-            val full = words.joinToString("") { it.text }
-            val starts = cuts(full)
-            if (starts.size <= 1) return emptyList()
-            val segs = starts.map { Seg("", Long.MAX_VALUE, mutableListOf()) }
-            var pos = 0
-            for (w in words) {
-                val firstChar = w.text.indexOfFirst { !it.isWhitespace() }
-                val at = pos + if (firstChar >= 0) firstChar else 0
-                val k = starts.indexOfLast { it <= at }.coerceAtLeast(0)
-                segs[k].words!!.add(w)
-                if (firstChar >= 0 && w.startMs < segs[k].startMs) segs[k].startMs = w.startMs
-                pos += w.text.length
-            }
-            val ok = segs.filter { it.words!!.any { w -> w.text.isNotBlank() } }
-            ok.forEach { it.text = it.words!!.joinToString("") { w -> w.text }.trim() }
-            return if (ok.size <= 1) emptyList() else ok
-        }
-        // 普通 LRC：只有整行开始时间，按字数比例估每段的开始时间
-        val text = line.text
-        val starts = cuts(text)
+    private fun segments(line: LyricLine): List<Seg> {
+        val words = line.words.orEmpty()
+        val full = words.joinToString("") { it.text }
+        val starts = cuts(full)
         if (starts.size <= 1) return emptyList()
-        val parts = starts.mapIndexed { i, st -> text.substring(st, starts.getOrNull(i + 1) ?: text.length).trim() }
-        val counts = parts.map { p -> p.count { !it.isWhitespace() } }
-        val total = counts.sum().coerceAtLeast(1)
-        val dur = ((nextMs ?: (line.timeMs + total * 300L)) - line.timeMs).coerceAtLeast(0L)
-        val singing = dur * 0.85                     // 下一句前通常有一点空白
-        var before = 0
-        return parts.mapIndexed { i, p ->
-            val sg = Seg(p, line.timeMs + (singing * before / total).toLong(), null)
-            before += counts[i]
-            sg
+        val segs = starts.map { Seg("", Long.MAX_VALUE, mutableListOf()) }
+        var pos = 0
+        for (w in words) {
+            val firstChar = w.text.indexOfFirst { !it.isWhitespace() }
+            val at = pos + if (firstChar >= 0) firstChar else 0
+            val k = starts.indexOfLast { it <= at }.coerceAtLeast(0)
+            segs[k].words!!.add(w)
+            if (firstChar >= 0 && w.startMs < segs[k].startMs) segs[k].startMs = w.startMs
+            pos += w.text.length
         }
+        val ok = segs.filter { it.words!!.any { w -> w.text.isNotBlank() } }
+        ok.forEach { it.text = it.words!!.joinToString("") { w -> w.text }.trim() }
+        return if (ok.size <= 1) emptyList() else ok
     }
+
 }
 
 /** 按网易云歌曲 ID 取歌词（逐字 yrc 优先，没有就用普通 LRC） */
