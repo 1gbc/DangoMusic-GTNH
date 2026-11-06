@@ -80,7 +80,7 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
     enum class Instrumental(val label: String) {
         INTRO("Intro"), INTERLUDE("Interlude"), OUTRO("Outro");
 
-        fun displayLabel(): String = "[${I18n.text(label)}]"
+        fun displayLabel(): String = "[${I18n.text(label)} ♫~]"
     }
 
     fun instrumentalAt(pos: Long, durationMs: Long): Instrumental? {

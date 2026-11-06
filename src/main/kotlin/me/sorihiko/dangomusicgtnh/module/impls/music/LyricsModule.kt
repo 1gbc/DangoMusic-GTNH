@@ -256,6 +256,7 @@ class LyricsModule : Module() {
         val lyric: LyricLine,
         val nextMs: Long,
     ) {
+        var instrumental = false
         var fadeStartNanos = 0L
         /** 这一句的翻译（已经按宽度换好行；没有就是空的），画在原文下面 */
         var translation: List<String> = emptyList()
@@ -465,7 +466,7 @@ class LyricsModule : Module() {
                 active?.let { startFade(it) }
                 active = null
                 if (sectionLabel != null) {
-                    active = spawn(LyricLine(pos, sectionLabel), pos + 3500L)
+                    active = spawn(LyricLine(pos, sectionLabel), pos + 3500L).also { it.instrumental = true }
                 } else if (idx >= 0) {
                     val line = lyrics.lines[idx]
                     if (line.text.isNotBlank()) {
@@ -860,7 +861,11 @@ class LyricsModule : Module() {
         }
     }
 
-    private fun drawKtvLines(lines: List<String>, sung: Float, alpha: Float, top: Float, useKtvColors: Boolean = true) {
+    private fun drawKtvLines(
+        lines: List<String>, sung: Float, alpha: Float, top: Float,
+        useKtvColors: Boolean = true, wiggleFrame: Long? = null,
+    ) {
+        val seed = if (wiggleFrame != null) lines.hashCode() else 0
         val smooth = smoothFont.get()
         var index = 0
         var y = top
@@ -874,7 +879,13 @@ class LyricsModule : Module() {
                     val progress = (sung - index++).coerceIn(0f, 1f)
                     val center = x + width / 2f + w / 2f
                     val base = if (useKtvColors) ktvBaseColor.value else charRgb(center, width, textRgb)
-                    if (progress < 1f) drawGlyph(c, x, y, base, alpha, smooth, !glowPass && (!useKtvColors || ktvBaseShadow.get()))
+                    if (progress < 1f) {
+                        val shadow = !glowPass && (!useKtvColors || ktvBaseShadow.get())
+                        if (wiggleFrame == null) drawGlyph(c, x, y, base, alpha, smooth, shadow)
+                        else withWiggle(Glyph(c, x, y, alpha, index, base), seed, wiggleFrame) {
+                            drawGlyph(c, x, y, base, alpha, smooth, shadow)
+                        }
+                    }
                     if (progress > 0f) drawGlyph(c, x, y, ktvHighlight(center, width), alpha * progress, smooth, !glowPass && ktvSungShadow.get())
                 }
                 x += w
@@ -1185,9 +1196,11 @@ class LyricsModule : Module() {
 
         val pen = DangoClient.gfx.text
 
+        val sectionWiggleFrame = frameNanos / 1_000_000L * wiggleFps.value.coerceAtLeast(1) / 1000L
+
         fun drawRow(f: Floating, alpha: Float, preview: Boolean, settled: Boolean) {
-            if (f === active && lastIndex < -1) {
-                drawKtvLines(f.lines, 0f, alpha, -halfMain(f))
+            if (f.instrumental) {
+                drawKtvLines(f.lines, 0f, alpha, -halfMain(f), wiggleFrame = sectionWiggleFrame)
             } else if (ktvMode.get()) {
                 drawKtv(f, songNow, alpha, preview)
             } else {
