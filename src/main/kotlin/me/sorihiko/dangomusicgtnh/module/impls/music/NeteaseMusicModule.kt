@@ -138,6 +138,9 @@ class NeteaseMusicModule : Module() {
     @ModuleValue("Volume normalization", "Keep songs at a similar loudness")
     private val normalize = BooleanValue(true)
 
+    @ModuleValue("Original audio", "Bypass volume normalization and in-game environment effects")
+    private val originalAudio = BooleanValue(false)
+
     @ModuleValue("Playback fades", "Brief fades when switching, pausing or resuming songs")
     private val playbackFades = BooleanValue(true)
 
@@ -346,14 +349,15 @@ class NeteaseMusicModule : Module() {
         val mode = audioOutput.value
         if (MusicPlayer.outputMode != mode) ClientMusic.control { MusicPlayer.outputMode = mode }
         MusicPlayer.normalize = normalize.get()
+        MusicPlayer.originalAudio = originalAudio.get()
         MusicPlayer.playbackFades = playbackFades.get()
 
         // 环境音效：设置和玩家周围的环境交给解码线程
-        EnvironmentAudio.enabled = envAudio.get()
+        EnvironmentAudio.enabled = envAudio.get() && !originalAudio.get()
         EnvironmentAudio.rain = envRain.get()
         EnvironmentAudio.strength = envStrength.value
         // 房间回声：只在放歌时测（要发射线读方块）
-        RoomAcoustics.tick(DangoMusic.instance.platform, envAudio.get() && MusicPlayer.state == MusicPlayer.State.PLAYING)
+        RoomAcoustics.tick(DangoMusic.instance.platform, EnvironmentAudio.enabled && MusicPlayer.state == MusicPlayer.State.PLAYING)
         EnvironmentAudio.update(try { DangoMusic.instance.platform.environment } catch (_: Exception) { null }, RoomAcoustics.room)
 
         // 打开键额外支持主菜单；其他播放快捷键仍只在世界内响应。

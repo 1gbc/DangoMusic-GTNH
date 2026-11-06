@@ -474,3 +474,11 @@ KTV base color	KTV 未唱文字颜色
 KTV sung color	KTV 已唱文字颜色
 KTV base shadow	KTV 未唱文字阴影
 KTV sung shadow	KTV 已唱文字阴影
+Maximum lyric lines	歌词行数上限
+Limit visible lyric entries; 0 means unlimited	限制同时显示的歌词句数，0 表示不限
+Unlimited	不限
+Original audio	原音模式
+Bypass volume normalization and in-game environment effects	绕过音量均衡与游戏环境音效
+Output · %s-bit · %d Hz · %s	输出 · %s 位 · %d Hz · %s
+Requested · %s	请求档位 · %s
+Audio output inactive	音频输出尚未打开

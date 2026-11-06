@@ -116,6 +116,9 @@ class LyricsModule : Module() {
     @ModuleValue("Word pop", "Words pop in one by one as they are sung")
     private val wordPop = BooleanValue(true)
 
+    @ModuleValue("Maximum lyric lines", "Limit visible lyric entries; 0 means unlimited")
+    internal val maxLyricLines = IntValue(0, 8, 0)
+
     @ModuleValue("KTV mode", "Show the full line and highlight it as the song plays")
     internal val ktvMode = BooleanValue(false)
 
@@ -417,7 +420,7 @@ class LyricsModule : Module() {
             if (!worldMode.get()) {
                 // 3D lyrics 关掉 = 不显示歌词
             } else if (textFlash.get() && !ktvMode.get()) {
-                flash.draw(if (s != null && !paused) lyrics else null, songNow, beat, flashSize.value)
+                flash.draw(if (s != null && !paused) lyrics else null, songNow, beat, flashSize.value, maxLyricLines.value)
             } else {
                 // 先把歌词画到发光画布上做出光晕，再正常画一遍清晰的字
                 val glowAmount = glowStrength.value * nightGlow()
@@ -724,14 +727,19 @@ class LyricsModule : Module() {
      */
     private fun drawKtv(f: Floating, positionMs: Long, alpha: Float) {
         drawKtvLines(f.lines, f.lyric.sungCharacters(positionMs, f.nextMs), alpha, -f.lines.size * 11f / 2f)
-        if (romanization.get() && f.phonetic.isNotEmpty()) {
+        val phonetic = if (romanization.get()) f.phonetic else emptyList()
+        val translated = if (translation.get()) f.translation.drop(f.phonetic.size) else emptyList()
+        if (phonetic.isNotEmpty() || translated.isNotEmpty()) {
             val pen = DangoClient.gfx.text
-            val count = f.phonetic.sumOf { line -> line.count { !it.isWhitespace() } }
+            val progress = f.lyric.sungFraction(positionMs, f.nextMs)
             pen.push()
             try {
                 pen.translate(0f, f.lines.size * 11f / 2f + 2.5f)
                 pen.scale(TRANSLATION_SCALE, TRANSLATION_SCALE)
-                drawKtvLines(f.phonetic, f.lyric.sungFraction(positionMs, f.nextMs) * count, alpha * 0.85f, 0f)
+                val phoneticCount = phonetic.sumOf { line -> line.count { !it.isWhitespace() } }
+                val translatedCount = translated.sumOf { line -> line.count { !it.isWhitespace() } }
+                drawKtvLines(phonetic, progress * phoneticCount, alpha * 0.85f, 0f)
+                drawKtvLines(translated, progress * translatedCount, alpha * 0.85f, phonetic.size * 11f)
             } finally {
                 pen.pop()
             }
@@ -1102,12 +1110,12 @@ class LyricsModule : Module() {
             }
             val s = 0.03f * scale.value * (distance.value / 6.5f)
             world.push(rx, ry + lift, rz, yaw, pitch, s)
-            if (ktvMode.get()) drawKtv(f, songNow, alphaMul)
-            else drawAnimated(f.lines, songNow - f.startMs, f.revealMs, alphaMul, if (wordPop.get()) f.charTimes else null)
-            val ktv = ktvMode.get()
-            val annotations = if (ktv) f.translation.drop(f.phonetic.size) else f.translation
-            val top = f.lines.size * 11f / 2f + 2.5f + if (ktv) f.phonetic.size * 11f * TRANSLATION_SCALE else 0f
-            drawTranslation(annotations, songNow - f.startMs, f.revealMs, alphaMul, top, TRANSLATION_SCALE)
+            if (ktvMode.get()) {
+                drawKtv(f, songNow, alphaMul)
+            } else {
+                drawAnimated(f.lines, songNow - f.startMs, f.revealMs, alphaMul, if (wordPop.get()) f.charTimes else null)
+                drawTranslation(f.translation, songNow - f.startMs, f.revealMs, alphaMul, f.lines.size * 11f / 2f + 2.5f, TRANSLATION_SCALE)
+            }
             world.pop()
         }
 
@@ -1117,9 +1125,16 @@ class LyricsModule : Module() {
 
     private fun drawFading(draw: (Floating, Float, Float) -> Unit) {
         val now = System.nanoTime()
+        val limit = maxLyricLines.value
+        val skip = if (limit == 0) 0 else (fading.size + (if (active != null) 1 else 0) - limit).coerceAtLeast(0)
         val it = fading.iterator()
+        var index = 0
         while (it.hasNext()) {
             val f = it.next()
+            if (index++ < skip) {
+                it.remove()
+                continue
+            }
             val t = (now - f.fadeStartNanos) / 1e9f
             val a = 1f - t / 0.4f
             if (a <= 0f) {

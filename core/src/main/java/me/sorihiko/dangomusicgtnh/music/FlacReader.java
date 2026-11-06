@@ -4,8 +4,13 @@ package me.sorihiko.dangomusicgtnh.music;
 public final class FlacReader implements java.io.Closeable {
     public static final class Block {
         public final short[] samples;
-        public final int rate, channels;
-        Block(short[] samples, int rate, int channels) { this.samples = samples; this.rate = rate; this.channels = channels; }
+        public final int rate, channels, depth;
+        Block(short[] samples, int rate, int channels, int depth) {
+            this.samples = samples;
+            this.rate = rate;
+            this.channels = channels;
+            this.depth = depth;
+        }
     }
     private static final int[] CRC8 = crcTable(8, 0x07), CRC16 = crcTable(16, 0x8005);
     private final Bits input;
@@ -119,13 +124,27 @@ public final class FlacReader implements java.io.Closeable {
         if (digest != null) digest.update(hashBuffer, 0, hashPosition);
         decoded += size;
         frames++;
-        return new Block(pcm, rate, channels);
+        return new Block(pcm, rate, channels, depth);
+    }
+
+    private int ditherState = 0x6D2B79F5;
+
+    private int ditherBits(int shift) {
+        ditherState ^= ditherState << 13;
+        ditherState ^= ditherState >>> 17;
+        ditherState ^= ditherState << 5;
+        return ditherState >>> (32 - shift);
     }
 
     private short output(long sample) {
         require(sample >= -(1L << (depth - 1)) && sample < (1L << (depth - 1)), "FLAC sample overflow");
         // 现有播放和环境音效链路统一为 16 位，按原始位深缩放，不能直接截取低 16 位。
-        return (short) (depth > 16 ? sample >> (depth - 16) : sample << (16 - depth));
+        if (depth <= 16) return (short) (sample << (16 - depth));
+        int shift = depth - 16;
+        // Triangular dither before rounding to 16-bit PCM avoids correlated truncation distortion.
+        long noise = ditherBits(shift) - ditherBits(shift);
+        long rounded = (sample + noise + (1L << (shift - 1))) >> shift;
+        return (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, rounded));
     }
 
     private void subframe(long[] values, int size, int bits) {

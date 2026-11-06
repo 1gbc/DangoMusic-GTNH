@@ -562,7 +562,7 @@ object MusicPlayer {
      * 声音系统重启后重新打开输出。游戏要一会儿才能把声音系统开回来，最多等几秒；
      * 原来用的是游戏的 OpenAL 就继续等它，等不到再按平常的顺序打开。
      */
-    private fun reopenOutput(gen: Int, old: AudioOutput, rate: Int, channels: Int, startMs: Long): FadingAudioOutput? {
+    private fun reopenOutput(gen: Int, old: AudioOutput, rate: Int, channels: Int, sourceBits: Int?, startMs: Long): FadingAudioOutput? {
         DangoLogger.info("Dango Music: game audio restarted, reopening output")
         try { old.close() } catch (_: Exception) {}
         val format = AudioFormat(rate.toFloat(), 16, channels, true, false)
@@ -586,6 +586,7 @@ object MusicPlayer {
             if (pendingFade != null) fading.fadeTo(0f)
             seekBaseMs = startMs
             line = fading
+            outputInfo = OutputInfo(rate, format.sampleSizeInBits, sourceBits, opened is JavaSoundOutput)
             if (state == State.PAUSED) fading.stop() else fading.start()
             return fading
         }
@@ -637,6 +638,12 @@ object MusicPlayer {
 
     /** 音量均衡（设置里开关）：按音源给的响度把每首歌调到差不多响 */
     @Volatile var normalize = true
+    @Volatile var originalAudio = false
+
+    data class OutputInfo(val rate: Int, val bits: Int, val sourceBits: Int?, val javaSound: Boolean)
+
+    @Volatile var outputInfo: OutputInfo? = null
+        private set
     /** 这首歌要乘的倍数（1 = 原样） */
     @Volatile private var trackGain = 1f
 
@@ -697,6 +704,7 @@ object MusicPlayer {
                         out = fading
                         seekBaseMs = skipped.toLong()
                         line = fading
+                        outputInfo = OutputInfo(frame.rate, format.sampleSizeInBits, frame.sourceBits, opened is JavaSoundOutput)
                         if (state == State.PAUSED) {
                             pausedAtMs = seekBaseMs
                             fading.stop()
@@ -749,9 +757,10 @@ object MusicPlayer {
                 avgEnergy = if (avgEnergy == 0f) energy else avgEnergy + (energy - avgEnergy) * (frameMs / 1000f).coerceAtMost(1f)
                 decodedMs += frameMs
                 // 音量均衡、环境音效（水下变闷、洞穴回声……）在鼓点检测之后加，不影响节奏判断
-                val gain = trackGain
+                val raw = originalAudio
+                val gain = if (!raw && normalize) trackGain else 1f
                 if (gain != 1f) for (idx in 0 until len) pcm[idx] = (pcm[idx] * gain).toInt().coerceIn(-32768, 32767).toShort()
-                EnvironmentAudio.process(pcm, len, ch, frame.rate, frameMs)
+                if (!raw) EnvironmentAudio.process(pcm, len, ch, frame.rate, frameMs)
                 val data = ByteArray(len * 2)
                 for (k in 0 until len) {
                     val v = pcm[k].toInt()
@@ -763,7 +772,7 @@ object MusicPlayer {
                 } catch (e: Throwable) {
                     if (!output.lost || gen != generation) throw e
                     // 游戏重启了声音系统：换一个新的输出，从这一块接着放（缓冲里没放完的零点几秒丢掉）
-                    val reopened = reopenOutput(gen, output, frame.rate, frame.channels, (decodedMs - frameMs).toLong()) ?: throw e
+                    val reopened = reopenOutput(gen, output, frame.rate, frame.channels, frame.sourceBits, (decodedMs - frameMs).toLong()) ?: throw e
                     out = reopened
                     if (reopened.lost) throw e
                     reopened.setVolume(volume)
@@ -778,7 +787,12 @@ object MusicPlayer {
             }
         } finally {
             try { source?.close() } catch (_: Exception) {}
-            synchronized(this) { if (line === out) line = null }
+            synchronized(this) {
+                if (line === out) {
+                    line = null
+                    outputInfo = null
+                }
+            }
             try {
                 out?.stop()
                 out?.close()
@@ -799,6 +813,7 @@ object MusicPlayer {
                 if (state != State.PAUSED) {
                     seekBaseMs = positionMs
                     line = null
+                    outputInfo = null
                     if (!heartMode && repeatOne) {
                         // 复用已下载的音频，从头解码，不重新请求播放地址或下载。
                         seekLocal(0L, fadeIn = true)
@@ -816,6 +831,7 @@ object MusicPlayer {
         pendingFade = null
         val l = line
         line = null
+        outputInfo = null
         try {
             l?.stop()
             l?.flush()

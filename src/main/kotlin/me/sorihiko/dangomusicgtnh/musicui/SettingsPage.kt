@@ -250,6 +250,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 "translationColor" to "translation", "translationAnimation" to "translation", "translationWiggle" to "translation",
             ),
             fmts = mapOf(
+                "maxLyricLines" to { v: Any -> (v as IntValue).value.takeIf { it > 0 }?.toString() ?: I18n.text("Unlimited") },
                 "spread" to { v: Any -> "${(v as FloatValue).value.roundToInt()}°" },
                 "glowRadius" to ::percent,
                 "danceOffset" to { v: Any -> "${(v as IntValue).value} ms" },
@@ -257,7 +258,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         )
         ly.left.remove("smoothFont")   // 合进了"歌词字体"那一行
         val lyrics = mutableListOf(
-            Group("Appearance", "Font and colors", ly.m, false, ly.take(listOf("worldMode", "scale", "lyricFont", "lyricColors", "textColor", "rainbowSpeed", "splitLines"))),
+            Group("Appearance", "Font and colors", ly.m, false, ly.take(listOf("worldMode", "maxLyricLines", "scale", "lyricFont", "lyricColors", "textColor", "rainbowSpeed", "splitLines"))),
             Group("KTV mode", "Font and colors", ly.m, false, ly.take(listOf("ktvMode", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow"))),
             Group("Position", "Where the lyrics float", ly.m, false, ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "spread"))),
             Group("Translation", "Under each line", ly.m, false, ly.take(listOf("translation", "romanization", "translationColor", "translationAnimation", "translationWiggle"))),
@@ -291,7 +292,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 island.take(listOf("mergeCoverProgress", "posX", "posY")) + island.take()),
             Group("Cover progress HUD", "Separate position when not merged", card.m, true,
                 card.take(listOf("posX", "posY")) + card.take()),
-            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "normalize", "playbackFades", "audioOutput", "language"))),
+            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "audioOutput", "language"))),
             Group("Environment audio", "Sound around you", player.m, false, environment),
             Group("Hotkeys", "Click, then press a key · Backspace clears", player.m, false, player.take()),
             nowPlaying,
@@ -772,10 +773,22 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val name = when {
             binding -> I18n.text("Press a key")
             v.value == 0 -> I18n.text("None")
-            else -> module.keyDisplayName(v) ?: Keys.name(v.value) ?: "#${v.value}"
+            else -> {
+                val label = module.keyDisplayName(v) ?: Keys.name(v.value) ?: "#${v.value}"
+                val key = label.substringAfterLast(" + ")
+                val arrow = when (key.uppercase(java.util.Locale.ROOT)) {
+                    "LEFT" -> "←"
+                    "RIGHT" -> "→"
+                    "UP" -> "↑"
+                    "DOWN" -> "↓"
+                    else -> key
+                }
+                label.substringBeforeLast(" + ", "").let { if (it.isEmpty()) arrow else "$it+$arrow" }
+            }
         }
-        val s = ui.trim(name, kb.width - 10f, 11f, Theme.FONT_SEMIBOLD)
-        ui.text(s, kb.x + (kb.width - ui.width(s, 11f, Theme.FONT_SEMIBOLD)) / 2f, cy - 11f * 0.39f - 0.5f, 11f,
+        val size = (11f * (kb.width - 10f) / ui.width(name, 11f, Theme.FONT_SEMIBOLD).coerceAtLeast(1f)).coerceIn(8f, 11f)
+        val s = ui.trim(name, kb.width - 10f, size, Theme.FONT_SEMIBOLD)
+        ui.text(s, kb.x + (kb.width - ui.width(s, size, Theme.FONT_SEMIBOLD)) / 2f, cy - size * 0.39f - 0.5f, size,
             if (binding) RED else if (v.value == 0) Theme.TEXT_TERTIARY else Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
         val hb = kb.intersect(clip)
         keyButtons += hb

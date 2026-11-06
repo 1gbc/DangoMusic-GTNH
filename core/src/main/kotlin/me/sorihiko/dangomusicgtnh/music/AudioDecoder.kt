@@ -9,7 +9,7 @@ import com.jcraft.jorbis.DangoVorbis
 
 /** 分块解码，MP3、Vorbis 和 FLAC 共用后面的音量、鼓点、混响和音频输出。 */
 internal interface AudioDecoder : Closeable {
-    class Frame(val samples: ShortArray, val length: Int, val rate: Int, val channels: Int) {
+    class Frame(val samples: ShortArray, val length: Int, val rate: Int, val channels: Int, val sourceBits: Int? = null) {
         val durationMs: Float get() = length * 1000f / (rate * channels)
     }
     fun read(): Frame?
@@ -98,6 +98,6 @@ private class Vorbis(bytes: ByteArray) : AudioDecoder {
 /** 原生 FLAC 只解码当前帧，输出继续交给共用的音效和声卡链路。 */
 private class Flac(bytes: ByteArray) : AudioDecoder {
     private val reader = FlacReader(bytes)
-    override fun read(): AudioDecoder.Frame? = reader.readFrame()?.let { AudioDecoder.Frame(it.samples, it.samples.size, it.rate, it.channels) }
+    override fun read(): AudioDecoder.Frame? = reader.readFrame()?.let { AudioDecoder.Frame(it.samples, it.samples.size, it.rate, it.channels, it.depth) }
     override fun close() = reader.close()
 }

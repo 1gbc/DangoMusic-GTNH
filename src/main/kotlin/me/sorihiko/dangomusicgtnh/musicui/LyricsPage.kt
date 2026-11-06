@@ -100,7 +100,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         val active = if (ktv) lyrics?.ktvIndexAt(position) ?: -1 else current
         val railY = area.y + (area.height - 6 * 40f - 24f) / 2f
         val popup = menu?.let {
-            val height = if (it == Menu.SIZE) 82f else 180f
+            val height = if (it == Menu.SIZE) 82f else 214f
             LayoutBounds(railX - 246f, railY + 260f - height, 232f, height)
         }
         if (rows.isEmpty()) {
@@ -147,7 +147,12 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         val baseline = a.y + a.height * 0.46f - scrollPosition
         ui.beginClip(a)
         val first = rows.binarySearchBy(a.y - baseline) { it.top }.let { if (it < 0) -it - 2 else it }.coerceAtLeast(0)
-        for (i in first until rows.size) {
+        val maxLines = lyricModule?.maxLyricLines?.value ?: 0
+        val centerIndex = if (manualPosition == null && active >= 0) active else
+            rows.binarySearchBy(scrollPosition) { it.center }.let { if (it < 0) -it - 1 else it }.coerceAtMost(rows.lastIndex)
+        val start = if (maxLines == 0) 0 else (centerIndex - (maxLines - 1) / 2).coerceIn(0, (rows.size - maxLines).coerceAtLeast(0))
+        val end = if (maxLines == 0) rows.size else (start + maxLines).coerceAtMost(rows.size)
+        for (i in maxOf(first, start) until end) {
             val row = rows[i]
             var y = baseline + row.top
             if (y >= a.bottom) break
@@ -173,8 +178,10 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
                 else phonetic = ktvText(ktv, text, y, phoneticSize, Theme.FONT_REGULAR, annotationColor.a, popup, phonetic)
                 y += size
             }
+            var translated = sung / total * row.translation.sumOf { text -> text.count { !it.isWhitespace() } }
             for (text in row.translation) {
-                lyricText(text, y, phoneticSize, annotationColor, Theme.FONT_REGULAR, popup)
+                if (ktv == null) lyricText(text, y, phoneticSize, annotationColor, Theme.FONT_REGULAR, popup)
+                else translated = ktvText(ktv, text, y, phoneticSize, Theme.FONT_REGULAR, annotationColor.a, popup, translated)
                 y += size
             }
         }
@@ -280,7 +287,19 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             ui.text(I18n.text("Lyric translation"), b.x + 14f, b.y + 78f, 13f, white)
             ui.toggleSwitch(LayoutBounds(b.right - 53f, b.y + 105f, 38f, 19f), showRomanization, b) { module.lyricsPageRomanization.toggle() }
             ui.toggleSwitch(LayoutBounds(b.right - 53f, b.y + 74f, 38f, 19f), showTranslation, b) { module.lyricsPageTranslation.toggle() }
-            ui.pill(LayoutBounds(b.x + 14f, b.y + 138f, b.width - 28f, 28f), white.copy(a = 0.13f), I18n.text("Reset lyrics settings")) {
+            val limit = module.lyrics()?.maxLyricLines
+            if (limit != null) {
+                val value = if (limit.value == 0) I18n.text("Unlimited") else limit.value.toString()
+                ui.text(I18n.text("Maximum lyric lines") + " · " + value, b.x + 14f, b.y + 141f, 12f, white)
+                button(LayoutBounds(b.right - 84f, b.y + 133f, 28f, 28f), "−", null, enabled = limit.value > 0) {
+                    limit.setValue(limit.value - 1)
+                }
+                button(LayoutBounds(b.right - 46f, b.y + 133f, 28f, 28f), "+", null, enabled = limit.value < 8) {
+                    limit.setValue(limit.value + 1)
+                }
+            }
+            ui.pill(LayoutBounds(b.x + 14f, b.y + 172f, b.width - 28f, 28f), white.copy(a = 0.13f), I18n.text("Reset lyrics settings")) {
+                module.lyrics()?.maxLyricLines?.setValue(0)
                 module.lyricsPageSize.setValue(22)
                 module.lyricsPageRomanization.set(false)
                 module.lyricsPageTranslation.set(true)

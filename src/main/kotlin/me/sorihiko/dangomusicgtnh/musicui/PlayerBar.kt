@@ -259,7 +259,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         }
         if (!qualityOpen) return
 
-        val menu = LayoutBounds(bar.right - 262f, bar.y - 252f, 249f, 246f)
+        val menu = LayoutBounds(bar.right - 284f, bar.y - 281f, 271f, 275f)
         qualityMenu = menu
         ui.ctx.drawShape(menu, ShapeStyle(Color.fromHex("#242830"), 14f, 1f, Color(1f, 1f, 1f, 0.22f)))
         ui.text(I18n.text("Playback quality"), menu.x + 14f, menu.y + 13f, 16f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
@@ -269,8 +269,17 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             else -> I18n.text("No active NetEase stream")
         }
         ui.text(ui.trim(now, menu.width - 28f, 12f), menu.x + 14f, menu.y + 38f, 12f, Theme.TEXT_SECONDARY)
+        val output = MusicPlayer.outputInfo
+        val details = if (output != null) {
+            val depth = output.sourceBits?.let { "$it → ${output.bits}" } ?: output.bits.toString()
+            val backend = I18n.text(if (output.javaSound) "Java Sound" else "Game audio (OpenAL)")
+            I18n.format("Output · %s-bit · %d Hz · %s", depth, output.rate, backend)
+        } else I18n.text("Audio output inactive")
+        ui.text(ui.trim(details, menu.width - 28f, 10.5f), menu.x + 14f, menu.y + 54f, 10.5f, Theme.TEXT_SECONDARY)
+        val requested = I18n.format("Requested · %s", I18n.text(preferred.label))
+        ui.text(requested, menu.x + 14f, menu.y + 68f, 10.5f, Theme.TEXT_SECONDARY)
         for ((i, tier) in NeteaseQuality.values().reversed().withIndex()) {
-            val row = LayoutBounds(menu.x + 8f, menu.y + 57f + i * 29f, menu.width - 16f, 27f)
+            val row = LayoutBounds(menu.x + 8f, menu.y + 86f + i * 29f, menu.width - 16f, 27f)
             val selected = tier == preferred
             if (selected || ui.hover(row)) ui.card(row, if (selected) RED.copy(a = 0.16f) else Theme.TRACK, 6f)
             ui.text(I18n.text(tier.label), row.x + 10f, row.y + 6f, 14f,

@@ -173,7 +173,7 @@ class TextFlash {
      * @param pos   歌曲内时间（已加偏移）
      * @param beat  鼓点冲击强度 0..1（只有内置播放器有）
      */
-    fun draw(lyrics: Lyrics?, pos: Long, beat: Float, sizeMul: Float) {
+    fun draw(lyrics: Lyrics?, pos: Long, beat: Float, sizeMul: Float, maxLines: Int) {
         val now = System.nanoTime()
         val dt = if (lastNanos == 0L) 16f else ((now - lastNanos) / 1e6f).coerceIn(0f, 50f)
         lastNanos = now
@@ -193,6 +193,11 @@ class TextFlash {
         } else if (current != null) {
             current?.let { it.fadeStartNanos = now; fading += it }
             current = null
+        }
+        if (maxLines > 0) {
+            val allowed = maxLines - if (current != null) 1 else 0
+            val excess = fading.size - allowed
+            if (excess > 0) fading.subList(0, excess).clear()
         }
         if (current == null && fading.isEmpty()) return
 
