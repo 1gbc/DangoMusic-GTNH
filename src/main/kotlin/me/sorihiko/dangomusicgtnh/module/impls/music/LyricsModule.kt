@@ -264,6 +264,7 @@ class LyricsModule : Module() {
         var scrollIn = 0f
         var scrollStartNanos = 0L
         var scrollOut = 0f
+        var lastWiggleFrame: Long? = null
         var previousStackLift = 0f
         var previousTail: LyricLine? = null
         /** Stay on screen 往回拉时的角速度（度 / 秒），用弹簧算，起步和停下都是平滑的 */
@@ -1204,7 +1205,9 @@ class LyricsModule : Module() {
         val frame = frameNanos / 1_000_000L * wiggleFps.value.coerceAtLeast(1) / 1000L
 
         fun drawRow(f: Floating, alpha: Float, preview: Boolean, settled: Boolean) {
-            val wiggleFrame = frame.takeIf { f === active && !preview }
+            if (f === active) f.lastWiggleFrame = frame
+            // Freeze the last glyph positions when a row leaves, so it slides without snapping.
+            val wiggleFrame = if (preview) null else f.lastWiggleFrame
             if (f.instrumental) {
                 drawKtvLines(f.lines, 0f, alpha, -halfMain(f), wiggleFrame = wiggleFrame)
             } else if (ktvMode.get()) {
@@ -1336,7 +1339,8 @@ class LyricsModule : Module() {
 
     private fun scrollProgress(age: Long): Float {
         val t = (age.toFloat() / SCROLL_NANOS).coerceIn(0f, 1f)
-        return t * t * (3f - 2f * t)
+        // Start moving immediately at the lyric boundary and slow down at the end.
+        return t * (2f - t)
     }
 
     /**
