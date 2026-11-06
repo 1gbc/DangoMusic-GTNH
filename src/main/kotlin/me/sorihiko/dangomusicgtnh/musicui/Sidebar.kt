@@ -198,7 +198,8 @@ internal class Sidebar(private val screen: MusicScreen) {
         val list = playlists.filterNot { it.id == CloudDrives.id(MusicSources.selected) }
         scroll = scroll.coerceIn(0, max(0, list.size - rows))
         scrollPos = ui.easeScroll(scrollPos, scroll, rows * 3)
-        val firstOwned = list.indexOfFirst { it.owned }
+        val firstOwned = list.indexOfFirst { it.owned && it.likedPlaylist }
+            .takeIf { it >= 0 } ?: list.indexOfFirst { it.owned }
         val first = kotlin.math.floor(scrollPos).toInt()
         val frac = scrollPos - first
         // 音源菜单打开时，歌单只画到菜单上沿：文字是最后统一画的，不让出来会透过菜单显示

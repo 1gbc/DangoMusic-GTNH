@@ -115,13 +115,16 @@ class SongCardModule : Module() {
             dragging = false
         }
 
+        val card = LayoutBounds(x, y + (1f - appear) * 10f, w, h)
+        if (e.overlapsPlayerList(card, uiScale)) return
+
         val ctx = context ?: DangoClient.gfx.newCanvas().also { context = it }
         ctx.begin(true, mx.toInt(), my.toInt())
         try {
             ctx.pushScale(uiScale, uiScale, 1f)
             ctx.pushOpacity(appear)
             mt.clear()
-            drawCard(ctx, LayoutBounds(x, y + (1f - appear) * 10f, w, h), chatOpen)
+            drawCard(ctx, card, chatOpen)
             ctx.popOpacity()
             ctx.popTransform()
             mt.flush(uiScale)

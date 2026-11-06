@@ -1,5 +1,6 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
+import me.sorihiko.dangomusicgtnh.musicui.Library
 import me.sorihiko.dangomusicgtnh.client.ClientMusic
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
@@ -119,6 +120,9 @@ class NeteaseMusicModule : Module() {
     @ModuleValue("Previous", "Hotkey for the previous song")
     private val keyPrev = IntValue(-100, 255, 0)
 
+    @ModuleValue("Stop playback", "Hotkey to stop playback")
+    private val keyStop = IntValue(-100, 255, 0)
+
     @ModuleValue("Next", "Hotkey for the next song")
     private val keyNext = IntValue(-100, 255, 0)
 
@@ -133,6 +137,9 @@ class NeteaseMusicModule : Module() {
 
     @ModuleValue("Volume normalization", "Keep songs at a similar loudness")
     private val normalize = BooleanValue(true)
+
+    @ModuleValue("Playback fades", "Brief fades when switching, pausing or resuming songs")
+    private val playbackFades = BooleanValue(true)
 
     @ModuleValue("Environment audio", "Echo follows the room you are in (size and materials), muffled underwater")
     private val envAudio = BooleanValue(true)
@@ -152,13 +159,22 @@ class NeteaseMusicModule : Module() {
             PlayerKeyBinding(PlayerAction.OPEN, openKey), PlayerKeyBinding(PlayerAction.PAUSE, keyPause),
             PlayerKeyBinding(PlayerAction.PREVIOUS, keyPrev), PlayerKeyBinding(PlayerAction.NEXT, keyNext),
             PlayerKeyBinding(PlayerAction.VOLUME_UP, keyVolUp), PlayerKeyBinding(PlayerAction.VOLUME_DOWN, keyVolDown),
-            PlayerKeyBinding(PlayerAction.LYRICS, keyLyrics),
-        )
+            PlayerKeyBinding(PlayerAction.LYRICS, keyLyrics), PlayerKeyBinding(PlayerAction.STOP, keyStop),
+        ).associateBy { it.action }
     }
 
     fun resetKeyBinding(value: IntValue) {
-        val binding = keyBindings.firstOrNull { it.value === value } ?: return
-        value.setValue(binding.action.defaultKey)
+        val binding = keyBindings.values.firstOrNull { it.value === value } ?: return
+        binding.rebind(binding.action.defaultKey)
+    }
+
+    fun rebindKey(value: IntValue, keyCode: Int) {
+        keyBindings.values.firstOrNull { it.value === value }?.rebind(keyCode)
+    }
+
+    fun keyDisplayName(value: IntValue): String? {
+        val binding = keyBindings.values.firstOrNull { it.value === value } ?: return null
+        return DangoMusic.instance.platform.playerKeyDisplayName(binding.action)
     }
 
     private var wasDown = false
@@ -166,16 +182,17 @@ class NeteaseMusicModule : Module() {
     /** 界面用打开键关闭时，消费这次按下，防止同一 tick 又从游戏里打开。 */
     fun consumeOpenKey() { wasDown = true }
     /** 每个快捷键上一刻是否按着（只在按下的瞬间触发一次） */
-    private val hotkeyDown = HashMap<IntValue, Boolean>()
+    private val hotkeyDown = HashMap<PlayerAction, Boolean>()
 
-    private val hotkeys: List<Pair<IntValue, () -> Unit>> by lazy {
+    private val hotkeys: List<Pair<PlayerAction, () -> Unit>> by lazy {
         listOf(
-            keyPause to { ClientMusic.control { MusicPlayer.togglePause() } },
-            keyPrev to { ClientMusic.control { MusicPlayer.prev() } },
-            keyNext to { ClientMusic.control { MusicPlayer.next() } },
-            keyVolUp to { changeVolume(0.05f) },
-            keyVolDown to { changeVolume(-0.05f) },
-            keyLyrics to { lyrics()?.toggleLyrics() },
+            PlayerAction.STOP to { Library.stopPlayback() },
+            PlayerAction.PAUSE to { ClientMusic.control { MusicPlayer.togglePause() } },
+            PlayerAction.PREVIOUS to { ClientMusic.control { MusicPlayer.prev() } },
+            PlayerAction.NEXT to { ClientMusic.control { MusicPlayer.next() } },
+            PlayerAction.VOLUME_UP to { changeVolume(0.05f) },
+            PlayerAction.VOLUME_DOWN to { changeVolume(-0.05f) },
+            PlayerAction.LYRICS to { lyrics()?.toggleLyrics() },
         )
     }
 
@@ -197,23 +214,24 @@ class NeteaseMusicModule : Module() {
         MusicPlayer.volume = volume.value
     }
 
-    fun toggleShuffle() {
-        shuffle.toggle()
-        MusicPlayer.shuffle = shuffle.get()
-    }
-
-    fun toggleRepeatOne() {
-        repeatOne.toggle()
-        MusicPlayer.repeatOne = repeatOne.get()
+    fun selectPlaybackMode(mode: MusicPlayer.Mode) {
+        shuffle.set(mode == MusicPlayer.Mode.SHUFFLE)
+        repeatOne.set(mode == MusicPlayer.Mode.REPEAT_ONE)
+        ClientMusic.control { MusicPlayer.selectMode(mode) }
     }
 
     /** 播放器界面里按键时调用：是某个快捷键就执行并返回 true */
     fun handleHotkey(keyCode: Int): Boolean {
-        if (allowedPlayerKey(keyCode) == Keys.NONE) return false
-        val hit = hotkeys.firstOrNull { it.first.value == keyCode } ?: return false
+        val hit = hotkeys.firstOrNull { matchesKey(it.first, keyCode) } ?: return false
         hit.second()
         return true
     }
+
+    fun matchesOpenKey(keyCode: Int) = matchesKey(PlayerAction.OPEN, keyCode)
+
+    private fun matchesKey(action: PlayerAction, keyCode: Int): Boolean =
+        allowedPlayerKey(keyCode) != Keys.NONE && keyBindings.getValue(action).value.value == keyCode &&
+            DangoMusic.instance.platform.playerKeyModifierActive(action)
 
     internal fun lyrics(): LyricsModule? = try {
         DangoMusic.instance.moduleManager.get(LyricsModule::class.java)
@@ -314,7 +332,7 @@ class NeteaseMusicModule : Module() {
         // 即使播放器被关闭，也要初始化并保存界面语言。
         applyLanguage()
         MusicSources.selected = MusicSource.values()[musicSource.value]
-        DangoMusic.instance.platform.syncKeyBindings(keyBindings)
+        DangoMusic.instance.platform.syncKeyBindings(keyBindings.values)
         if (!enabled) return
         // 歌词模块一直开着（显示与否由 3D lyrics 控制）；等配置读回之后再检查
         if (++tickCount > 5) lyrics()?.let { if (!it.enabled) it.enabled = true }
@@ -326,6 +344,7 @@ class NeteaseMusicModule : Module() {
         MusicPlayer.repeatOne = repeatOne.get()
 
         MusicPlayer.normalize = normalize.get()
+        MusicPlayer.playbackFades = playbackFades.get()
 
         // 环境音效：设置和玩家周围的环境交给解码线程
         EnvironmentAudio.enabled = envAudio.get()
@@ -339,14 +358,15 @@ class NeteaseMusicModule : Module() {
         val platform = DangoMusic.instance.platform
         val inGame = platform.inGame
         val down = try { platform.isKeyDown(openKey.value) } catch (_: Exception) { false }
-        val open = down && !wasDown && (inGame || platform.inMainMenu)
+        val open = down && !wasDown && (inGame || platform.inMainMenu) &&
+            platform.playerKeyModifierActive(PlayerAction.OPEN)
         wasDown = down
         if (open) platform.openMusicScreen()
 
         for ((key, action) in hotkeys) {
-            val code = key.value
+            val code = keyBindings.getValue(key).value.value
             val now = code != Keys.NONE && try { platform.isKeyDown(code) } catch (_: Exception) { false }
-            if (now && hotkeyDown[key] != true && inGame) action()
+            if (now && hotkeyDown[key] != true && inGame && platform.playerKeyModifierActive(key)) action()
             hotkeyDown[key] = now
         }
     }

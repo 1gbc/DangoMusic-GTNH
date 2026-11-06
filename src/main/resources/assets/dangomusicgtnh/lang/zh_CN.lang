@@ -1,5 +1,4 @@
 key.categories.dangomusicgtnh=DangoMusic GTNH Edition
-dangomusicgtnh.menu=DangoMusic
 dangomusicgtnh.title=DangoMusic GTNH Edition
 
 key.dangomusicgtnh.open_player=打开 / 关闭播放器
@@ -9,3 +8,4 @@ key.dangomusicgtnh.next=下一首
 key.dangomusicgtnh.volume_up=增大音量
 key.dangomusicgtnh.volume_down=减小音量
 key.dangomusicgtnh.toggle_lyrics=显示 / 隐藏歌词
+key.dangomusicgtnh.stop_playback=停止播放

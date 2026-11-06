@@ -567,7 +567,7 @@ class MusicScreen(
         if (!lyricsOpen && mouseButton == 0 && settings.resetKeyAt(mx, my)) return
         if (!lyricsOpen && settings.bindMouse(mouseButton)) return
         val mouseKey = Keys.mouse(mouseButton)
-        if (mouseKey == module.openKey.value) {
+        if (module.matchesOpenKey(mouseKey)) {
             if (!openKeyHeld) {
                 openKeyHeld = true
                 module.consumeOpenKey()
@@ -645,7 +645,7 @@ class MusicScreen(
     /** 按键：[keyCode] 是 [Keys] 键码 */
     fun keyTyped(typedChar: Char, keyCode: Int) {
         if (closingAt != 0L || closed) {
-            if (keyCode == module.openKey.value) module.consumeOpenKey()
+            if (module.matchesOpenKey(keyCode)) module.consumeOpenKey()
             return
         }
         if (login.visible) {
@@ -659,7 +659,7 @@ class MusicScreen(
             if (sidebar.keyTyped(typedChar, keyCode)) return
             if (tracks.filterKeyTyped(typedChar, keyCode)) return
         }
-        if (keyCode != Keys.NONE && keyCode == module.openKey.value) {
+        if (module.matchesOpenKey(keyCode)) {
             if (!openKeyHeld) {
                 openKeyHeld = true
                 module.consumeOpenKey()
@@ -668,7 +668,7 @@ class MusicScreen(
             return
         }
         // 自己设的快捷键在播放器里也能用
-        if (keyCode != Keys.ESCAPE && keyCode != module.openKey.value && module.handleHotkey(keyCode)) return
+        if (keyCode != Keys.ESCAPE && module.handleHotkey(keyCode)) return
         if (!lyricsOpen && tracks.shortcutBefore(keyCode)) return
         when {
             // 其它页面 Ctrl+F 是全网搜索

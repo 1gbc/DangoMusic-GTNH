@@ -455,3 +455,22 @@ Merge cover progress into island	融合封面进度条
 Show cover and progress together in the island	将封面、曲目信息和进度条显示在灵动岛中
 Island horizontal position	灵动岛在屏幕中的水平位置
 Island vertical position	灵动岛在屏幕中的垂直位置
+Playback fades	播放淡入淡出
+Brief fades when switching, pausing or resuming songs	切歌、暂停或继续播放时使用短暂的淡入淡出
+Heart mode	心动模式
+Loading Heart mode…	正在加载心动模式…
+Sign in to NetEase to use Heart mode	登录网易云后即可使用心动模式
+Like a song to start Heart mode	先在网易云收藏至少一首喜欢的歌
+Could not load Heart mode. Please retry.	心动模式加载失败，请重试
+Sequential playback	顺序播放
+Shuffle playback	随机播放
+Show phonetic lyrics	显示音译
+Show phonetic lyrics under the original when available	歌曲有音译时显示在原文下方
+Stop playback	停止播放
+Hotkey to stop playback	停止播放的快捷键
+KTV mode	KTV 模式
+Show the full line and highlight it as the song plays	先显示整行歌词，随演唱进度覆盖高亮
+KTV base color	KTV 未唱文字颜色
+KTV sung color	KTV 已唱文字颜色
+KTV base shadow	KTV 未唱文字阴影
+KTV sung shadow	KTV 已唱文字阴影

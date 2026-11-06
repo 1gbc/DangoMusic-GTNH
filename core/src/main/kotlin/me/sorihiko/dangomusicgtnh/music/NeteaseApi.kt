@@ -15,13 +15,14 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 
-class NeteasePlaylist(
+class NeteasePlaylist @JvmOverloads constructor(
     val id: Long,
     val name: String,
     val trackCount: Int,
     val coverUrl: String,
     /** 自己创建的（含"我喜欢的音乐"）还是收藏别人的 */
     val owned: Boolean,
+    val likedPlaylist: Boolean = false,
 )
 
 /**
@@ -128,6 +129,7 @@ object NeteaseApi {
                 trackCount = p.get("trackCount")?.asInt ?: 0,
                 coverUrl = p.get("coverImgUrl")?.asString ?: "",
                 owned = creator?.get("userId")?.asLong == uid,
+                likedPlaylist = p.int("specialType") == 5,
             )
         }
     }
@@ -290,6 +292,43 @@ object NeteaseApi {
     fun personalFm(): List<NeteaseTrack> {
         val o = account("https://music.163.com/weapi/v1/radio/get", JsonObject()) ?: return emptyList()
         return tracksOf(o.getAsJsonArray("data"))
+    }
+
+    /** null 表示请求失败，空列表表示「我喜欢的音乐」里没有可用种子。 */
+    fun heartMix(playlist: NeteasePlaylist, current: NeteaseTrack?): List<NeteaseTrack>? {
+        if (!playlist.owned || !playlist.likedPlaylist) return null
+        if (playlist.trackCount == 0) return emptyList()
+        val detail = getJson("https://music.163.com/api/v6/playlist/detail?id=${playlist.id}&n=1&s=0")
+        val liked = detail?.get("playlist") as? JsonObject ?: return null
+        val currentLiked = current?.takeIf { track ->
+            track.source == MusicSource.NETEASE && !track.cloud &&
+                liked.getAsJsonArray("trackIds")?.any {
+                    (it as? JsonObject)?.get("id")?.asLong == track.id
+                } == true
+        }
+        val first = tracksOf(liked.getAsJsonArray("tracks")).firstOrNull()
+        val seed = currentLiked ?: first ?: return emptyList()
+        val result = account("https://music.163.com/weapi/playmode/intelligence/list", JsonObject().apply {
+            addProperty("songId", seed.id)
+            addProperty("playlistId", playlist.id)
+            addProperty("startMusicId", seed.id)
+            addProperty("type", "fromPlayOne")
+            addProperty("count", 1)
+        }) ?: return null
+        val recommendations = parseHeartRecommendations(result, seed.id)
+        // The seed drives recommendations. Start with a recommendation other than the playlist's first track.
+        val start = recommendations.indexOfFirst { it.id != first?.id }
+        return if (start < 0) null else recommendations.drop(start) + recommendations.take(start)
+    }
+
+    internal fun parseHeartRecommendations(response: JsonObject, seedId: Long): List<NeteaseTrack> {
+        val entries = response.get("data") as? com.google.gson.JsonArray ?: return emptyList()
+        val seen = hashSetOf(seedId)
+        return entries.mapNotNull { entry ->
+            val song = (entry as? JsonObject)?.get("songInfo") as? JsonObject ?: return@mapNotNull null
+            val track = runCatching { NeteaseTrack.parse(song) }.getOrNull() ?: return@mapNotNull null
+            track.takeIf { it.id > 0 && seen.add(it.id) }
+        }
     }
 
     /** 首页的两张卡片（没登录时没有） */

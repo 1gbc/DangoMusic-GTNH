@@ -326,7 +326,7 @@ internal class ArtistPage(private val screen: MusicScreen) {
         ui.ctx.drawShape(sb, ShapeStyle(if (ui.hover(sb)) Color(1f, 1f, 1f, 0.12f) else Color(1f, 1f, 1f, 0.07f), 16f, 1f, Color(1f, 1f, 1f, 0.09f)))
         ui.icon("⇄", sb.x + 20f, sb.y + 16f, 12f, Theme.TEXT_PRIMARY)
         ui.text(shuffle, sb.x + 32f, sb.y + 16f - 12f * 0.39f - 0.5f, 12f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-        ui.hits += sb to { ClientMusic.control { MusicPlayer.playQueue(songs, songs.indices.random(), null) } }
+        ui.hits += sb to { ClientMusic.control { MusicPlayer.playShuffled(songs) } }
     }
 
     // ---------------------------------------------------------------- 标签栏

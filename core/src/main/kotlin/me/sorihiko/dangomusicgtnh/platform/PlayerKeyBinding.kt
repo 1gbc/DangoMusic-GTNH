@@ -7,12 +7,25 @@ import java.nio.file.Path
 
 enum class PlayerAction(val id: String, val defaultKey: Int = Keys.NONE) {
     OPEN("open_player", Keys.M), PAUSE("play_pause"), PREVIOUS("previous"), NEXT("next"),
-    VOLUME_UP("volume_up"), VOLUME_DOWN("volume_down"), LYRICS("toggle_lyrics");
+    VOLUME_UP("volume_up"), VOLUME_DOWN("volume_down"), LYRICS("toggle_lyrics"), STOP("stop_playback");
 
     val translationKey: String get() = "key.dangomusicgtnh.$id"
 }
 
-class PlayerKeyBinding(val action: PlayerAction, val value: IntValue)
+class PlayerKeyBinding(val action: PlayerAction, val value: IntValue) {
+    internal var rebound = false
+        private set
+
+    /** 模组界面录入的是单键，即使键码相同也要清掉原版组合键的修饰键。 */
+    fun rebind(key: Int) {
+        value.setValue(allowedPlayerKey(key))
+        rebound = true
+    }
+
+    internal fun markSynced() { rebound = false }
+}
+
+data class NativePlayerKey(val code: Int, val modifier: String? = null)
 
 /**
  * 鼠标左键 / 右键不能当快捷键：绑上以后界面里每次点击都被当成快捷键吃掉，什么都点不了。
@@ -23,17 +36,17 @@ fun allowedPlayerKey(key: Int): Int = if (key == Keys.mouse(0) || key == Keys.mo
 /** 对接实际原版按键；首次优先采用原版已保存值，没有时迁移模组已有绑定。 */
 class KeyBindingLink(
     private val setting: PlayerKeyBinding,
-    private val readNative: () -> Int,
-    private val writeNative: (Int) -> Unit,
-    savedNative: Int?,
+    private val readNative: () -> NativePlayerKey,
+    private val writeNative: (NativePlayerKey) -> Unit,
+    savedNative: NativePlayerKey?,
 ) {
-    private var previous: Int
+    private var previous: NativePlayerKey
 
     init {
-        if (savedNative != null) setting.value.setValue(savedNative)
-        setting.value.setValue(allowedPlayerKey(setting.value.value))
-        previous = setting.value.value
-        writeNative(previous)
+        val initial = if (setting.rebound) null else savedNative
+        previous = acceptNative(initial ?: NativePlayerKey(setting.value.value))
+        setting.markSynced()
+        if (previous != readNative()) writeNative(previous)
     }
 
     /** 有修改时返回 true，调用方批量刷新原版映射并保存。 */
@@ -42,19 +55,26 @@ class KeyBindingLink(
         if (configured != setting.value.value) setting.value.setValue(configured)
         val native = readNative()
         return when {
-            configured != previous -> {
-                writeNative(configured)
-                previous = configured
-                true
+            setting.rebound || configured != previous.code -> {
+                val target = NativePlayerKey(configured)
+                if (native != target) writeNative(target)
+                previous = target
+                setting.markSynced()
+                native != target
             }
             native != previous -> {
-                setting.value.setValue(allowedPlayerKey(native))
-                previous = setting.value.value
+                previous = acceptNative(native)
                 if (previous != native) writeNative(previous)
                 true
             }
             else -> false
         }
+    }
+
+    private fun acceptNative(native: NativePlayerKey): NativePlayerKey {
+        setting.value.setValue(allowedPlayerKey(native.code))
+        val code = setting.value.value
+        return if (code == native.code && code != Keys.NONE) native else NativePlayerKey(code)
     }
 }
 

@@ -233,6 +233,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 "glowNightOnly" to "glow", "glowStrength" to "glow", "glowRadius" to "glow",
                 "wiggleFps" to "wiggle", "wiggleAmount" to "wiggle",
                 "flashSize" to "textFlash",
+                "ktvBaseColor" to "ktvMode", "ktvSungColor" to "ktvMode",
+                "ktvBaseShadow" to "ktvMode", "ktvSungShadow" to "ktvMode",
                 "danceAuto" to "dance", "danceTap" to "dance", "danceSpin" to "dance", "danceAmount" to "dance", "danceOffset" to "dance",
                 "translationColor" to "translation", "translationAnimation" to "translation", "translationWiggle" to "translation",
             ),
@@ -245,8 +247,9 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         ly.left.remove("smoothFont")   // 合进了"歌词字体"那一行
         val lyrics = mutableListOf(
             Group("Appearance", "Font and colors", ly.m, false, ly.take(listOf("worldMode", "scale", "lyricFont", "lyricColors", "textColor", "rainbowSpeed", "splitLines"))),
+            Group("KTV mode", "Font and colors", ly.m, false, ly.take(listOf("ktvMode", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow"))),
             Group("Position", "Where the lyrics float", ly.m, false, ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "spread"))),
-            Group("Translation", "Under each line", ly.m, false, ly.take(listOf("translation", "translationColor", "translationAnimation", "translationWiggle"))),
+            Group("Translation", "Under each line", ly.m, false, ly.take(listOf("translation", "romanization", "translationColor", "translationAnimation", "translationWiggle"))),
             Group("Glow", "Deep Glow", ly.m, false, ly.take(listOf("glow", "glowNightOnly", "glowStrength", "glowRadius"))),
             Group("Motion", "Animation", ly.m, false, ly.take(listOf("wiggle", "wiggleFps", "wiggleAmount", "textFlash", "wordPop", "flashSize"))),
             Group("Dance", "Mobs on the beat", ly.m, false, ly.take(listOf("dance", "danceAuto", "danceTap", "danceSpin", "danceAmount", "danceOffset"))),
@@ -277,7 +280,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 island.take(listOf("mergeCoverProgress", "posX", "posY")) + island.take()),
             Group("Cover progress HUD", "Separate position when not merged", card.m, true,
                 card.take(listOf("posX", "posY")) + card.take()),
-            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "normalize", "audioOutput", "language"))),
+            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "normalize", "playbackFades", "audioOutput", "language"))),
             Group("Environment audio", "Sound around you", player.m, false, environment),
             Group("Hotkeys", "Click, then press a key · Backspace clears", player.m, false, player.take()),
             nowPlaying,
@@ -758,7 +761,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val name = when {
             binding -> I18n.text("Press a key")
             v.value == 0 -> I18n.text("None")
-            else -> Keys.name(v.value) ?: "#${v.value}"
+            else -> module.keyDisplayName(v) ?: Keys.name(v.value) ?: "#${v.value}"
         }
         val s = ui.trim(name, kb.width - 10f, 11f, Theme.FONT_SEMIBOLD)
         ui.text(s, kb.x + (kb.width - ui.width(s, 11f, Theme.FONT_SEMIBOLD)) / 2f, cy - 11f * 0.39f - 0.5f, 11f,
@@ -834,8 +837,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val v = bindingKey ?: return false
         when {
             keyCode == Keys.ESCAPE -> {}
-            (keyCode == Keys.BACK || keyCode == Keys.DELETE) && v.minRange <= 0 -> v.setValue(0)
-            keyCode != 0 -> v.setValue(keyCode)
+            (keyCode == Keys.BACK || keyCode == Keys.DELETE) && v.minRange <= 0 -> module.rebindKey(v, Keys.NONE)
+            keyCode != Keys.NONE -> module.rebindKey(v, keyCode)
         }
         bindingKey = null
         return true
@@ -845,7 +848,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val value = bindingKey ?: return false
         // 左键 / 右键不能绑（绑上以后界面点不了），照常当点击处理
         if (allowedPlayerKey(Keys.mouse(button)) == Keys.NONE) return false
-        value.setValue(Keys.mouse(button))
+        module.rebindKey(value, Keys.mouse(button))
         bindingKey = null
         return true
     }

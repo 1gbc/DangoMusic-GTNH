@@ -1,7 +1,9 @@
 package me.sorihiko.dangomusicgtnh.musicui
 
+import me.sorihiko.dangomusicgtnh.client.ClientMusic
 import me.sorihiko.dangomusicgtnh.music.TrackLoadProgress
 import me.sorihiko.dangomusicgtnh.gfx.GuiCanvas
+import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.music.NeteaseApi
 import me.sorihiko.dangomusicgtnh.music.NeteasePlaylist
 import me.sorihiko.dangomusicgtnh.music.NeteaseTrack
@@ -224,6 +226,45 @@ internal object Library {
     @Volatile private var likedCheckedAt = 0L
     @Volatile var liking = false
         private set
+    @Volatile var heartLoading = false
+        private set
+    private var heartRequest = 0
+
+    @Synchronized fun stopPlayback() {
+        heartRequest++
+        heartLoading = false
+        ClientMusic.control { MusicPlayer.stop() }
+    }
+
+    fun canPlayHeartMode(playlist: NeteasePlaylist): Boolean =
+        MusicSources.selected == MusicSource.NETEASE && playlist.owned && playlist.likedPlaylist
+
+    @Synchronized fun playHeartMode(playlist: NeteasePlaylist) {
+        if (heartLoading || !canPlayHeartMode(playlist)) return
+        if (!NeteaseApi.loggedIn) {
+            showTemporaryStatus(I18n.text("Sign in to NetEase to use Heart mode"), 4_000)
+            return
+        }
+        val serial = ++heartRequest
+        val sourceGeneration = generation
+        val originalQueue = MusicPlayer.queue
+        val current = MusicPlayer.current
+        heartLoading = true
+        worker.execute {
+            val mix = try { NeteaseApi.heartMix(playlist, current) } catch (_: Exception) { null }
+            synchronized(this) {
+                if (serial != heartRequest) return@synchronized
+                heartLoading = false
+                if (sourceGeneration != generation || !NeteaseApi.loggedIn ||
+                    MusicPlayer.queue !== originalQueue || MusicPlayer.current !== current) return@synchronized
+                when {
+                    mix == null -> showTemporaryStatus(I18n.text("Could not load Heart mode. Please retry."), 4_000)
+                    mix.isEmpty() -> showTemporaryStatus(I18n.text("Like a song to start Heart mode"), 4_000)
+                    else -> MusicPlayer.startHeartMode(mix, originalQueue, current)
+                }
+            }
+        }
+    }
 
     fun ensureLiked() {
         val now = System.currentTimeMillis()

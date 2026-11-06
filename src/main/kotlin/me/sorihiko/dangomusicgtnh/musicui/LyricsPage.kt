@@ -2,6 +2,7 @@ package me.sorihiko.dangomusicgtnh.musicui
 
 import me.sorihiko.dangomusicgtnh.client.ClientMusic
 import me.sorihiko.dangomusicgtnh.i18n.I18n
+import me.sorihiko.dangomusicgtnh.module.impls.music.LyricsModule
 import me.sorihiko.dangomusicgtnh.lyrics.LyricLine
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.music.CoverCache
@@ -109,7 +110,7 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         } else {
             val target = manualPosition?.coerceAtMost(rows.last().center) ?: (rows.getOrNull(active)?.center ?: 0f)
             scrollPosition = ui.approach(scrollPosition, target, 95f)
-            drawLyrics(active, size, popup)
+            drawLyrics(active, size, popup, lyricModule)
         }
         drawShortcuts(railX, railY, song)
         if (popup != null) drawMenu(popup)
@@ -131,16 +132,13 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         var top = 0f
         rows = lines.map { line ->
             val original = ui.wrap2(line.text, width, size, Theme.FONT_SEMIBOLD)
-            val annotations = listOfNotNull(
-                line.romanization?.takeIf { romanize },
-                line.translation?.takeIf { translate },
-            ).flatMap { ui.wrap2(it, width, size * 0.74f) }
+            val annotations = line.annotations(romanize, translate).flatMap { ui.wrap2(it, width, size * 0.74f) }
             val height = original.size * size * 1.32f + annotations.size * size + 17f
             Row(top, original, annotations, height).also { top += height }
         }
     }
 
-    private fun drawLyrics(active: Int, size: Float, popup: LayoutBounds?) {
+    private fun drawLyrics(active: Int, size: Float, popup: LayoutBounds?, lyricModule: LyricsModule?) {
         val a = lyricArea
         val baseline = a.y + a.height * 0.46f - scrollPosition
         ui.beginClip(a)
@@ -152,8 +150,40 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             val center = y + row.height / 2f
             val edge = minOf(center - a.y, a.bottom - center).div(48f).coerceIn(0.22f, 1f)
             val color = white.copy(a = (if (i == active) 1f else 0.53f) * edge)
+            val ktv = lyricModule?.takeIf { it.ktvMode.get() }
+            var sung = if (ktv != null && i == active) {
+                val line = lines[i]
+                val next = lines.getOrNull(i + 1)?.timeMs ?: MusicPlayer.durationMs.coerceAtLeast(line.timeMs + 3000L)
+                line.sungCharacters(MusicPlayer.positionMs, next)
+            } else 0f
             for (text in row.text) {
-                lyricText(text, y, size, color, Theme.FONT_SEMIBOLD, popup)
+                val font = Theme.FONT_SEMIBOLD
+                if (ktv == null) {
+                    lyricText(text, y, size, color, font, popup)
+                } else {
+                    if (ktv.ktvBaseShadow.get()) lyricText(text, y + 1f, size, Color(0f, 0f, 0f, color.a * 0.65f), font, popup)
+                    lyricText(text, y, size, Color.fromRGB(ktv.ktvBaseColor.value).copy(a = color.a), font, popup)
+                    if (sung > 0f) {
+                        var index = 0
+                        while (index < text.length && (text[index].isWhitespace() || sung >= 1f)) {
+                            if (!text[index].isWhitespace()) sung -= 1f
+                            index++
+                        }
+                        val prefix = ui.width(text.take(index), size, font)
+                        val width = if (index < text.length) {
+                            prefix + (ui.width(text.take(index + 1), size, font) - prefix) * sung
+                        } else prefix
+                        val top = maxOf(y - 2f, a.y)
+                        val bottom = minOf(y + size * 1.32f, a.bottom)
+                        if (width > 0f && bottom > top) {
+                            ui.beginClip(LayoutBounds(a.x, top, width.coerceAtMost(a.width), bottom - top))
+                            if (ktv.ktvSungShadow.get()) lyricText(text, y + 1f, size, Color(0f, 0f, 0f, color.a * 0.65f), font, popup)
+                            lyricText(text, y, size, Color.fromRGB(ktv.ktvSungColor.value).copy(a = color.a), font, popup)
+                            ui.beginClip(a)
+                        }
+                        if (index < text.length) sung = 0f
+                    }
+                }
                 y += size * 1.32f
             }
             for (text in row.annotations) {
@@ -229,10 +259,10 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         button(LayoutBounds(b.right - 84f, sizeY, 28f, 28f), "−", null, enabled = size > 14) { module.lyricsPageSize.setValue(size - 2) }
         button(LayoutBounds(b.right - 46f, sizeY, 28f, 28f), "+", null, enabled = size < 30) { module.lyricsPageSize.setValue(size + 2) }
         if (more) {
-            ui.text(I18n.text("Phonetic lyrics"), b.x + 14f, b.y + 78f, 13f, white)
-            ui.text(I18n.text("Lyric translation"), b.x + 14f, b.y + 109f, 13f, white)
-            ui.toggleSwitch(LayoutBounds(b.right - 53f, b.y + 74f, 38f, 19f), showRomanization, b) { module.lyricsPageRomanization.toggle() }
-            ui.toggleSwitch(LayoutBounds(b.right - 53f, b.y + 105f, 38f, 19f), showTranslation, b) { module.lyricsPageTranslation.toggle() }
+            ui.text(I18n.text("Show phonetic lyrics"), b.x + 14f, b.y + 109f, 13f, white)
+            ui.text(I18n.text("Lyric translation"), b.x + 14f, b.y + 78f, 13f, white)
+            ui.toggleSwitch(LayoutBounds(b.right - 53f, b.y + 105f, 38f, 19f), showRomanization, b) { module.lyricsPageRomanization.toggle() }
+            ui.toggleSwitch(LayoutBounds(b.right - 53f, b.y + 74f, 38f, 19f), showTranslation, b) { module.lyricsPageTranslation.toggle() }
             ui.pill(LayoutBounds(b.x + 14f, b.y + 138f, b.width - 28f, 28f), white.copy(a = 0.13f), I18n.text("Reset lyrics settings")) {
                 module.lyricsPageSize.setValue(22)
                 module.lyricsPageRomanization.set(false)

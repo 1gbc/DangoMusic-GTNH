@@ -1,7 +1,5 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
-import me.sorihiko.dangomusicgtnh.i18n.I18n
-
 import me.sorihiko.dangomusicgtnh.DangoClient
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
@@ -150,7 +148,7 @@ class DynamicIslandModule : Module() {
                 width(t.name, 14f, Theme.FONT_SEMIBOLD).coerceAtMost(260f),
                 width(t.artists.joinToString(" / "), 11f).coerceAtMost(260f),
             )
-            (76f + max(tw, 150f) + 44f) to 76f
+            (76f + max(tw, 150f) + 44f) to 68f
         }
         Kind.IDLE -> {
             val t = MusicPlayer.current
@@ -185,9 +183,9 @@ class DynamicIslandModule : Module() {
     // ---------------------------------------------------------------- 渲染
 
     @EventHandler
-    fun render(e: HudRenderEvent) = renderIsland()
+    fun render(e: HudRenderEvent) = renderIsland(e)
 
-    internal fun renderIsland() {
+    internal fun renderIsland(e: HudRenderEvent? = null) {
         if (!enabled) return
         val platform = DangoClient.platform
         if (platform.windowWidth <= 0 || platform.windowHeight <= 0) return
@@ -199,7 +197,10 @@ class DynamicIslandModule : Module() {
         val want = desired()
 
         // 内容切换：先淡出旧内容，再换成新内容淡入
-        if (shown != want) {
+        if (MusicPlayer.current == null && shown == Kind.SONG) {
+            shown = Kind.IDLE
+            contentAlpha = 1f
+        } else if (shown != want) {
             contentAlpha -= dt / 0.09f
             if (contentAlpha <= 0f) {
                 contentAlpha = 0f
@@ -219,14 +220,16 @@ class DynamicIslandModule : Module() {
         h += vh * dt
         if (w < 1f || h < 1f) return
 
+        val uiScale = min(platform.windowWidth / 1280f, platform.windowHeight / 800f).coerceAtLeast(0.5f)
+        val k = minOf(uiScale * scale.value, platform.windowWidth / w, platform.windowHeight / h)
+        val lw = platform.windowWidth / k
+        val lh = platform.windowHeight / k
+        val pill = LayoutBounds(posX.value * (lw - w).coerceAtLeast(0f), posY.value * (lh - h).coerceAtLeast(0f), w, h)
+        if (e?.overlapsPlayerList(pill, k) == true) return
+
         val ctx = context ?: DangoClient.gfx.newCanvas().also { context = it }
         ctx.begin(glass.get(), 0, 0)
         try {
-            val uiScale = min(platform.windowWidth / 1280f, platform.windowHeight / 800f).coerceAtLeast(0.5f)
-            val k = minOf(uiScale * scale.value, platform.windowWidth / w, platform.windowHeight / h)
-            val lw = platform.windowWidth / k
-            val lh = platform.windowHeight / k
-            val pill = LayoutBounds(posX.value * (lw - w).coerceAtLeast(0f), posY.value * (lh - h).coerceAtLeast(0f), w, h)
             val r = min(h / 2f, 22f)
 
             ctx.pushScale(k, k, 1f)
@@ -295,33 +298,25 @@ class DynamicIslandModule : Module() {
 
     private fun drawSong(ctx: GuiCanvas, b: LayoutBounds) {
         val t = MusicPlayer.current ?: return
-        val cover = LayoutBounds(b.x + 10f, b.y + 10f, 56f, 56f)
+        val cover = LayoutBounds(b.x + 10f, b.y + 10f, 48f, 48f)
         drawCover(ctx, cover, CoverCache.trackRounded(t) ?: CoverCache.track(t))
-        val playing = MusicPlayer.state == MusicPlayer.State.PLAYING
         val tx = cover.right + 10f
         val tw = b.right - 14f - tx
 
-        val label = when (MusicPlayer.state) {
-            MusicPlayer.State.PAUSED -> I18n.text("PAUSED")
-            MusicPlayer.State.LOADING -> I18n.text("LOADING")
-            else -> I18n.text("NOW PLAYING")
-        }
-        text(ctx, label, tx, b.y + 11f, 9f, if (playing) Theme.ACCENT else Theme.TEXT_TERTIARY, Theme.FONT_SEMIBOLD)
-        bars(ctx, b.right - 14f - 14f, b.y + 21f, playing, 10f)
-        text(ctx, trim(t.name, tw - 4f, 14f, Theme.FONT_SEMIBOLD), tx, b.y + 24f, 14f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-        text(ctx, trim(t.artists.joinToString(" / "), tw, 11f), tx, b.y + 42f, 11f, Theme.TEXT_SECONDARY)
+        text(ctx, trim(t.name, tw - 4f, 14f, Theme.FONT_SEMIBOLD), tx, b.y + 12f, 14f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        text(ctx, trim(t.artists.joinToString(" / "), tw, 11f), tx, b.y + 31f, 11f, Theme.TEXT_SECONDARY)
 
         val dur = MusicPlayer.durationMs
         val pos = MusicPlayer.positionMs.coerceIn(0L, dur.coerceAtLeast(0L))
         val left = fmtTime(pos)
         val right = if (dur > 0L) "-${fmtTime(dur - pos)}" else "--:--"
         val timeSize = 9f
-        val timeY = b.y + 57f
+        val timeY = b.y + 49f
         val timeW = width(right, timeSize)
         text(ctx, left, tx, timeY, timeSize, Theme.TEXT_SECONDARY)
         text(ctx, right, b.right - 14f - timeW, timeY, timeSize, Theme.TEXT_SECONDARY)
         val inset = width(left, timeSize) + 7f
-        val bar = LayoutBounds(tx + inset, b.y + 60f, (tw - inset - timeW - 7f).coerceAtLeast(0f), 3f)
+        val bar = LayoutBounds(tx + inset, b.y + 52f, (tw - inset - timeW - 7f).coerceAtLeast(0f), 3f)
         if (bar.width <= 0f) return
         ctx.drawShape(bar, ShapeStyle(Theme.TRACK, 1.5f))
         if (pos > 0L && dur > 0L) {

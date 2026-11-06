@@ -342,8 +342,15 @@ internal class TracksPage(private val screen: MusicScreen) {
             ui.text(label, pb.x + 30f, pb.y + 9f, 12f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
             ui.hits += pb to {
                 val continuation = radio()
-                val start = if (MusicPlayer.shuffle && continuation == null) tracks.indices.random() else 0
-                ClientMusic.control { MusicPlayer.playQueue(tracks, start, continuation) }
+                ClientMusic.control { MusicPlayer.playAll(tracks, continuation) }
+            }
+            val liked = state.opened?.takeIf {
+                state.page == Page.PLAYLIST && Library.canPlayHeartMode(it)
+            }
+            if (liked != null) {
+                val heartLabel = I18n.text(if (Library.heartLoading) "Loading Heart mode…" else "Heart mode")
+                val heart = LayoutBounds(pb.right + 8f, pb.y, ui.width(heartLabel, 12f) + 42f, pb.height)
+                ui.pill(heart, RED, heartLabel, "♡") { Library.playHeartMode(liked) }
             }
             if (headerH < 100f) headerH = 92f
         }

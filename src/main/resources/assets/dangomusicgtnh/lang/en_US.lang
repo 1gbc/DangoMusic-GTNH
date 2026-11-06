@@ -1,5 +1,4 @@
 key.categories.dangomusicgtnh=DangoMusic GTNH Edition
-dangomusicgtnh.menu=DangoMusic
 dangomusicgtnh.title=DangoMusic GTNH Edition
 
 key.dangomusicgtnh.open_player=Open / close player
@@ -9,3 +8,4 @@ key.dangomusicgtnh.next=Next track
 key.dangomusicgtnh.volume_up=Volume up
 key.dangomusicgtnh.volume_down=Volume down
 key.dangomusicgtnh.toggle_lyrics=Toggle lyrics
+key.dangomusicgtnh.stop_playback=Stop playback

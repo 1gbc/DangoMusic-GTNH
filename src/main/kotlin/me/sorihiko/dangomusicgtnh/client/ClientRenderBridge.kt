@@ -9,12 +9,14 @@ import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.TickEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
 import me.sorihiko.dangomusicgtnh.legacy.LegacyGl
+import net.minecraft.client.gui.ScaledResolution
 import net.minecraftforge.client.event.GuiScreenEvent
 import net.minecraftforge.client.event.RenderGameOverlayEvent
 import net.minecraftforge.client.event.RenderWorldLastEvent
 
 internal object ClientRenderBridge {
     private var graphicsAttempted = false
+    private var playerListResolution: ScaledResolution? = null
     var graphicsReady = false
         private set
 
@@ -43,8 +45,15 @@ internal object ClientRenderBridge {
 
     @SubscribeEvent
     fun overlay(event: RenderGameOverlayEvent.Post) {
-        if (graphicsReady && event.type == RenderGameOverlayEvent.ElementType.ALL) {
-            DangoMusic.callEvent(HudRenderEvent)
+        if (!graphicsReady) return
+        when (event.type) {
+            RenderGameOverlayEvent.ElementType.PLAYER_LIST -> playerListResolution = event.resolution
+            RenderGameOverlayEvent.ElementType.ALL -> {
+                val drawn = playerListResolution === event.resolution
+                playerListResolution = null
+                DangoMusic.callEvent(HudRenderEvent(if (drawn) PlayerListOverlay.bounds(event.resolution) else null))
+            }
+            else -> Unit
         }
     }
 

@@ -21,7 +21,30 @@ class LyricLine @JvmOverloads constructor(
     val words: List<LyricWord>? = null,
     val translation: String? = null,
     val romanization: String? = null,
-)
+) {
+    /** Sung non-whitespace characters, including the fractional part of the current character. */
+    fun sungCharacters(positionMs: Long, nextLineMs: Long): Float {
+        val length = text.count { !it.isWhitespace() }
+        if (length == 0 || positionMs < timeMs) return 0f
+        val timed = words.orEmpty()
+        if (timed.isEmpty()) {
+            return length * ((positionMs - timeMs).toFloat() / (nextLineMs - timeMs).coerceAtLeast(1L)).coerceIn(0f, 1f)
+        }
+        var sung = 0f
+        for (word in timed) {
+            val count = word.text.count { !it.isWhitespace() }
+            val progress = ((positionMs - word.startMs).toFloat() / word.durMs.coerceAtLeast(1L)).coerceIn(0f, 1f)
+            sung += count * progress
+            if (progress < 1f) break
+        }
+        return sung.coerceAtMost(length.toFloat())
+    }
+
+    fun annotations(showRomanization: Boolean, showTranslation: Boolean): List<String> = listOfNotNull(
+        romanization?.takeIf { showRomanization && it.isNotBlank() },
+        translation?.takeIf { showTranslation && it.isNotBlank() },
+    )
+}
 
 class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
     /** 去掉"纯音乐，请欣赏"这类提示（网易云给没歌词的歌塞的一句话） */

@@ -13,6 +13,7 @@ import me.sorihiko.dangomusicgtnh.music.NativeLogin
 import me.sorihiko.dangomusicgtnh.music.NeteaseLogin
 import me.sorihiko.dangomusicgtnh.platform.Platform
 import me.sorihiko.dangomusicgtnh.platform.ListenerEnvironment
+import me.sorihiko.dangomusicgtnh.platform.PlayerAction
 import me.sorihiko.dangomusicgtnh.platform.PlayerKeyBinding
 import me.sorihiko.dangomusicgtnh.platform.PlayerPose
 import net.minecraft.client.Minecraft
@@ -157,7 +158,9 @@ private class ClientPlatform(override val configDir: Path) : Platform {
         }
 
     override fun isMouseDown(button: Int) = Mouse.isButtonDown(button)
-    override fun syncKeyBindings(bindings: List<PlayerKeyBinding>) = LegacyKeyBindings.sync(bindings)
+    override fun syncKeyBindings(bindings: Collection<PlayerKeyBinding>) = LegacyKeyBindings.sync(bindings)
+    override fun playerKeyModifierActive(action: PlayerAction) = LegacyKeyBindings.modifierActive(action)
+    override fun playerKeyDisplayName(action: PlayerAction) = LegacyKeyBindings.displayName(action)
     override fun isKeyDown(key: Int): Boolean = when {
         key in -100..-1 -> Mouse.isButtonDown(key + 100)
         key in 1 until Keyboard.KEYBOARD_SIZE -> Keyboard.isKeyDown(key)

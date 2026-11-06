@@ -2,7 +2,6 @@ package me.sorihiko.dangomusicgtnh.music
 
 import me.sorihiko.dangomusicgtnh.DangoLogger
 
-import java.util.Random
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadPoolExecutor
@@ -42,6 +41,7 @@ object MusicPlayer {
     @Volatile var repeatOne = false
     /** 0..1 */
     @Volatile var volume = 0.2f
+    @Volatile var playbackFades = true
 
     /** 声音从哪里放：0 自动（安卓用游戏的 OpenAL，电脑用 Java Sound），1 Java Sound，2 游戏的 OpenAL。换了就从当前位置重新开始放 */
     @Volatile var outputMode = OUTPUT_AUTO
@@ -62,12 +62,11 @@ object MusicPlayer {
     /** 电台式的队列（私人 FM）：快放完时用它再要几首接在后面；普通歌单是 null */
     @Volatile var radio: (() -> List<NeteaseTrack>)? = null
         private set
-    private val random = Random()
 
     /** 每次换歌 / 拖动都 +1，旧的解码线程看到代数变了就自己退出 */
     @Volatile private var generation = 0
     @Volatile private var audio: ByteArray? = null
-    @Volatile private var line: AudioOutput? = null
+    @Volatile private var line: FadingAudioOutput? = null
     @Volatile private var seekBaseMs = 0L
     @Volatile private var pausedAtMs = 0L
     @Volatile private var loadingPosition = 0L
@@ -116,14 +115,78 @@ object MusicPlayer {
 
     // ---------------------------------------------------------------- 队列控制
 
-    @Synchronized @JvmOverloads fun playQueue(tracks: List<NeteaseTrack>, startIndex: Int, radio: (() -> List<NeteaseTrack>)? = null) {
+    enum class Mode(val label: String, val glyph: String) {
+        SEQUENTIAL("Sequential playback", "≡"),
+        SHUFFLE("Shuffle playback", "⇄"),
+        REPEAT_ONE("Repeat one", "↻"),
+    }
+
+    private var originalQueue: List<NeteaseTrack> = emptyList()
+    @Volatile private var heartMode = false
+
+    val mode: Mode get() = when {
+        heartMode -> Mode.SEQUENTIAL
+        repeatOne -> Mode.REPEAT_ONE
+        shuffle -> Mode.SHUFFLE
+        else -> Mode.SEQUENTIAL
+    }
+
+    @Synchronized fun selectMode(mode: Mode) {
+        heartMode = false
+        shuffle = mode == Mode.SHUFFLE
+        repeatOne = mode == Mode.REPEAT_ONE
+        if (repeatOne || radio != null || originalQueue.isEmpty()) return
+        queue = if (shuffle) originalQueue.shuffled() else originalQueue
+        playIndex(0)
+    }
+
+    @Synchronized fun startHeartMode(
+        tracks: List<NeteaseTrack>,
+        expectedQueue: List<NeteaseTrack>,
+        expectedTrack: NeteaseTrack?,
+    ) {
+        if (tracks.isEmpty() || queue !== expectedQueue || current !== expectedTrack ||
+            pendingFade?.pausing == false) return
+        originalQueue = tracks
+        radio = null
+        heartMode = true
         queue = tracks
+        playIndex(0)
+    }
+
+    @Synchronized @JvmOverloads fun playQueue(tracks: List<NeteaseTrack>, startIndex: Int, radio: (() -> List<NeteaseTrack>)? = null) {
+        heartMode = false
+        originalQueue = tracks
         this.radio = radio
-        playIndex(startIndex)
+        if (shuffle && !repeatOne && radio == null && tracks.isNotEmpty()) {
+            val selected = tracks[((startIndex % tracks.size) + tracks.size) % tracks.size]
+            queue = listOf(selected) + tracks.toMutableList().apply { removeAt(((startIndex % size) + size) % size) }.shuffled()
+            playIndex(0)
+        } else {
+            queue = tracks
+            playIndex(startIndex)
+        }
+    }
+
+    @Synchronized fun playAll(tracks: List<NeteaseTrack>, radio: (() -> List<NeteaseTrack>)? = null) {
+        if (tracks.isEmpty()) return
+        val start = if (shuffle && !repeatOne && radio == null) tracks.indices.random() else 0
+        playQueue(tracks, start, radio)
+    }
+
+    @Synchronized fun playShuffled(tracks: List<NeteaseTrack>) {
+        if (tracks.isEmpty()) return
+        heartMode = false
+        originalQueue = tracks
+        radio = null
+        queue = tracks.shuffled()
+        playIndex(0)
     }
 
     private val failedTracks = HashSet<String>()
     private val failureTimer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "Dango-Skip").apply { isDaemon = true } }
+    private class PendingFade(var pausing: Boolean, var finish: () -> Unit)
+    private var pendingFade: PendingFade? = null
     @Volatile var skipNotice = 0L
         private set
 
@@ -138,7 +201,7 @@ object MusicPlayer {
         val idx = ((i % q.size) + q.size) % q.size
         val track = q[idx]
         index = idx
-        loadTrack(track, 0L, false)
+        if (!fadeOut { loadTrack(track, 0L, false) }) loadTrack(track, 0L, false)
         if (radio != null && idx >= q.size - 2) extendRadio(null)
     }
 
@@ -147,7 +210,8 @@ object MusicPlayer {
         neteaseQuality = quality
         val track = current ?: return
         if (!active || track.source != MusicSource.NETEASE) return
-        loadTrack(track, positionMs, state == State.PAUSED || (state == State.LOADING && loadingPaused))
+        if (pendingFade?.pausing == false) return // The selected track will load at the new quality.
+        loadTrack(track, positionMs, pendingFade?.pausing == true || state == State.PAUSED || (state == State.LOADING && loadingPaused))
     }
 
     private fun loadTrack(track: NeteaseTrack, position: Long, paused: Boolean) {
@@ -175,12 +239,16 @@ object MusicPlayer {
                     DangoLogger.warn("Radio fetch failed: {}", e.javaClass.simpleName)
                     emptyList()
                 }
-                if (radio !== fetch) return@execute
-                val have = queue.mapTo(HashSet()) { it.key }
-                val fresh = more.filter { have.add(it.key) }
-                if (fresh.isNotEmpty()) queue = queue + fresh
+                synchronized(this) {
+                    if (radio !== fetch) return@execute
+                    val have = queue.mapTo(HashSet()) { it.key }
+                    val fresh = more.filter { have.add(it.key) }
+                    if (fresh.isNotEmpty()) queue = queue + fresh
+                }
             }
-            then?.invoke()
+            synchronized(this) {
+                if (radio === fetch) then?.invoke()
+            }
         }
     }
 
@@ -188,10 +256,11 @@ object MusicPlayer {
      * 歌单还在加载时就开始放了：加载出更多后把队列换成更长的版本。
      * 只在队列还是 [from] 本身、并且 [to] 以它为开头时才换，当前这首和播放位置都不变。
      */
-    fun growQueue(from: List<NeteaseTrack>, to: List<NeteaseTrack>) {
-        if (queue !== from || radio != null || to.size <= from.size) return
+    @Synchronized fun growQueue(from: List<NeteaseTrack>, to: List<NeteaseTrack>) {
+        if (originalQueue !== from || radio != null || to.size <= from.size) return
         for (i in from.indices) if (from[i].key != to[i].key) return
-        queue = to
+        queue = if (queue === from) to else queue + to.drop(from.size).shuffled()
+        originalQueue = to
     }
 
     /** 插入歌曲并立即播放，之后继续原队列。 */
@@ -199,14 +268,16 @@ object MusicPlayer {
         val q = queue
         if (q.isEmpty() || index !in q.indices) {
             queue = listOf(track)
+            originalQueue = queue
             playIndex(0)
             return
         }
         queue = q.subList(0, index + 1) + track + q.subList(index + 1, q.size)
+        originalQueue = originalQueue + track
         playIndex(index + 1)
     }
 
-    fun next() {
+    @Synchronized fun next() {
         val q = queue
         if (q.isEmpty()) return
         // 电台按顺序往下放；放到最后一首时先要几首新的再切
@@ -215,42 +286,87 @@ object MusicPlayer {
             else { val from = index; extendRadio { if (index == from) playIndex(from + 1) } }
             return
         }
-        playIndex(if (shuffle && q.size > 1) pickRandom(q.size) else index + 1)
+        playIndex(index + 1)
     }
 
-    fun prev() {
-        if (positionMs > 3000) {
-            seek(0)
+    @Synchronized fun prev() {
+        if (mode != Mode.SHUFFLE && pendingFade?.pausing != false && positionMs > 3000) {
+            if (!fadeOut { seekLocal(0L, fadeIn = true) }) seekLocal(0L, fadeIn = playbackFades)
             return
         }
         playIndex(index - 1)
     }
 
-    private fun pickRandom(size: Int): Int {
-        var r: Int
-        do { r = random.nextInt(size) } while (r == index)
-        return r
-    }
-
-    fun togglePause() {
+    @Synchronized fun togglePause() {
         when (state) {
             State.PLAYING -> {
-                pausedAtMs = positionMs
-                state = State.PAUSED
-                line?.stop()
+                val fading = pendingFade
+                if (fading != null) {
+                    if (fading.pausing) {
+                        pendingFade = null
+                        line?.fadeTo(1f)
+                    }
+                } else if (!fadeOut(pausing = true, finish = ::pauseLine)) {
+                    pauseLine()
+                }
             }
             State.PAUSED -> {
                 val l = line
                 if (l != null) {
                     // 声卡输出只是停住了，接着放就行；解码线程看到状态变回 PLAYING 会继续写数据
-                    state = State.PLAYING
+                    l.fadeTo(1f)
                     l.start()
+                    state = State.PLAYING
                 } else {
-                    seekLocal(pausedAtMs)
+                    state = State.PLAYING
+                    seekLocal(pausedAtMs, fadeIn = playbackFades)
                 }
             }
             else -> {}
         }
+    }
+
+    private fun pauseLine() {
+        pausedAtMs = positionMs
+        state = State.PAUSED
+        val out = line ?: return
+        out.stop()
+        pausedAtMs = seekBaseMs + out.positionMicros / 1000
+    }
+
+    private fun fadeOut(pausing: Boolean = false, finish: () -> Unit): Boolean {
+        val out = line ?: return false
+        if (!playbackFades || state != State.PLAYING) return false
+        val pending = pendingFade
+        if (pending != null) {
+            pending.pausing = pausing
+            pending.finish = finish
+        } else {
+            val request = PendingFade(pausing, finish)
+            pendingFade = request
+            out.fadeTo(0f)
+            checkFade(request, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(450))
+        }
+        return true
+    }
+
+    private fun checkFade(request: PendingFade, deadline: Long) {
+        failureTimer.schedule({
+            synchronized(this) {
+                if (pendingFade !== request) return@synchronized
+                if (!playbackFades || System.nanoTime() - deadline >= 0L || line?.let { it.lost || it.fadeOutPlayed } != false) {
+                    finishFade()
+                } else {
+                    checkFade(request, deadline)
+                }
+            }
+        }, 8, TimeUnit.MILLISECONDS)
+    }
+
+    private fun finishFade() {
+        val request = pendingFade ?: return
+        pendingFade = null
+        request.finish()
     }
 
     fun seek(ms: Long) {
@@ -258,17 +374,21 @@ object MusicPlayer {
         seekLocal(ms)
     }
 
-    @Synchronized private fun seekLocal(ms: Long) {
+    @Synchronized private fun seekLocal(ms: Long, fadeIn: Boolean = false) {
+        if (pendingFade?.pausing == false) return
         val bytes = audio ?: return
         val target = ms.coerceIn(0L, max(0L, durationMs - 500))
         // 暂停时拖动：停在新位置，仍保持暂停
+        if (pendingFade?.pausing == true) state = State.PAUSED
         if (state == State.PAUSED) pausedAtMs = target
         val gen = ++generation
         stopLine()
-        startDecode(gen, bytes, target)
+        startDecode(gen, bytes, target, fadeIn)
     }
 
     @Synchronized fun stop() {
+        heartMode = false
+        radio = null
         ++generation
         stopLine()
         audio = null
@@ -332,7 +452,7 @@ object MusicPlayer {
                     pausedAtMs = position
                     state = State.PAUSED
                 }
-                startDecode(gen, bytes, position)
+                startDecode(gen, bytes, position, fadeIn = position == 0L)
             }
             DangoLogger.info("Audio analysis: source={} cloud={} durationMs={} localGain={} appliedGain={}",
                 track.source.key, track.cloud, measuredDuration, measuredGain != null, trackGain)
@@ -370,6 +490,11 @@ object MusicPlayer {
     /** 失败跳过独立计时，不占用加载线程；旧请求不能切掉用户新选的歌。 */
     @Synchronized private fun fail(gen: Int, msg: String) {
         if (gen != generation) return
+        if (pendingFade?.pausing == false) {
+            finishFade()
+            return
+        }
+        pendingFade = null
         state = State.ERROR
         neteaseStream = null
         message = msg
@@ -383,8 +508,7 @@ object MusicPlayer {
                 if (gen == generation && state == State.ERROR && failedTracks.size < 10) {
                     val candidates = queue.indices.filter { queue[it].key !in failedTracks }
                     if (candidates.isNotEmpty()) {
-                        val next = if (shuffle) candidates[random.nextInt(candidates.size)]
-                            else candidates.firstOrNull { it > index } ?: candidates.first()
+                        val next = candidates.firstOrNull { it > index } ?: candidates.first()
                         skipNotice = System.nanoTime()
                         playIndexInternal(next)
                     }
@@ -427,7 +551,7 @@ object MusicPlayer {
      * 声音系统重启后重新打开输出。游戏要一会儿才能把声音系统开回来，最多等几秒；
      * 原来用的是游戏的 OpenAL 就继续等它，等不到再按平常的顺序打开。
      */
-    private fun reopenOutput(gen: Int, old: AudioOutput, rate: Int, channels: Int): AudioOutput? {
+    private fun reopenOutput(gen: Int, old: AudioOutput, rate: Int, channels: Int, startMs: Long): FadingAudioOutput? {
         DangoLogger.info("Dango Music: game audio restarted, reopening output")
         try { old.close() } catch (_: Exception) {}
         val format = AudioFormat(rate.toFloat(), 16, channels, true, false)
@@ -441,10 +565,19 @@ object MusicPlayer {
             try { out?.close() } catch (_: Exception) {}
             return null
         }
-        if (out == null) out = openOutput(format, rate * channels * 2 / 4)
-        line = out
-        if (state == State.PAUSED) out.stop() else out.start()
-        return out
+        val opened = out ?: openOutput(format, rate * channels * 2 / 4)
+        synchronized(this) {
+            if (gen != generation) {
+                opened.close()
+                return null
+            }
+            val fading = fadingOutput(opened, gen, rate, channels, state == State.PAUSED)
+            if (pendingFade != null) fading.fadeTo(0f)
+            seekBaseMs = startMs
+            line = fading
+            if (state == State.PAUSED) fading.stop() else fading.start()
+            return fading
+        }
     }
 
     private fun platformOutput(format: AudioFormat): AudioOutput? = try {
@@ -504,16 +637,18 @@ object MusicPlayer {
         return gain.coerceIn(0.25f, 2f)
     }
 
-    @Synchronized private fun startDecode(gen: Int, bytes: ByteArray, startMs: Long) {
+    private fun fadingOutput(output: AudioOutput, gen: Int, rate: Int, channels: Int, fadeIn: Boolean) =
+        FadingAudioOutput(output, rate, channels, fadeIn, { gen == generation }, { state == State.PAUSED }, { playbackFades })
+
+    @Synchronized private fun startDecode(gen: Int, bytes: ByteArray, startMs: Long, fadeIn: Boolean) {
         if (gen != generation) return
         decoderWorker.execute {
-            if (gen == generation) decodeLoop(gen, bytes, startMs)
+            if (gen == generation) decodeLoop(gen, bytes, startMs, fadeIn)
         }
     }
 
-    private fun decodeLoop(gen: Int, bytes: ByteArray, startMs: Long) {
-        var out: AudioOutput? = null
-        var finished = false
+    private fun decodeLoop(gen: Int, bytes: ByteArray, startMs: Long, fadeIn: Boolean) {
+        var out: FadingAudioOutput? = null
         var source: AudioDecoder? = null
         try {
             val started = AudioDecoder.start(bytes, startMs) { gen == generation }
@@ -522,7 +657,6 @@ object MusicPlayer {
             val skipped = started.skippedMs
             val first = started.first
             if (gen != generation) return
-            seekBaseMs = skipped.toLong()
             clearBeats()
             EnvironmentAudio.reset()
             var decodedMs = skipped
@@ -536,34 +670,44 @@ object MusicPlayer {
                 val frame = pending ?: decoder.read()
                 pending = null
                 if (frame == null) {
-                    finished = true
+                    val lastOutput = out
+                    if (lastOutput == null) fail(gen, "No decodable audio was found.") else finishTrack(gen, lastOutput)
                     break
                 }
-                if (out == null) {
+                val output = out ?: run {
                     val format = AudioFormat(frame.rate.toFloat(), 16, frame.channels, true, false)
-                    out = openOutput(format, frame.rate * frame.channels * 2 / 4)   // 约 0.25 秒缓冲
+                    val opened = openOutput(format, frame.rate * frame.channels * 2 / 4)   // 约 0.25 秒缓冲
                     synchronized(this) {
-                        if (gen != generation) return
-                        line = out
+                        if (gen != generation) {
+                            opened.close()
+                            return
+                        }
+                        val fading = fadingOutput(opened, gen, frame.rate, frame.channels, fadeIn || state == State.PAUSED)
+                        out = fading
+                        seekBaseMs = skipped.toLong()
+                        line = fading
                         if (state == State.PAUSED) {
                             pausedAtMs = seekBaseMs
-                            out.stop()
+                            fading.stop()
                         } else {
-                            out.start()
+                            fading.start()
                             state = State.PLAYING
                         }
+                        fading
                     }
                 }
                 // 暂停：不再往声卡写数据，原地等待。
                 // （Java Sound 在输出停止时被写数据会自动重新开始或直接返回，
                 //   不这样等的话会一口气把整首歌"读完"，然后误以为放完了跳下一首）
                 while (state == State.PAUSED && gen == generation) {
-                    if (out.isRunning) out.stop()   // 写数据时可能被自动重新开始，确保停住
+                    synchronized(this) {
+                        if (state == State.PAUSED && line === output && output.isRunning) output.stop()
+                    }
                     Thread.sleep(15)
                 }
                 if (gen != generation) break
                 if (volume != appliedVolume) {
-                    out.setVolume(volume)
+                    output.setVolume(volume)
                     appliedVolume = volume
                 }
                 val len = frame.length
@@ -604,55 +748,61 @@ object MusicPlayer {
                     data[k * 2 + 1] = ((v shr 8) and 0xFF).toByte()
                 }
                 try {
-                    out.write(data, 0, data.size)
+                    output.write(data, 0, data.size)
                 } catch (e: Throwable) {
-                    if (!out.lost || gen != generation) throw e
+                    if (!output.lost || gen != generation) throw e
                     // 游戏重启了声音系统：换一个新的输出，从这一块接着放（缓冲里没放完的零点几秒丢掉）
-                    val reopened = reopenOutput(gen, out, frame.rate, frame.channels) ?: throw e
+                    val reopened = reopenOutput(gen, output, frame.rate, frame.channels, (decodedMs - frameMs).toLong()) ?: throw e
                     out = reopened
-                    seekBaseMs = (decodedMs - frameMs).toLong()
-                    appliedVolume = -1f
                     if (reopened.lost) throw e
                     reopened.setVolume(volume)
                     appliedVolume = volume
                     reopened.write(data, 0, data.size)
                 }
             }
-            if (finished && out == null && gen == generation) {
-                finished = false
-                fail(gen, "No decodable audio was found.")
-            }
-            if (finished && gen == generation) {
-                // 最后一点正在放的时候声音系统重启了：就当放完了
-                try { out?.drain() } catch (e: Throwable) { if (out?.lost != true) throw e }
-                synchronized(this) { if (gen == generation) failedTracks.clear() }
-            }
         } catch (e: Throwable) {
-            finished = false
             DangoLogger.warn("Music decode failed: {}", e.toString())
             if (gen == generation) {
                 fail(gen, "播放失败：" + describe(e))
             }
         } finally {
             try { source?.close() } catch (_: Exception) {}
-            if (line === out) line = null
+            synchronized(this) { if (line === out) line = null }
             try {
                 out?.stop()
                 out?.close()
             } catch (_: Exception) {
             }
         }
-        if (finished && gen == generation) {
-            if (repeatOne) {
-                // 复用已下载的音频，从头解码，不重新请求播放地址或下载。
-                seek(0L)
-            } else {
-                next()
+    }
+
+    private fun finishTrack(gen: Int, out: FadingAudioOutput) {
+        while (gen == generation) {
+            // 最后一点正在放的时候声音系统重启了：就当放完了
+            try { out.drain() } catch (e: Throwable) { if (!out.lost) throw e }
+            synchronized(this) {
+                if (gen != generation) return
+                failedTracks.clear()
+                finishFade()
+                if (gen != generation) return
+                if (state != State.PAUSED) {
+                    seekBaseMs = positionMs
+                    line = null
+                    if (!heartMode && repeatOne) {
+                        // 复用已下载的音频，从头解码，不重新请求播放地址或下载。
+                        seekLocal(0L, fadeIn = true)
+                    } else {
+                        next()
+                    }
+                    return
+                }
             }
+            while (state == State.PAUSED && gen == generation) Thread.sleep(15)
         }
     }
 
     private fun stopLine() {
+        pendingFade = null
         val l = line
         line = null
         try {

@@ -34,7 +34,12 @@ interface Platform {
     fun isKeyDown(key: Int): Boolean
 
     /** 设置对象创建后同步原版按键页面和模组内绑定。 */
-    fun syncKeyBindings(bindings: List<PlayerKeyBinding>) {}
+    fun syncKeyBindings(bindings: Collection<PlayerKeyBinding>) {}
+
+    /** 按动作查询原版组合键的修饰键，允许不同动作共用同一个主键。 */
+    fun playerKeyModifierActive(action: PlayerAction): Boolean = true
+
+    fun playerKeyDisplayName(action: PlayerAction): String? = null
 
     val ctrlDown: Boolean
 

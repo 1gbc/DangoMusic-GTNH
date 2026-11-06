@@ -14,7 +14,7 @@ Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMu
 
 ## 隔离测试
 
-使用 GTNH 2.9.0 的副本，将重混淆 JAR 放入其 `mods`。从主菜单左下角的 DangoMusic 按钮进入，或在世界中按 M。从侧栏切换网易云、QQ 音乐和酷狗。输入关键词后回车，点选曲目播放。账号凭据保存于测试实例的 `config/dangomusicgtnh/accounts`，播放器与 HUD 设置保存在 `settings.json`，主菜单入口开关在 `settings.cfg`。
+使用 GTNH 2.9.0 的副本，将重混淆 JAR 放入其 `mods`。进入世界后按 M 打开播放器。从侧栏切换网易云、QQ 音乐和酷狗。输入关键词后回车，点选曲目播放。账号凭据保存于测试实例的 `config/dangomusicgtnh/accounts`，播放器与 HUD 设置保存在 `settings.json`。
 
 ## 许可
 
