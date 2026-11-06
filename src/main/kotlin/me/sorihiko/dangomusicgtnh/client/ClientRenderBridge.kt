@@ -9,6 +9,7 @@ import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.TickEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
 import me.sorihiko.dangomusicgtnh.legacy.LegacyGl
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.ScaledResolution
 import net.minecraftforge.client.event.GuiScreenEvent
 import net.minecraftforge.client.event.RenderGameOverlayEvent
@@ -59,6 +60,10 @@ internal object ClientRenderBridge {
 
     @SubscribeEvent
     fun world(event: RenderWorldLastEvent) {
-        if (graphicsReady) DangoMusic.callEvent(WorldRenderEndEvent(event.partialTicks))
+        if (!graphicsReady) return
+        val eyeY = Minecraft.getMinecraft().thePlayer?.let { player ->
+            player.lastTickPosY + (player.posY - player.lastTickPosY) * event.partialTicks + player.eyeHeight
+        }
+        DangoMusic.callEvent(WorldRenderEndEvent(event.partialTicks, eyeY))
     }
 }

@@ -5,6 +5,7 @@ import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
+import me.sorihiko.dangomusicgtnh.gfx.ViewAngles
 import me.sorihiko.dangomusicgtnh.gfx.CjkStyle
 import me.sorihiko.dangomusicgtnh.lyrics.LyricLine
 import me.sorihiko.dangomusicgtnh.lyrics.LyricSplit
@@ -34,7 +35,6 @@ import kotlin.math.asin
 import kotlin.math.atan
 import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -264,6 +264,7 @@ class LyricsModule : Module() {
         var scrollStartNanos = 0L
         var scrollOut = 0f
         var previousStackLift = 0f
+        var previousTail: LyricLine? = null
         /** Stay on screen 往回拉时的角速度（度 / 秒），用弹簧算，起步和停下都是平滑的 */
         var vYaw = 0.0
         var vPitch = 0.0
@@ -413,7 +414,7 @@ class LyricsModule : Module() {
     }
 
     @EventHandler
-    fun render(@Suppress("UNUSED_PARAMETER") e: WorldRenderEndEvent) {
+    fun render(e: WorldRenderEndEvent) {
         // 生物跟着节奏摇：每帧把设置同步过去，各版本画生物时读
         Dance.enabled = enabled && dance.get()
         Dance.spin = danceSpin.get()
@@ -479,6 +480,9 @@ class LyricsModule : Module() {
                                     it.center + rowBottom(it.lyric) - rowBottom(anchor)
                                 } ?: 0f
                                 nextLine.previousStackLift = anchor.previousStackLift
+                                nextLine.previousTail = previousStack.lastOrNull()?.lyric?.lyric
+                                nextLine.vYaw = anchor.vYaw
+                                nextLine.vPitch = anchor.vPitch
                                 nextLine.scrollIn = stride
                                 nextLine.scrollStartNanos = frameNanos
                                 nextLine.x = anchor.x; nextLine.y = anchor.y; nextLine.z = anchor.z
@@ -495,10 +499,13 @@ class LyricsModule : Module() {
         if (upcomingKey != nextKey) {
             upcomingKey = nextKey
             upcoming = if (active == null || lyrics == null || lastIndex < 0 || count == 1) emptyList()
-            else (lastIndex + 1 until minOf(lastIndex + count, lyrics.lines.size)).map { i ->
-                val line = lyrics.lines[i]
-                spawn(line, lyrics.lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L)
-            }
+            else (lastIndex + 1 until lyrics.lines.size).asSequence()
+                .filter { lyrics.lines[it].text.isNotBlank() }
+                .take(count - 1)
+                .map { i ->
+                    val line = lyrics.lines[i]
+                    spawn(line, lyrics.lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L)
+                }.toList()
         }
         val stack = active?.let(::layoutStack).orEmpty()
         fading.removeAll { f ->
@@ -510,6 +517,10 @@ class LyricsModule : Module() {
 
         val gfx = DangoClient.gfx
         val deepGlow = gfx.glow
+        val floor = e.playerEyeY?.minus(GROUND_MARGIN)?.takeIf { aboveGround.get() }
+        val stackFacing = if (count > 1 && facePlayer.get() && (stack.isNotEmpty() || fading.isNotEmpty())) {
+            gfx.world.cameraAngles().takeIf { it.yaw.isFinite() && it.pitch.isFinite() }
+        } else null
         gfx.guarded {
             val songNow = songPos.toLong()
             val beat = if (s != null) MusicPlayer.beatPulse(MusicPlayer.positionMs) else 0f
@@ -525,7 +536,7 @@ class LyricsModule : Module() {
                         if (deepGlow.begin()) {
                             glowPass = true
                             try {
-                                drawWorld(songNow, stack, frameNanos)
+                                drawWorld(songNow, stack, frameNanos, floor, stackFacing)
                             } finally {
                                 glowPass = false
                             }
@@ -540,7 +551,7 @@ class LyricsModule : Module() {
                     // 发光画完，把文字需要的渲染状态重新设好
                     gfx.world.resync()
                 }
-                drawWorld(songNow, stack, frameNanos)
+                drawWorld(songNow, stack, frameNanos, floor, stackFacing)
             }
         }
     }
@@ -1028,13 +1039,6 @@ class LyricsModule : Module() {
     private var lastCamY = 0.0
     private var lastCamZ = 0.0
 
-    /**
-     * "Above ground" 的最低高度，平滑地跟着镜头走：
-     * 用每帧插值过的镜头位置（不是一秒 20 次跳变的玩家位置），往上慢慢跟、往下快一点跟，
-     * 跳起来时字只会被柔和地托起一点，不会一顿一顿地抽。
-     */
-    private var groundFloor = Double.NaN
-
     private fun wrapDegrees(d: Double): Double {
         var v = d % 360.0
         if (v >= 180.0) v -= 360.0
@@ -1048,7 +1052,7 @@ class LyricsModule : Module() {
      * 每帧在画之前做一次，发光层和字本身用的是同一个位置。
      *
      * 往回拉用的是"临界阻尼弹簧"：有速度、会慢慢加速和减速，不会一碰到边就突然开始动、一回来就突然停，
-     * 跳跃 / 飞行这种上下来回的时候也是顺的。"Above ground" 的最低高度也算成一个边界交给同一个弹簧。
+     * 离地高度在绘制时根据插值后的玩家眼睛高度单独计算。
      */
     private fun keepOnScreen(stack: List<StackRow>) {
         val now = System.nanoTime()
@@ -1090,16 +1094,6 @@ class LyricsModule : Module() {
         lastCamZ = camZ
         val maxDist = distance.value * 2.0
 
-        if (aboveGround.get()) {
-            val target = world.cameraY - GROUND_MARGIN
-            groundFloor = if (groundFloor.isNaN()) target else {
-                val tau = if (target > groundFloor) 0.3 else 0.15
-                groundFloor + (target - groundFloor) * (1.0 - exp(-dt / tau))
-            }
-        } else {
-            groundFloor = Double.NaN
-        }
-
         val vHalf = platform.fov / 2.0
         val aspect = platform.windowWidth.toDouble() / platform.windowHeight.coerceAtLeast(1)
         val hHalf = Math.toDegrees(atan(tan(Math.toRadians(vHalf)) * aspect))
@@ -1127,10 +1121,7 @@ class LyricsModule : Module() {
             // 字本身占的角度：留出一半宽 / 高，再多留 2 度边距
             // 翻译在原文下面多占一截：按整体高度算（偏保守，上下都留出来）
             val visible = if (f === active) stack.map { it.lyric } else listOf(f)
-            val width = visible.maxOf { row ->
-                max(row.lines.maxOf { strW(it) },
-                    (phoneticRows(row) + translationRows(row)).maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f)
-            }
+            val width = visible.maxOfOrNull(::rowWidth) ?: 0f
             val halfW = Math.toDegrees(atan2(width * s / 2.0, len))
             val extra = if (f === active) stack.lastOrNull()?.let { it.center + rowBottom(it.lyric) - rowBottom(f) } ?: 0f else f.previousStackLift
             val halfH = Math.toDegrees(atan2(max(rowBottom(f), extra + halfMain(f)) * s, len))
@@ -1142,14 +1133,8 @@ class LyricsModule : Module() {
             val dYaw = wrapDegrees(curYaw - view.yaw)
             val dPitch = curPitch - view.pitch
 
-            // 往下最多到哪：屏幕下边，以及（Above ground）不低于地面高度，哪个更靠上用哪个
-            var lowLim = vLim
-            if (!groundFloor.isNaN()) {
-                val floorPitch = Math.toDegrees(asin(((world.cameraY - groundFloor) / len).coerceIn(-1.0, 1.0)))
-                lowLim = min(lowLim, floorPitch - view.pitch)
-            }
             val tYaw = dYaw.coerceIn(-hLim, hLim)
-            val tPitch = if (lowLim >= -vLim) dPitch.coerceIn(-vLim, lowLim) else lowLim
+            val tPitch = dPitch.coerceIn(-vLim, vLim)
 
             // 偏出去多少（在边界以内就是 0）
             val eYaw = dYaw - tYaw
@@ -1186,15 +1171,19 @@ class LyricsModule : Module() {
         }
 
         active?.let { follow(it) }
-        fading.forEach { follow(it) }
+        fading.forEach { if (it.scrollOut == 0f || active == null) follow(it) }
     }
 
-    private fun drawWorld(songNow: Long, stack: List<StackRow>, frameNanos: Long) {
+    private fun rowWidth(f: Floating): Float = max(
+        f.lines.maxOfOrNull(::strW) ?: 0f,
+        (phoneticRows(f) + translationRows(f)).maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f,
+    )
+
+    private fun drawWorld(songNow: Long, stack: List<StackRow>, frameNanos: Long, floor: Double?, stackFacing: ViewAngles?) {
         val world = DangoClient.gfx.world
         world.begin()
 
         val pen = DangoClient.gfx.text
-        val floor = if (aboveGround.get()) DangoClient.platform.player?.eyeY?.minus(GROUND_MARGIN) else null
 
         fun drawRow(f: Floating, alpha: Float, preview: Boolean, settled: Boolean) {
             if (f === active && lastIndex < -1) {
@@ -1210,36 +1199,30 @@ class LyricsModule : Module() {
             }
         }
 
-        fun draw(f: Floating, alphaMul: Float, slide: Float, stackLift: Float) {
-            var rx = f.x - world.cameraX
-            var ry = f.y - world.cameraY
-            var rz = f.z - world.cameraZ
-            var len = sqrt(rx * rx + ry * ry + rz * rz)
+        fun draw(f: Floating, alphaMul: Float, slide: Float, stackLift: Float, tailAlpha: Float = 1f) {
+            val anchor = if (f.scrollOut > 0f) active ?: f else f
+            var rx = anchor.x - world.cameraX
+            var ry = anchor.y - world.cameraY
+            var rz = anchor.z - world.cameraZ
+            val len = sqrt(rx * rx + ry * ry + rz * rz)
 
             // 离得太近（走过去 / 疾跑）就沿视线方向把歌词往后推，保持最小距离
             val minD = distance.value * 0.6
             if (keepAway.get() && len in 1e-4..minD) {
                 val k = minD / len
                 rx *= k; ry *= k; rz *= k
-                f.x = world.cameraX + rx
-                f.y = world.cameraY + ry
-                f.z = world.cameraZ + rz
-                len = minD
             }
 
-            val yaw: Float
-            val pitch: Float
-            if (facePlayer.get() && len > 1e-4) {
-                // 朝向镜头：根据镜头 → 歌词的方向算出转角
-                yaw = Math.toDegrees(atan2(-rx, rz)).toFloat()
-                pitch = Math.toDegrees(atan2(-ry, sqrt(rx * rx + rz * rz))).toFloat()
-            } else {
-                yaw = f.yaw
-                pitch = f.pitch
-            }
             val s = 0.03f * scale.value * (distance.value / 6.5f)
             val bottom = if (f === active) stack.last().let { it.center + rowBottom(it.lyric) } else rowBottom(f) + stackLift
             val lift = worldStackLift(stackLift, bottom, slide, s, world.cameraY + ry, floor)
+            val horizontal = sqrt(rx * rx + rz * rz)
+            val yaw = stackFacing?.yaw ?: if (facePlayer.get() && horizontal > 1e-4) {
+                Math.toDegrees(atan2(-rx, rz)).toFloat()
+            } else anchor.yaw
+            val pitch = stackFacing?.pitch ?: if (facePlayer.get() && len > 1e-4) {
+                Math.toDegrees(atan2(-(ry + lift), horizontal)).toFloat()
+            } else anchor.pitch
             world.push(rx, ry + lift, rz, yaw, pitch, s)
             try {
                 if (f === active) {
@@ -1248,7 +1231,7 @@ class LyricsModule : Module() {
                         try {
                             pen.translate(0f, slide + row.center)
                             val preview = index > 0
-                            val alpha = if (preview) alphaMul * 0.78f else alphaMul
+                            val alpha = if (preview) alphaMul * 0.78f * (if (index == stack.lastIndex) tailAlpha else 1f) else alphaMul
                             drawRow(row.lyric, alpha, preview, preview || f.scrollIn > 0f)
                         } finally {
                             pen.pop()
@@ -1282,7 +1265,8 @@ class LyricsModule : Module() {
             val remaining = if (f.scrollIn > 0f) 1f - scrollProgress(frameNanos - f.scrollStartNanos) else 0f
             val extra = stack.last().let { it.center + rowBottom(it.lyric) - rowBottom(f) }
             val lift = extra + (f.previousStackLift - extra) * remaining
-            draw(f, appearOf(f), f.scrollIn * remaining, lift)
+            val tailAlpha = if (stack.size > 1 && f.previousTail !== stack.last().lyric.lyric) 1f - remaining else 1f
+            draw(f, appearOf(f), f.scrollIn * remaining, lift, tailAlpha)
         }
     }
 

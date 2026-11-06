@@ -99,6 +99,8 @@ class Lyrics(rawLines: List<LyricLine>, val sourceName: String) {
         val line = lines.getOrNull(current)
         val end = line?.ktvEndMs(next?.timeMs ?: (line.timeMs + 3500L))
         if (next != null && next.timeMs - pos <= 1500L && (end == null || pos >= end)) return current + 1
+        // Keep the previous lyric through short breaths and backing vocals.
+        if (next != null && end != null && next.timeMs - end < 4000L) return current
         return if (end != null && pos - end >= 700L) -1 else current
     }
 
