@@ -5,6 +5,7 @@ import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
+import me.sorihiko.dangomusicgtnh.gfx.ViewAngles
 import me.sorihiko.dangomusicgtnh.gfx.CjkStyle
 import me.sorihiko.dangomusicgtnh.lyrics.LyricLine
 import me.sorihiko.dangomusicgtnh.lyrics.LyricSplit
@@ -512,9 +513,13 @@ class LyricsModule : Module() {
             else active != null || frameNanos - f.fadeStartNanos >= 400_000_000L
         }
         val useFlash = textFlash.get() && !ktvMode.get() && count == 1
-        if (worldMode.get() && !useFlash) keepOnScreen(stack)
-
         val gfx = DangoClient.gfx
+        val view = if (worldMode.get() && !useFlash && (active != null || fading.isNotEmpty())) {
+            gfx.world.cameraAngles().takeIf { it.yaw.isFinite() && it.pitch.isFinite() }
+        } else null
+        if (view != null) keepOnScreen(stack, view)
+
+
         val deepGlow = gfx.glow
         val floor = e.playerEyeY?.minus(GROUND_MARGIN)?.takeIf { aboveGround.get() }
         gfx.guarded {
@@ -532,7 +537,7 @@ class LyricsModule : Module() {
                         if (deepGlow.begin()) {
                             glowPass = true
                             try {
-                                drawWorld(songNow, stack, frameNanos, floor)
+                                drawWorld(songNow, stack, frameNanos, floor, view, count > 1)
                             } finally {
                                 glowPass = false
                             }
@@ -547,7 +552,7 @@ class LyricsModule : Module() {
                     // 发光画完，把文字需要的渲染状态重新设好
                     gfx.world.resync()
                 }
-                drawWorld(songNow, stack, frameNanos, floor)
+                drawWorld(songNow, stack, frameNanos, floor, view, count > 1)
             }
         }
     }
@@ -1060,7 +1065,7 @@ class LyricsModule : Module() {
      * 往回拉用的是"临界阻尼弹簧"：有速度、会慢慢加速和减速，不会一碰到边就突然开始动、一回来就突然停，
      * 离地高度在绘制时根据插值后的玩家眼睛高度单独计算。
      */
-    private fun keepOnScreen(stack: List<StackRow>) {
+    private fun keepOnScreen(stack: List<StackRow>, view: ViewAngles) {
         val now = System.nanoTime()
         val dt = if (keepNanos == 0L) 0.016 else ((now - keepNanos) / 1e9).coerceIn(0.0, 0.1)
         keepNanos = now
@@ -1071,8 +1076,6 @@ class LyricsModule : Module() {
         val platform = DangoClient.platform
         if (platform.player == null) return
         val world = DangoClient.gfx.world
-        val view = world.cameraAngles()
-        if (!view.yaw.isFinite() || !view.pitch.isFinite()) return
 
         // 移动得快（鞘翅、骑马、矿车）时歌词跟着一起走：只靠转角度的弹簧追不上，会被甩出屏幕。
         // 走路和疾跑（每秒 8 格以内）照旧固定在世界里；每秒 8 到 14 格之间逐渐变成完全跟着走。
@@ -1185,7 +1188,9 @@ class LyricsModule : Module() {
         (phoneticRows(f) + translationRows(f)).maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f,
     )
 
-    private fun drawWorld(songNow: Long, stack: List<StackRow>, frameNanos: Long, floor: Double?) {
+    private fun drawWorld(
+        songNow: Long, stack: List<StackRow>, frameNanos: Long, floor: Double?, view: ViewAngles?, multiline: Boolean,
+    ) {
         val world = DangoClient.gfx.world
         world.begin()
 
@@ -1234,7 +1239,8 @@ class LyricsModule : Module() {
             val pitch = if (facePlayer.get() && len > 1e-4) {
                 Math.toDegrees(atan2(-(ry + facingLift), horizontal)).toFloat()
             } else f.pitch
-            world.push(rx, ry + lift, rz, yaw, pitch, s)
+            val safe = if (multiline && view != null) protectSteepView(view, rx, ry + lift, rz, yaw, pitch) else null
+            world.push(safe?.x ?: rx, safe?.y ?: (ry + lift), safe?.z ?: rz, safe?.yaw ?: yaw, safe?.pitch ?: pitch, s)
             try {
                 if (f === active) {
                     val outgoing = fading.lastOrNull()?.takeIf {
@@ -1287,6 +1293,28 @@ class LyricsModule : Module() {
             val tailAlpha = if (stack.size > 1 && f.previousTail !== stack.last().lyric.lyric) 1f - remaining else 1f
             draw(f, appearOf(f), f.scrollIn * remaining, lift, tailAlpha)
         }
+    }
+
+    private data class RenderPose(val x: Double, val y: Double, val z: Double, val yaw: Float, val pitch: Float)
+
+    private fun protectSteepView(view: ViewAngles, x: Double, y: Double, z: Double, yaw: Float, pitch: Float): RenderPose? {
+        val t = ((abs(view.pitch) - 60f) / 20f).coerceIn(0f, 1f)
+        if (t == 0f) return null
+        val align = t * t * (3f - 2f * t)
+        val yr = Math.toRadians(view.yaw.toDouble())
+        val pr = Math.toRadians(view.pitch.toDouble())
+        val dx = -sin(yr) * cos(pr)
+        val dy = -sin(pr)
+        val dz = cos(yr) * cos(pr)
+        // Raising a tall stack can put it right against the camera when looking down.
+        // Check the depth after applying that lift, and blend to a readable camera-facing plane at the poles.
+        val depth = x * dx + y * dy + z * dz
+        val push = (distance.value * 0.8 - depth).coerceAtLeast(0.0) * align
+        return RenderPose(
+            x + dx * push, y + dy * push, z + dz * push,
+            (yaw + wrapDegrees((view.yaw - yaw).toDouble()) * align).toFloat(),
+            pitch + (view.pitch - pitch) * align,
+        )
     }
 
     // Keep a full row of separation even when the ground constraint limits the stack's upward travel.

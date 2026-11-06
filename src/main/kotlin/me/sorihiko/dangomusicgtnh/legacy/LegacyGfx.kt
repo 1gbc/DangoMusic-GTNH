@@ -226,6 +226,7 @@ object LegacyWorld : WorldView {
         GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, viewMatrix)
         return me.sorihiko.dangomusicgtnh.gfx.ViewAngles.fromViewBack(
             viewMatrix.get(2).toDouble(), viewMatrix.get(6).toDouble(), viewMatrix.get(10).toDouble(),
+            viewMatrix.get(0).toDouble(), viewMatrix.get(8).toDouble(),
         ) ?: me.sorihiko.dangomusicgtnh.gfx.ViewAngles(net.minecraft.client.renderer.entity.RenderManager.instance.playerViewY, net.minecraft.client.renderer.entity.RenderManager.instance.playerViewX)
     }
 
