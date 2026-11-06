@@ -839,9 +839,9 @@ class LyricsModule : Module() {
      * 逐字出现：每个字按顺序在 revealMs 内依次淡入并从下往上浮起一点；
      * 发光由 [DeepGlow] 另外做（先把字画到发光画布上），这里只画字本身。
      */
-    private fun drawKtv(f: Floating, positionMs: Long, alpha: Float, preview: Boolean) {
+    private fun drawKtv(f: Floating, positionMs: Long, alpha: Float, preview: Boolean, wiggleFrame: Long?) {
         val sung = if (preview) 0f else f.lyric.sungCharacters(positionMs, f.nextMs)
-        drawKtvLines(f.lines, sung, alpha, -halfMain(f))
+        drawKtvLines(f.lines, sung, alpha, -halfMain(f), wiggleFrame = wiggleFrame)
         val phonetic = phoneticRows(f)
         val translated = translationRows(f)
         if (phonetic.isNotEmpty() || translated.isNotEmpty()) {
@@ -853,8 +853,9 @@ class LyricsModule : Module() {
                 pen.scale(TRANSLATION_SCALE, TRANSLATION_SCALE)
                 val phoneticCount = phonetic.sumOf { line -> line.count { !it.isWhitespace() } }
                 val translatedCount = translated.sumOf { line -> line.count { !it.isWhitespace() } }
-                drawKtvLines(phonetic, progress * phoneticCount, alpha * 0.85f, 0f)
-                drawKtvLines(translated, progress * translatedCount, alpha * 0.85f, phonetic.size * 11f)
+                val annotationFrame = wiggleFrame?.takeIf { translationWiggle.get() }
+                drawKtvLines(phonetic, progress * phoneticCount, alpha * 0.85f, 0f, wiggleFrame = annotationFrame)
+                drawKtvLines(translated, progress * translatedCount, alpha * 0.85f, phonetic.size * 11f, wiggleFrame = annotationFrame)
             } finally {
                 pen.pop()
             }
@@ -879,14 +880,15 @@ class LyricsModule : Module() {
                     val progress = (sung - index++).coerceIn(0f, 1f)
                     val center = x + width / 2f + w / 2f
                     val base = if (useKtvColors) ktvBaseColor.value else charRgb(center, width, textRgb)
-                    if (progress < 1f) {
-                        val shadow = !glowPass && (!useKtvColors || ktvBaseShadow.get())
-                        if (wiggleFrame == null) drawGlyph(c, x, y, base, alpha, smooth, shadow)
-                        else withWiggle(Glyph(c, x, y, alpha, index, base), seed, wiggleFrame) {
+                    val draw = {
+                        if (progress < 1f) {
+                            val shadow = !glowPass && (!useKtvColors || ktvBaseShadow.get())
                             drawGlyph(c, x, y, base, alpha, smooth, shadow)
                         }
+                        if (progress > 0f) drawGlyph(c, x, y, ktvHighlight(center, width), alpha * progress, smooth, !glowPass && ktvSungShadow.get())
                     }
-                    if (progress > 0f) drawGlyph(c, x, y, ktvHighlight(center, width), alpha * progress, smooth, !glowPass && ktvSungShadow.get())
+                    if (wiggleFrame == null) draw()
+                    else withWiggle(Glyph(c, x, y, alpha, index, base), seed, wiggleFrame, draw)
                 }
                 x += w
             }
@@ -895,7 +897,7 @@ class LyricsModule : Module() {
         if (smooth) DangoClient.gfx.text.endSmooth()
     }
 
-    private fun drawAnimated(lines: List<String>, elapsedMs: Long, revealMs: Long, alphaMul: Float, charTimes: LongArray? = null) {
+    private fun drawAnimated(lines: List<String>, elapsedMs: Long, revealMs: Long, alphaMul: Float, charTimes: LongArray?, wiggleFrame: Long?) {
         val smooth = smoothFont.get()
         val flashMode = charTimes != null && charTimes.isNotEmpty()
         var n = 0   // 非空白字符序号
@@ -937,8 +939,9 @@ class LyricsModule : Module() {
         if (smooth) DangoClient.gfx.text.beginSmooth()
 
         val seed = lines.hashCode()
-        val frame = System.currentTimeMillis() * wiggleFps.value.coerceAtLeast(1) / 1000L
-        for (g in glyphs) withWiggle(g, seed, frame) { drawGlyph(g.c, g.x, g.y, g.rgb, g.a, smooth, !glowPass) }
+        for (g in glyphs) withWiggle(g, seed, wiggleFrame ?: 0L, wiggleFrame != null && wiggle.get()) {
+            drawGlyph(g.c, g.x, g.y, g.rgb, g.a, smooth, !glowPass)
+        }
 
         if (smooth) DangoClient.gfx.text.endSmooth()
     }
@@ -947,18 +950,18 @@ class LyricsModule : Module() {
      * 翻译：画在原文下面，字小一点、淡一点；原文开始出现后整行淡入（不逐字）。
      * 和原文用同一个位置和朝向，发光层也会画到。
      */
-    private fun drawTranslation(lines: List<String>, elapsedMs: Long, revealMs: Long, alphaMul: Float, top: Float, scale: Float, settled: Boolean) {
+    private fun drawTranslation(lines: List<String>, elapsedMs: Long, revealMs: Long, alphaMul: Float, top: Float, scale: Float, settled: Boolean, wiggleFrame: Long?) {
         if (lines.isEmpty()) return
         val smooth = smoothFont.get()
         val pen = DangoClient.gfx.text
         val lineH = 11f
         val animate = translationAnimation.get()
-        val wig = translationWiggle.get()
+        val wig = wiggleFrame != null && translationWiggle.get()
         pen.push()
         pen.translate(0f, top)
         pen.scale(scale, scale)
         if (smooth) pen.beginSmooth()
-        if (settled || (!animate && !wig)) {
+        if (!wig && (settled || !animate)) {
             // 默认：整行一起淡入
             var a = if (settled) 1f else ((elapsedMs - 120L) / 260f).coerceIn(0f, 1f)
             a = a * a * (3f - 2f * a)
@@ -994,7 +997,10 @@ class LyricsModule : Module() {
                     val rgb = charRgb(x + lineW / 2f + charW(c) / 2f, lineW, translationRgb)
                     val a: Float
                     val lift: Float
-                    if (animate) {
+                    if (settled) {
+                        a = 1f
+                        lift = 0f
+                    } else if (animate) {
                         val appearAt = 120f + k.toFloat() / total * revealMs
                         var t = ((elapsedMs - appearAt) / 180f).coerceIn(0f, 1f)
                         t = t * t * (3f - 2f * t)
@@ -1014,8 +1020,7 @@ class LyricsModule : Module() {
                 y += lineH
             }
             val seed = lines.hashCode()
-            val frame = System.currentTimeMillis() * wiggleFps.value.coerceAtLeast(1) / 1000L
-            for (g in glyphs) withWiggle(g, seed, frame, wig) { drawGlyph(g.c, g.x, g.y, g.rgb, g.a, smooth, !glowPass) }
+            for (g in glyphs) withWiggle(g, seed, wiggleFrame ?: 0L, wig) { drawGlyph(g.c, g.x, g.y, g.rgb, g.a, smooth, !glowPass) }
         }
         if (smooth) pen.endSmooth()
         pen.pop()
@@ -1196,19 +1201,20 @@ class LyricsModule : Module() {
 
         val pen = DangoClient.gfx.text
 
-        val sectionWiggleFrame = frameNanos / 1_000_000L * wiggleFps.value.coerceAtLeast(1) / 1000L
+        val frame = frameNanos / 1_000_000L * wiggleFps.value.coerceAtLeast(1) / 1000L
 
         fun drawRow(f: Floating, alpha: Float, preview: Boolean, settled: Boolean) {
+            val wiggleFrame = frame.takeIf { f === active && !preview }
             if (f.instrumental) {
-                drawKtvLines(f.lines, 0f, alpha, -halfMain(f), wiggleFrame = sectionWiggleFrame)
+                drawKtvLines(f.lines, 0f, alpha, -halfMain(f), wiggleFrame = wiggleFrame)
             } else if (ktvMode.get()) {
-                drawKtv(f, songNow, alpha, preview)
+                drawKtv(f, songNow, alpha, preview, wiggleFrame)
             } else {
                 val elapsed = songNow - f.startMs
-                if (settled) drawKtvLines(f.lines, 0f, alpha, -halfMain(f), useKtvColors = false)
-                else drawAnimated(f.lines, elapsed, f.revealMs, alpha, if (wordPop.get()) f.charTimes else null)
+                if (settled) drawKtvLines(f.lines, 0f, alpha, -halfMain(f), useKtvColors = false, wiggleFrame = wiggleFrame)
+                else drawAnimated(f.lines, elapsed, f.revealMs, alpha, if (wordPop.get()) f.charTimes else null, wiggleFrame)
                 drawTranslation(phoneticRows(f) + translationRows(f), elapsed, f.revealMs, alpha,
-                    halfMain(f) + ANNOTATION_GAP, TRANSLATION_SCALE, settled)
+                    halfMain(f) + ANNOTATION_GAP, TRANSLATION_SCALE, settled, wiggleFrame)
             }
         }
 
