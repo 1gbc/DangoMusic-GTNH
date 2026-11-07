@@ -105,7 +105,7 @@ object MusicPlayer {
 
     val positionMs: Long
         get() = when (state) {
-            State.PLAYING -> seekBaseMs + (line?.positionMicros ?: 0L) / 1000
+            State.PLAYING -> if (current?.source == MusicSource.APPLE) applePosition else seekBaseMs + (line?.positionMicros ?: 0L) / 1000
             State.PAUSED -> pausedAtMs
             State.LOADING -> loadingPosition
             else -> 0L
@@ -226,6 +226,8 @@ object MusicPlayer {
     }
 
     private fun loadTrack(track: NeteaseTrack, position: Long, paused: Boolean) {
+        if (track.source == MusicSource.APPLE) return // The official webpage owns its queue at this stage.
+        if (current?.source == MusicSource.APPLE) AppleWebPlayer.command("stop")
         val gen = ++generation
         stopLine()
         audio = null
@@ -289,6 +291,7 @@ object MusicPlayer {
     }
 
     @Synchronized fun next() {
+        if (MusicSources.selected == MusicSource.APPLE) { AppleWebPlayer.command("next"); return }
         val q = queue
         if (q.isEmpty()) return
         // 电台按顺序往下放；放到最后一首时先要几首新的再切
@@ -301,6 +304,7 @@ object MusicPlayer {
     }
 
     @Synchronized fun prev() {
+        if (MusicSources.selected == MusicSource.APPLE) { AppleWebPlayer.command("previous"); return }
         if (mode != Mode.SHUFFLE && pendingFade?.pausing != false && positionMs > 3000) {
             if (!fadeOut { seekLocal(0L, fadeIn = true) }) seekLocal(0L, fadeIn = playbackFades)
             return
@@ -309,6 +313,9 @@ object MusicPlayer {
     }
 
     @Synchronized fun togglePause() {
+        if (MusicSources.selected == MusicSource.APPLE) {
+            AppleWebPlayer.command(if (state == State.PLAYING) "pause" else "play"); return
+        }
         when (state) {
             State.PLAYING -> {
                 val fading = pendingFade
@@ -381,6 +388,7 @@ object MusicPlayer {
     }
 
     fun seek(ms: Long) {
+        if (current?.source == MusicSource.APPLE) { AppleWebPlayer.command("seek", ms.coerceIn(0L, durationMs).toDouble() / 1000); return }
         if (audio == null) return
         seekLocal(ms)
     }
@@ -398,6 +406,7 @@ object MusicPlayer {
     }
 
     @Synchronized fun stop() {
+        if (MusicSources.selected == MusicSource.APPLE || current?.source == MusicSource.APPLE) AppleWebPlayer.command("stop")
         heartMode = false
         radio = null
         ++generation
@@ -410,11 +419,38 @@ object MusicPlayer {
     }
 
     @Synchronized fun shutdown() {
+        AppleWebPlayer.disconnect()
         stop()
         loader.shutdownNow()
         decoderWorker.shutdownNow()
         radioWorker.shutdownNow()
         failureTimer.shutdownNow()
+    }
+
+    @Volatile private var applePosition = 0L
+
+    @Synchronized fun acceptAppleState(track: NeteaseTrack, position: Long, playing: Boolean) {
+        if (MusicSources.selected != MusicSource.APPLE) return
+        if (current?.source != MusicSource.APPLE) {
+            ++generation
+            stopLine()
+            audio = null
+            neteaseStream = null
+            queue = emptyList()
+            index = -1
+        }
+        current = track
+        applePosition = position
+        pausedAtMs = position
+        state = if (playing) State.PLAYING else State.PAUSED
+        message = AppleWebPlayer.message
+    }
+
+    @Synchronized fun clearAppleState() {
+        if (current?.source != MusicSource.APPLE) return
+        current = null
+        state = State.STOPPED
+        message = AppleWebPlayer.message
     }
 
     // ---------------------------------------------------------------- 加载 / 解码

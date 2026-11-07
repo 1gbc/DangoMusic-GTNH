@@ -20,6 +20,7 @@ object NearbyMedia {
         MusicSource.NETEASE -> "https://music.163.com/"
         MusicSource.QQ -> "https://y.qq.com/"
         MusicSource.KUGOU -> "https://m.kugou.com/"
+        MusicSource.APPLE -> "https://music.apple.com/"
     }
 
     fun download(

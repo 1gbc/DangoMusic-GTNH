@@ -277,10 +277,23 @@ internal class Sidebar(private val screen: MusicScreen) {
         Color(lerp(a.r, b.r, t), lerp(a.g, b.g, t), lerp(a.b, b.b, t), lerp(a.a, b.a, t))
 
     private fun loggedIn(source: MusicSource): Boolean =
-        if (source == MusicSource.NETEASE) NeteaseApi.loggedIn else NativeAccounts.get(source) != null
+        if (source == MusicSource.APPLE) me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.connected else if (source == MusicSource.NETEASE) NeteaseApi.loggedIn else NativeAccounts.get(source) != null
 
     /** 账号栏：头像 + 昵称（没登录时是"登录 xx"），右边是当前音源，点开菜单切换音源 / 退出登录 */
     private fun drawAccount(side: LayoutBounds) {
+        if (MusicSources.selected == MusicSource.APPLE) {
+            val b = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
+            ui.card(b, Theme.CARD, 10f)
+            ui.text("Apple Music", b.x + 10f, b.y + 8f, 12f, Theme.TEXT_PRIMARY)
+            ui.text(I18n.text("Browser connection"), b.x + 10f, b.y + 24f, 10f, Theme.TEXT_SECONDARY)
+            val chip = LayoutBounds(b.right - 30f, b.y, 30f, 40f)
+            chipRect = chip
+            menuRects += chip
+            ui.icon("⇄", chip.x + 15f, chip.y + 20f, 12f, Theme.TEXT_PRIMARY)
+            ui.hits += chip to { menuOpen = !menuOpen }
+            ui.hits += LayoutBounds(b.x, b.y, b.width - 30f, b.height) to { screen.login.open() }
+            return
+        }
         val ub = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
         val av = LayoutBounds(ub.x + 6f, ub.y + 6f, 28f, 28f)
         val source = MusicSources.selected
@@ -425,7 +438,7 @@ internal class Sidebar(private val screen: MusicScreen) {
                 hits += row0 to {
                     menuOpen = false
                     try {
-                        if (current == MusicSource.NETEASE) NeteaseApi.logout() else NativeAccounts.logout(current)
+                        if (current == MusicSource.APPLE) me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.disconnect() else if (current == MusicSource.NETEASE) NeteaseApi.logout() else NativeAccounts.logout(current)
                         Library.refreshAll()
                     } catch (_: Exception) { Library.showStatus("Unable to clear the saved login. Please try again.") }
                 }

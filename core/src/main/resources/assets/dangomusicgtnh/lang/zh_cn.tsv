@@ -559,3 +559,21 @@ My groups	我的群组
 You have not joined a group	你还没有加入群组
 Listen	收听
 Current	当前
+
+Browser connection	浏览器连接
+Browser connected	浏览器已连接
+Pair the browser extension	请配对浏览器扩展
+Open official webpage	打开官方网页
+Copy pairing link	复制配对链接
+Reconnect	重新配对
+Disconnect	断开连接
+Pair the Apple Music browser extension	请将配对链接粘贴到 Apple Music 浏览器扩展
+Playback is handled by the official webpage	音乐由 Apple Music 官方网页播放
+Unable to start Apple Music local bridge	无法启动 Apple Music 本机桥接
+Apple Music control failed	Apple Music 控制失败
+Connect Apple Music using the account button	请点击账号入口连接 Apple Music
+Apple Music browser disconnected; pair again	Apple Music 浏览器已断开，请重新配对
+Apple Music controls are waiting for the browser	正在等待浏览器确认播放控制
+Apple Music browser controls connected; browse and queue songs in the official webpage	Apple Music 歌曲浏览与播放队列暂由官方网页管理
+Search in the official Apple Music webpage for now	此测试版请在 Apple Music 官方网页搜索歌曲
+Unable to open browser	无法打开浏览器

@@ -125,7 +125,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             ui.beginClip(LayoutBounds(infoX, coverBox.y + 23f, infoW, 20f))
             ui.text(sub, infoX - offset, coverBox.y + 27f, 11f, Theme.TEXT_SECONDARY)
             ui.endClip()
-        } else if (t != null && snap.message.isEmpty() && !snap.remote) {
+        } else if (t != null && snap.message.isEmpty() && !snap.remote && t.source != MusicSource.APPLE) {
             // 歌手名可以点，打开歌手页；远端曲目只显示来源，不提供歌手跳转
             drawArtistLinks(screen, t, infoX, coverBox.y + 27f, infoW, 11f, Theme.TEXT_SECONDARY)
         } else ui.text(ui.trim(sub, infoW, 11f), infoX, coverBox.y + 27f, 11f, Theme.TEXT_SECONDARY)
@@ -150,7 +150,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         modeButton = LayoutBounds(cx - MODE_BUTTON_OFFSET, cy - 16f, 32f, 32f)
         val mode = if (snap.remote) MusicPlayer.Mode.SEQUENTIAL else MusicPlayer.mode
         toggleButton(modeButton, cy, modeOpen, modeA, mode.glyph) {
-            if (snap.remote) return@toggleButton
+            if (snap.remote || t?.source == MusicSource.APPLE) return@toggleButton
             val opening = !modeOpen
             dismissMenu()
             modeOpen = opening
@@ -191,7 +191,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         ui.hits += nextB to { nextA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.next() } }
         ui.hits += queueB to {
             queueA.press.v -= 7f
-            if (!snap.remote) {
+            if (!snap.remote && t?.source != MusicSource.APPLE) {
                 if (ScreenState.page == Page.QUEUE) screen.goBackOrHome() else screen.go(Page.QUEUE)
             }
         }

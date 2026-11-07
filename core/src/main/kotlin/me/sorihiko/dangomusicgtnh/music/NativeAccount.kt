@@ -41,7 +41,7 @@ object NativeAccounts {
     fun get(source: MusicSource): NativeAccount? = load(source)?.also(::renewIfDue)
 
     private fun load(source: MusicSource): NativeAccount? = synchronized(lock) {
-        if (source == MusicSource.NETEASE) return@synchronized null
+        if (source == MusicSource.NETEASE || source == MusicSource.APPLE) return@synchronized null
         if (loaded.add(source)) {
             try {
                 val file = path(source)

@@ -39,9 +39,10 @@ import me.sorihiko.dangomusicgtnh.platform.PlayerKeyBinding
 class NeteaseMusicModule : Module() {
 
     @ModuleValue("Music source", "Select a music provider")
-    private val musicSource = IntValue(0, 2, 0)
+    private val musicSource = IntValue(0, MusicSource.values().lastIndex, 0)
 
     fun selectSource(source: MusicSource) {
+        if (source != MusicSources.selected && (source == MusicSource.APPLE || MusicSources.selected == MusicSource.APPLE)) MusicPlayer.stop()
         musicSource.setValue(source.ordinal)
         MusicSources.selected = source
     }
@@ -220,6 +221,7 @@ class NeteaseMusicModule : Module() {
     private fun changeVolume(d: Float) {
         volume.setValue((volume.value + d).coerceIn(0f, 1f))
         MusicPlayer.volume = volume.value
+        me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.tick()
     }
 
     fun selectPlaybackMode(mode: MusicPlayer.Mode) {
@@ -347,6 +349,7 @@ class NeteaseMusicModule : Module() {
         // 歌词模块一直开着（显示与否由 3D lyrics 控制）；等配置读回之后再检查
         if (++tickCount > 5) lyrics()?.let { if (!it.enabled) it.enabled = true }
         MusicPlayer.volume = volume.value
+        me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.tick()
         val mode = audioOutput.value
         if (MusicPlayer.outputMode != mode) ClientMusic.control { MusicPlayer.outputMode = mode }
         MusicPlayer.normalize = normalize.get()

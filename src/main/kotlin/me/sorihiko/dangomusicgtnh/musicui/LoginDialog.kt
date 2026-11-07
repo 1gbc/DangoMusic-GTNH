@@ -42,6 +42,7 @@ internal class LoginDialog(private val screen: MusicScreen) {
     fun open() {
         showing = true
         provider = MusicSources.selected
+        if (provider == MusicSource.APPLE) { me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.ensureStarted(); return }
         if (native) NativeLogin.start(provider) else NeteaseLogin.start()
     }
 
@@ -79,6 +80,7 @@ internal class LoginDialog(private val screen: MusicScreen) {
     }
 
     fun draw() {
+        if (provider == MusicSource.APPLE) { drawApple(); return }
         val ctx = ui.ctx
         hits.clear()
         val state = this.state
@@ -210,6 +212,34 @@ internal class LoginDialog(private val screen: MusicScreen) {
             ctx.drawShape(b, ShapeStyle(RED, 14f))
             ui.text(label, b.x + 14f, b.y + 9f, 12f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
             hits += b to { NativeLogin.start(provider) }
+        }
+    }
+
+    private fun drawApple() {
+        hits.clear()
+        val web = me.sorihiko.dangomusicgtnh.music.AppleWebPlayer
+        val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 280f) / 2f, 420f, 280f)
+        ui.ctx.drawGlass(box, Theme.GLASS_WINDOW)
+        ui.text("Apple Music", box.x + 20f, box.y + 20f, 18f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        ui.text(I18n.text(if (web.connected) "Browser connected" else "Pair the browser extension"), box.x + 20f, box.y + 58f, 13f, Theme.TEXT_PRIMARY)
+        ui.wrap2(I18n.text(web.message.ifEmpty { "Playback is handled by the official webpage" }), box.width - 40f, 12f).forEachIndexed { i, line ->
+            ui.text(line, box.x + 20f, box.y + 82f + i * 16f, 12f, Theme.TEXT_SECONDARY)
+        }
+        val labels = listOf("Open official webpage", "Copy pairing link", "Reconnect", "Disconnect", "Close")
+        labels.forEachIndexed { i, label ->
+            val row = i / 2
+            val b = LayoutBounds(box.x + 20f + (i % 2) * 192f, box.y + 138f + row * 38f, 184f, 30f)
+            ui.card(b, if (ui.hover(b)) Theme.CARD_HOVER else Theme.CARD, 9f)
+            ui.text(I18n.text(label), b.x + 12f, b.y + 10f, 12f, Theme.TEXT_PRIMARY)
+            hits += b to {
+                when (i) {
+                    0 -> Thread({ try { java.awt.Desktop.getDesktop().browse(java.net.URI("https://music.apple.com/")) } catch (_: Exception) { Library.showStatus("Unable to open browser") } }, "Dango-AppleBrowser").apply { isDaemon = true }.start()
+                    1 -> { DangoClient.platform.clipboard = web.pairingLink }
+                    2 -> web.connect()
+                    3 -> web.disconnect()
+                    else -> close()
+                }
+            }
         }
     }
 
