@@ -9,6 +9,11 @@ object AppleMusicSource : MusicSourceApi {
     override val source = MusicSource.APPLE
     private val ids = ConcurrentHashMap<Long, String>()
     private val libraryId = MusicSources.stableId(source, "library:songs")
+    private val chartId = MusicSources.stableId(source, "catalog:charts")
+    private fun libraryEntry() = NeteasePlaylist(libraryId, me.sorihiko.dangomusicgtnh.i18n.I18n.text("Library songs"), 0, "", true)
+    private fun chartEntry() = NeteasePlaylist(chartId, me.sorihiko.dangomusicgtnh.i18n.I18n.text("Apple Music popular songs"), 0, "", false)
+    override fun recommend() = listOf(chartEntry(), libraryEntry())
+    override fun charts() = listOf(chartEntry())
     fun clear() { ids.clear() }
     override val libraryWarning get() = "Apple Music: sign in once, then search and play in the game"
     override fun songUrl(track: NeteaseTrack): NeteaseApi.SongUrl? = null
@@ -46,9 +51,10 @@ object AppleMusicSource : MusicSourceApi {
             ids[local] = id
             NeteasePlaylist(local, str(o, "title"), 0, str(o, "cover"), true)
         }
-        return listOf(NeteasePlaylist(libraryId, me.sorihiko.dangomusicgtnh.i18n.I18n.text("Library songs"), 0, "", true)) + lists
+        return listOf(libraryEntry()) + lists
     }
     override fun playlistTracks(id: Long): List<NeteaseTrack> =
-        if (id == libraryId) rows("songs").map(::track)
+        if (id == chartId) rows("charts", pages = 1).map(::track)
+        else if (id == libraryId) rows("songs").map(::track)
         else rows("playlistTracks", ids[id] ?: throw SourceAccessException("Refresh your Apple Music library")).map(::track)
 }

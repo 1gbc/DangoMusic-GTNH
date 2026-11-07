@@ -18,6 +18,7 @@ public final class AppleWebServer implements AutoCloseable {
     private boolean stopped;
     private JsonObject state;
     private boolean authorized;
+    private String authState="restoring";
     private final Map<Long,CompletableFuture<JsonObject>> requests=new HashMap<>();
     private final ArrayDeque<JsonObject> commands=new ArrayDeque<>();
     private volatile String error="";
@@ -33,10 +34,11 @@ public final class AppleWebServer implements AutoCloseable {
     public synchronized JsonObject snapshot(){return connected()&&!stopped&&state!=null?new JsonParser().parse(state.toString()).getAsJsonObject():null;}
     public String error(){return error;}
     public synchronized boolean authorized(){return connected()&&authorized;}
+    public synchronized String authState(){return connected()?authState:"disconnected";}
     private void cancelRequests(){for(CompletableFuture<JsonObject> f:requests.values())f.completeExceptionally(new IOException("Apple Music request cancelled"));requests.clear();}
-    public synchronized void reconnect(){cancelRequests();session=null;owner=null;state=null;commands.clear();authorized=false;stopped=false;pairing=random();born=System.nanoTime();lastAck=sequence;error="";}
+    public synchronized void reconnect(){cancelRequests();session=null;owner=null;state=null;commands.clear();authorized=false;authState="restoring";stopped=false;pairing=random();born=System.nanoTime();lastAck=sequence;error="";}
     public JsonObject request(String op,String value,int offset)throws Exception{
-        if(!Arrays.asList("search","songs","playlists","playlistTracks").contains(op)||value==null||value.length()>200||offset<0||offset>10000)throw new IllegalArgumentException("Invalid browse request");
+        if(!Arrays.asList("search","charts","songs","playlists","playlistTracks").contains(op)||value==null||value.length()>200||offset<0||offset>10000)throw new IllegalArgumentException("Invalid browse request");
         CompletableFuture<JsonObject> future=new CompletableFuture<>();long id;
         synchronized(this){
             if(!connected())throw new IOException("Apple player disconnected");
@@ -91,6 +93,7 @@ public final class AppleWebServer implements AutoCloseable {
                 boolean changing=false;for(JsonObject c:commands)if(!Arrays.asList("query","show","hide","login").contains(c.get("name").getAsString()))changing=true;
                 if(report.has("state")&&report.get("state").isJsonObject()){
                     JsonObject incoming=report.getAsJsonObject("state");authorized=incoming.has("authorized")&&incoming.get("authorized").getAsBoolean();
+                    String status=text(incoming,"authState",24);authState=Arrays.asList("ready","login","restoring","unavailable").contains(status)?status:(authorized?"ready":"restoring");
                     if(!stopped&&!changing)state=sanitize(incoming);
                 }
                 error=text(report,"commandError",300);

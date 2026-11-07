@@ -40,6 +40,29 @@ test('authenticated local bridge rejects stale playback after stop and reconnect
     assert.equal((await post('/sync',key,telemetry)).code,403);
   } finally {await bridge.close();}
 });
+test('a denied library session stays signed out and charts are normalized to songs', async()=>{
+  const vm=require('node:vm');
+  const player={isAuthorized:false,storefrontId:'cn',api:{music:async(path)=>{
+    if(path==='/v1/me/library/songs')throw {status:401};
+    assert.equal(path,'/v1/catalog/cn/charts');
+    return {data:{results:{songs:[{data:[{id:'9',type:'songs',attributes:{name:'Chart song'}}]}]}}};
+  }}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const state=await context.appleAdapter(null);assert.equal(state.authorized,false);assert.equal(state.authState,'login');
+  const charts=await context.appleAdapter({name:'query',value:{op:'charts',offset:0}});
+  assert.equal(charts.items[0].title,'Chart song');
+});
+test('a valid library session restores login even when the SDK flag is stale', async()=>{
+  const vm=require('node:vm');let reads=0;
+  const player={isAuthorized:false,api:{music:async path=>{assert.equal(path,'/v1/me/library/songs');reads++;return {data:{data:[]}};}}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  let state=await context.appleAdapter(null);
+  assert.equal(state.authorized,true,'A successful authenticated empty library is still a signed-in session');
+  assert.equal(state.authState,'ready');
+  await context.appleAdapter(null);assert.equal(reads,1,'Restoration probes are cached, not issued every frame');
+});
 test('catalog browsing returns only metadata and a stopped pending load never starts late', async()=>{
   const vm=require('node:vm');
   const source=fs.readFileSync(__dirname+'/extension/adapter.js','utf8');

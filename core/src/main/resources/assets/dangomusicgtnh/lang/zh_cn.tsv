@@ -606,3 +606,12 @@ Refresh your Apple Music library	请刷新 Apple Music 媒体库
 Close	关闭
 Apple Music region unavailable; sign in and retry	无法取得 Apple Music 地区，请登录后重试
 Too many Apple Music playlists; reconnect to refresh	Apple Music 歌单过多，请重新连接后刷新
+Restoring Apple Music session; library access is not ready	正在恢复 Apple Music 登录，媒体库权限尚未就绪
+Apple Music library interface is unavailable; check the player window	Apple Music 媒体库接口不可用，请查看播放组件窗口
+Apple Music website sign-in is not yet authorized for library access	官方网页已连接，但媒体库尚未授权，请完成官方授权后刷新
+Apple Music library permission is not ready; finish official authorization	Apple Music 媒体库权限未就绪，请完成官方授权
+Apple Music denied this library request; check subscription and region	Apple Music 拒绝此媒体库请求，请检查订阅和地区权限
+Apple Music popular songs	Apple Music 热门歌曲
+Search songs, open charts or browse your library	搜索歌曲、查看热门歌曲或浏览媒体库
+Refresh library	刷新媒体库
+Restoring login or checking library access	正在恢复登录或检查媒体库权限

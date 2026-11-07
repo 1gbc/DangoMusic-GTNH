@@ -77,6 +77,7 @@ class MusicScreen(
 
     /** 界面打开时调用 */
     fun opened() {
+        if (MusicSources.selected == MusicSource.APPLE) AppleWebPlayer.restoreNativeIfNeeded()
         if (closingAt != 0L) return // 关闭期间的窗口尺寸变化不重新播放入场。
         closed = false
         openKeyHeld = platform.isKeyDown(module.openKey.value)
@@ -545,7 +546,15 @@ class MusicScreen(
                 val rec = Library.recommend
                 val items = if (rec.isNullOrEmpty()) Library.playlists else rec
                 val label = if (rec.isNullOrEmpty()) I18n.text("Your playlists") else I18n.text("Recommended playlists")
-                grid.draw(body, I18n.text("Welcome to Dango Music!"), "$label · ${items.size}", items, Library.recommendLoading && items.isEmpty())
+                val apple = MusicSources.selected == MusicSource.APPLE
+                grid.draw(body, if (apple) "Apple Music" else I18n.text("Welcome to Dango Music!"),
+                    if (apple) I18n.text("Search songs, open charts or browse your library") else "$label · ${items.size}", items, Library.recommendLoading && items.isEmpty())
+                if (apple && body.width > 280f) {
+                    val refresh = LayoutBounds(body.right - 110f, body.y, 106f, 28f)
+                    ui.card(refresh, Theme.CARD, 9f)
+                    ui.text(I18n.text("Refresh library"), refresh.x + 10f, refresh.y + 9f, 11f, Theme.TEXT_PRIMARY)
+                    ui.hits += refresh to { Library.refreshAll() }
+                }
             }
             Page.CHARTS -> {
                 val c = Library.charts ?: emptyList()

@@ -11,6 +11,7 @@ internal static class Program
     {
         if (args.Contains("--self-test"))
         {
+            if(!HideOnClose(CloseReason.UserClosing,false)||HideOnClose(CloseReason.ApplicationExitCall,true))return 9;
             if (ValidLink("https://music.apple.com/#secret")) return 2;
             if (ValidLink("http://localhost:1234/#" + new string('a',64))) return 3;
             if (!ValidLink("http://127.0.0.1:1234/#" + new string('a',64))) return 4;
@@ -42,6 +43,7 @@ internal static class Program
     internal static bool ValidLink(string value) => Uri.TryCreate(value,UriKind.Absolute,out var u)
         && u.Scheme=="http" && u.Host=="127.0.0.1" && u.Port>0 && u.AbsolutePath=="/" && u.Query=="" && u.UserInfo==""
         && System.Text.RegularExpressions.Regex.IsMatch(u.Fragment,"^#[a-f0-9]{64}$");
+    internal static bool HideOnClose(CloseReason reason,bool exiting) => reason==CloseReason.UserClosing&&!exiting;
 }
 
 internal sealed class PlayerWindow : Form
@@ -60,6 +62,8 @@ internal sealed class PlayerWindow : Form
     private DateTime lastOk=DateTime.UtcNow;
     private bool polling,ready,closing;
     private bool loginRequested,wasAuthorized;
+    private bool exitRequested;
+    private DateTime pageLoadedAt=DateTime.UtcNow;
     private JsonNode? commandResult;
     private CoreWebView2Environment? environment;
     public PlayerWindow(Uri link,string profile,int parentPid)
@@ -74,7 +78,10 @@ internal sealed class PlayerWindow : Form
         Shown+=async(_,_)=>await Initialize();
         timer.Tick+=async(_,_)=>await Poll();
         timer.Start(); // Parent-exit cleanup must also work during failed initialization/login.
-        FormClosing+=(_,_)=>{closing=true;timer.Stop();http.Dispose();web.Dispose();};
+        FormClosing+=(_,e)=>{
+            if(Program.HideOnClose(e.CloseReason,exitRequested)){e.Cancel=true;Hide();return;}
+            closing=true;timer.Stop();http.Dispose();web.Dispose();
+        };
     }
     private static bool AppleNavigation(string url) => Uri.TryCreate(url,UriKind.Absolute,out var u) && u.Scheme=="https"
         && (u.Host=="apple.com"||u.Host.EndsWith(".apple.com",StringComparison.OrdinalIgnoreCase));
@@ -84,11 +91,13 @@ internal sealed class PlayerWindow : Form
         {
             Directory.CreateDirectory(profile);
             environment=await CoreWebView2Environment.CreateAsync(null,profile);
+            web.CreationProperties=new CoreWebView2CreationProperties{ProfileName="Default",IsInPrivateModeEnabled=false};
             await web.EnsureCoreWebView2Async(environment);
             web.CoreWebView2.Settings.AreDevToolsEnabled=false;
             web.CoreWebView2.Settings.AreHostObjectsAllowed=false;
             web.CoreWebView2.NavigationStarting+=(_,e)=>{if(!AppleNavigation(e.Uri))e.Cancel=true;};
             web.CoreWebView2.NewWindowRequested+=OpenLoginPopup;
+            web.CoreWebView2.NavigationCompleted+=(_,_)=>{pageLoadedAt=DateTime.UtcNow;};
             web.CoreWebView2.WebMessageReceived+=(_,e)=>{
                 if(!Uri.TryCreate(e.Source,UriKind.Absolute,out var u)||u.GetLeftPart(UriPartial.Authority)!="https://music.apple.com")return;
                 try{var message=JsonNode.Parse(e.WebMessageAsJson)!;string key=message["nonce"]!.GetValue<string>();
@@ -109,6 +118,7 @@ internal sealed class PlayerWindow : Form
         {
             var popup=new Form {Text="Apple 官方账号登录",Width=700,Height=800};
             var view=new WebView2 {Dock=DockStyle.Fill};popup.Controls.Add(view);
+            view.CreationProperties=new CoreWebView2CreationProperties{ProfileName="Default",IsInPrivateModeEnabled=false};
             await view.EnsureCoreWebView2Async(environment);
             view.CoreWebView2.NavigationStarting+=(_,n)=>{if(!AppleNavigation(n.Uri)&&n.Uri!="about:blank")n.Cancel=true;};
             view.CoreWebView2.WindowCloseRequested+=(_,_)=>popup.Close();
@@ -139,14 +149,15 @@ internal sealed class PlayerWindow : Form
     }
     private async Task Poll()
     {
-        try{if(System.Diagnostics.Process.GetProcessById(parentPid).HasExited){Close();return;}}catch{Close();return;}
+        try{if(System.Diagnostics.Process.GetProcessById(parentPid).HasExited){exitRequested=true;Close();return;}}catch{exitRequested=true;Close();return;}
         if(!ready||polling||closing)return;polling=true;
         try
         {
             var state=await Evaluate(null);
             bool authorized=state["authorized"]?.GetValue<bool>()==true;
             if(authorized&&!wasAuthorized){Hide();loginRequested=true;}
-            if(!authorized&&state["available"]?.GetValue<bool>()==true&&!loginRequested){loginRequested=true;await Evaluate(new JsonObject{["name"]="login"});}
+            string authState=state["authState"]?.GetValue<string>()??"restoring";
+            if(!authorized&&authState=="login"&&!loginRequested&&(DateTime.UtcNow-pageLoadedAt).TotalSeconds>8){loginRequested=true;await Evaluate(new JsonObject{["name"]="login"});}
             wasAuthorized=authorized;
             var result=await Post("/sync",session,new JsonObject { ["ack"]=ack,["state"]=state,["commandError"]=commandError,["commandResult"]=commandResult?.DeepClone() });
             commandResult=null;
@@ -164,12 +175,12 @@ internal sealed class PlayerWindow : Form
                 }
                 ack=command["id"]!.GetValue<long>();
             }
-            status.Text=string.IsNullOrEmpty(commandError)?"组件已连接游戏；可隐藏此窗口。完整歌曲与后台播放请实测。":commandError;
+            status.Text=!string.IsNullOrEmpty(commandError)?commandError:authorized?"已恢复登录，可关闭或隐藏此窗口，回到游戏操作。":authState=="restoring"?"正在恢复登录和检查媒体库权限，请稍候…":authState=="unavailable"?"官方网页已打开，但媒体库接口尚未就绪。":"请在官方窗口完成授权；登录网页和媒体库权限会分别检查。";
         }
         catch
         {
             status.Text="与游戏连接中断；超过十秒将暂停并退出。";
-            if((DateTime.UtcNow-lastOk).TotalSeconds>10){try{await Evaluate(new JsonObject{["name"]="pause"});}catch{}Close();}
+            if((DateTime.UtcNow-lastOk).TotalSeconds>10){try{await Evaluate(new JsonObject{["name"]="pause"});}catch{}exitRequested=true;Close();}
         }
         finally {polling=false;}
     }

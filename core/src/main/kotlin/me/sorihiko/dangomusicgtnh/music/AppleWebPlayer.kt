@@ -15,6 +15,7 @@ object AppleWebPlayer {
     private var endedOnce = false
     @Volatile private var connectionEpoch = 0L
     @Volatile private var nativeProcess: Process? = null
+    @Volatile private var nativeAttempted = false
     @Volatile var nativeMode = false
         private set
     @Volatile private var startupFailure = ""
@@ -23,9 +24,12 @@ object AppleWebPlayer {
     val nativeRunning get() = nativeProcess?.isAlive == true
     val connected get() = server?.connected() == true
     val authorized get() = server?.authorized() == true
+    val authState get() = server?.authState() ?: "disconnected"
+    fun restoreNativeIfNeeded() { if (!nativeAttempted && !nativeRunning && !connected) startNative() }
     val pairingLink get() = server?.pairingLink().orEmpty()
     fun ensureStarted() { if (server == null) connect() }
     fun startNative() {
+        nativeAttempted = true
         nativeWorker.execute {
             nativeMode = true
             startupFailure = ""
@@ -89,7 +93,12 @@ object AppleWebPlayer {
         } catch (_: Exception) { message = "Unable to start Apple Music local bridge" }
     }
     fun request(op: String, value: String, offset: Int): JsonObject {
-        if (!authorized) throw SourceAccessException("Sign in to Apple Music in the login window")
+        if (!connected) throw SourceAccessException("Apple Music player is disconnected")
+        if (op !in listOf("search", "charts") && !authorized) throw SourceAccessException(when (authState) {
+            "restoring" -> "Restoring Apple Music session; library access is not ready"
+            "unavailable" -> "Apple Music library interface is unavailable; check the player window"
+            else -> "Apple Music website sign-in is not yet authorized for library access"
+        })
         val endpoint = server ?: throw SourceAccessException("Apple Music player is disconnected")
         val epoch = connectionEpoch
         try {
@@ -127,6 +136,9 @@ object AppleWebPlayer {
             server == null -> "Connect Apple Music using the account button"
             !connected -> "Apple Music browser disconnected; pair again"
             server?.error()?.isNotEmpty() == true -> server!!.error()
+            connected && !authorized && authState == "restoring" -> "Restoring Apple Music session; library access is not ready"
+            connected && !authorized && authState == "unavailable" -> "Apple Music library interface is unavailable; check the player window"
+            connected && !authorized -> "Apple Music website sign-in is not yet authorized for library access"
             else -> ""
         }
         if (s == null || !s.get("available").asBoolean || s.get("title").asString.isEmpty()) {
