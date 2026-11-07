@@ -44,7 +44,7 @@ object NearbyAudioPlayer {
     @Volatile var route = ""
         private set
 
-    @Volatile var volume: Float = 0.5f
+    @Volatile var volume: Float = 0.2f
         set(value) {
             field = value.coerceIn(0f, 1f)
             applyVolume()
@@ -52,6 +52,9 @@ object NearbyAudioPlayer {
 
     @Volatile private var distanceGain = 1f
     @Volatile private var currentPlaying = true
+    @Volatile private var suppressed = false
+    @Volatile private var userPaused = false
+    @Volatile private var userStoppedKey: String? = null
     @Volatile private var baseMs = 0L
     @Volatile private var clockStartNanos = 0L
     @Volatile private var pausedAtMs = 0L
@@ -80,10 +83,11 @@ object NearbyAudioPlayer {
 
     /**
      * Called from the client tick. [host] is null when nothing should play.
-     * [gain] is the distance attenuation (1.0 in a group, lower when far away).
+     * [gain] is the distance attenuation (capped by the caller).
+     * [suppressed] is true while the local player owns playback (personal -> group -> nearby).
      */
     @Synchronized
-    fun update(hostOrNull: RemoteHost?, gain: Float) {
+    fun update(hostOrNull: RemoteHost?, gain: Float, suppressedNow: Boolean = false) {
         val host = hostOrNull ?: run {
             if (state != State.IDLE) stop()
             return
@@ -93,19 +97,62 @@ object NearbyAudioPlayer {
             return
         }
         distanceGain = gain.coerceIn(0f, 1f)
+        suppressed = suppressedNow
+        val stoppedKey = userStoppedKey
+        if (stoppedKey != null) {
+            if (stoppedKey == track.key) {
+                active = host
+                return
+            }
+            userStoppedKey = null
+        }
+        if (suppressedNow && state == State.IDLE) {
+            active = host
+            return
+        }
         if (track.key != trackKey || host.player != hostName) {
             start(host, track)
             return
         }
         active = host
         applyVolume()
-        if (host.playing != currentPlaying) setPaused(!host.playing)
-        if (host.playing && state == State.PLAYING) {
+        if (suppressedNow) {
+            if (state == State.PLAYING) setPaused(true)
+            currentPlaying = false
+            return
+        }
+        if (!userPaused && host.playing != currentPlaying) setPaused(!host.playing)
+        if (!userPaused && host.playing && state == State.PLAYING) {
             val expected = hostPosition(host)
             if (expected > 0 && abs(expected - positionMs) > 1500L) seekInternal(expected)
         }
         if (state == State.ERROR && System.nanoTime() - failedAtNanos > 30_000_000_000L) {
             start(host, track)
+        }
+    }
+
+    /** Stop only the remote stream until the host changes track; used by the player stop button. */
+    @Synchronized
+    fun stopForUser() {
+        val key = trackKey
+        stop()
+        if (key.isNotEmpty()) userStoppedKey = key
+    }
+
+    /** Player-bar pause/resume for the remote stream; host sync will not override it. */
+    @Synchronized
+    fun togglePause() {
+        if (suppressed) return
+        when (state) {
+            State.PLAYING -> {
+                userPaused = true
+                setPaused(true)
+            }
+            State.PAUSED -> {
+                userPaused = false
+                setPaused(false)
+            }
+            else -> Unit
         }
     }
 
@@ -122,6 +169,9 @@ object NearbyAudioPlayer {
         route = ""
         baseMs = 0L
         pausedAtMs = 0L
+        suppressed = false
+        userPaused = false
+        userStoppedKey = null
     }
 
     @Synchronized
@@ -132,11 +182,12 @@ object NearbyAudioPlayer {
         active = host
         hostName = host.player
         trackKey = track.key
-        currentPlaying = host.playing
+        currentPlaying = host.playing && !suppressed
         baseMs = hostPosition(host).coerceAtLeast(0L)
         pausedAtMs = baseMs
         route = ""
-        state = if (host.playing) State.LOADING else State.PAUSED
+        userPaused = false
+        state = if (host.playing && !suppressed) State.LOADING else State.PAUSED
         message = "正在连接音源…"
         val gen = generation
         loader.execute { load(gen, host, track) }
@@ -165,11 +216,15 @@ object NearbyAudioPlayer {
             DangoLogger.warn("Nearby L1 failed: {}", e.javaClass.simpleName)
         }
 
-        // L2: the short-lived URL the host resolved under its own account.
+        // L2: the short-lived URL the host resolved under its own account. The URL is
+        // remote-controlled, so keep it on the platform CDN allowlist even across redirects.
         val hostUrl = host.url
-        if (!hostUrl.isNullOrBlank()) {
+        if (!hostUrl.isNullOrBlank() && NearbyMedia.isAllowedRelayHost(hostUrl, false)) {
             setMessage(gen, "正在下载（共享地址）")
-            val data = NearbyMedia.download(hostUrl, referer, 64 * 1024 * 1024)
+            val data = NearbyMedia.download(
+                hostUrl, referer, 64 * 1024 * 1024,
+                allowed = { candidate -> NearbyMedia.isAllowedRelayHost(candidate.toString(), false) },
+            )
             if (gen != generation) return
             if (NearbyMedia.isPlayable(data)) {
                 play(gen, host, data!!, "L2")
@@ -183,7 +238,7 @@ object NearbyAudioPlayer {
         if (relayClient != null) {
             setMessage(gen, "正在通过服务器中转…")
             val data = try {
-                relayClient.request(shared.key, hostUrl, 90_000L)
+                relayClient.request(shared.key, hostUrl, 180_000L)
             } catch (_: Throwable) {
                 null
             }
@@ -206,7 +261,7 @@ object NearbyAudioPlayer {
             if (gen != generation) return
             bytes = data
             route = routeLabel
-            state = if (currentPlaying) State.LOADING else State.PAUSED
+            state = if (currentPlaying && !suppressed) State.LOADING else State.PAUSED
             message = if (routeLabel == "L3") "服务器中转" else "缓冲中…"
             val start = hostPosition(host).coerceAtLeast(0L)
             baseMs = start
@@ -248,20 +303,21 @@ object NearbyAudioPlayer {
                         clockStartNanos = System.nanoTime()
                         appliedVolume = (volume * distanceGain).coerceIn(0f, 1f)
                         opened.setVolume(appliedVolume)
-                        if (state == State.PAUSED) opened.stop() else {
+                        if (state == State.PAUSED || suppressed) opened.stop() else {
                             opened.start()
                             state = State.PLAYING
                         }
                     }
                 }
 
-                if (state == State.PAUSED) {
+                if (state == State.PAUSED || suppressed) {
                     out?.let { if (it.isRunning) it.stop() }
-                    while (gen == generation && state == State.PAUSED) Thread.sleep(15)
+                    while (gen == generation && (state == State.PAUSED || suppressed)) Thread.sleep(15)
                     if (gen != generation) break
                     out?.let {
                         baseMs = pausedAtMs
                         clockStartNanos = System.nanoTime()
+                        if (state != State.PAUSED) state = State.PLAYING
                         if (!it.isRunning) it.start()
                     }
                 }
@@ -371,7 +427,11 @@ object NearbyAudioPlayer {
         val elapsed = if (host.receivedAtMs > 0L) (System.currentTimeMillis() - host.receivedAtMs).coerceAtLeast(0L) else 0L
         val raw = host.positionMs + if (host.playing) elapsed else 0L
         val duration = host.track?.durationMs ?: 0L
-        return if (duration > 0L) raw.coerceIn(0L, duration) else raw.coerceAtLeast(0L)
+        return if (duration > 0L) {
+            raw.coerceIn(0L, duration)
+        } else {
+            raw.coerceIn(0L, 24L * 60L * 60L * 1000L)
+        }
     }
 
     /** Same device fallback as MusicPlayer; the two players use independent lines. */

@@ -54,7 +54,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     )
 
     /** 显示成百分比的选项 */
-    private val percentKeys = setOf("volume", "glowRadius", "posX", "posY", "nearbyVolume")
+    private val percentKeys = setOf("volume", "glowRadius", "posX", "posY")
 
     private val tabs: List<List<Group>> by lazy { buildSettings() }
 
@@ -303,7 +303,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         )
         val nearbyGroups = mutableListOf(
             Group("Nearby music", "Players within the server radius", nearby.m, false,
-                nearby.take(listOf("shareMusic", "hearNearby", "nearbyVolume", "shareQuality"))),
+                nearby.take(listOf("shareMusic", "hearNearby", "shareQuality"))),
             Group("Nearby lyrics", "Line projection over the host", nearby.m, false,
                 nearby.take(listOf("shareLyrics", "seeLyrics"))),
             Group("Music group", "Distance-free listening", nearby.m, false,

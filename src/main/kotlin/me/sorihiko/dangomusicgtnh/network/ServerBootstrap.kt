@@ -10,6 +10,7 @@ object ServerBootstrap {
     @JvmStatic
     fun init(event: FMLPreInitializationEvent) {
         ServerConfig.load(File(event.modConfigurationDirectory, "dangomusicgtnh/server.cfg"))
+        MusicGroups.attach(File(event.modConfigurationDirectory, "dangomusicgtnh/groups.json"))
         FMLCommonHandler.instance().bus().register(ServerEvents)
     }
 

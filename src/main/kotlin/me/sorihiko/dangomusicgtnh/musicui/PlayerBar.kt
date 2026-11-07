@@ -6,6 +6,7 @@ import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.music.CoverCache
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
+import me.sorihiko.dangomusicgtnh.music.PlaybackView
 import me.sorihiko.dangomusicgtnh.music.MusicScreen
 import me.sorihiko.dangomusicgtnh.music.MusicSource
 import me.sorihiko.dangomusicgtnh.music.NeteaseApi
@@ -66,7 +67,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     fun draw(bar: LayoutBounds) {
         val ctx = ui.ctx
         drawPanel(bar)
-        val t = MusicPlayer.current
+        val snap = PlaybackView.snapshot()
+        val t = snap.track
         // 上面一排放封面、按钮和音量（中线在 [ry]），下面是横贯整条栏的进度条
         val ry = bar.y + 34f
 
@@ -81,7 +83,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val coverBox = LayoutBounds(bar.x + coverInset, ry - cs / 2f, cs, cs)
         ui.drawCover(coverBox, t?.let { CoverCache.trackRounded(it, 0.27f) }, 13f)
         ctx.drawShape(coverBox, ShapeStyle(Color.TRANSPARENT, 13f, 1f, Color(1f, 1f, 1f, 0.10f)))
-        if (screen.canOpenLyrics) {
+        if (screen.canOpenLyrics && !snap.remote) {
             ui.hits += coverBox to screen::toggleLyrics
             if (ui.hover(coverBox)) {
                 ui.card(coverBox, Color(0f, 0f, 0f, 0.47f), 13f)
@@ -96,10 +98,11 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         ui.text(ui.trim(title, infoW, 13f, Theme.FONT_SEMIBOLD), infoX, coverBox.y + 9f, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
         val sub = when {
             t == null -> "-"
-            MusicPlayer.message.isNotEmpty() -> I18n.message(MusicPlayer.message)
+            snap.message.isNotEmpty() -> I18n.message(snap.message)
+            snap.remote -> snap.sourceLabel + " · " + t.artists.joinToString(" / ")
             else -> t.artists.joinToString(" / ")
         }
-        val skipAt = MusicPlayer.skipNotice
+        val skipAt = if (snap.remote) 0L else MusicPlayer.skipNotice
         if (lastSkipNotice != skipAt) {
             lastSkipNotice = skipAt
             val remaining = 5_000_000_000L - (System.nanoTime() - skipAt)
@@ -109,7 +112,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         }
         if (sub != lastSubtitle) { lastSubtitle = sub; subtitleAt = System.nanoTime() }
         val overflow = ui.width(sub, 11f) - infoW
-        if (MusicPlayer.message.isNotEmpty() && overflow > 0f) {
+        if (snap.message.isNotEmpty() && overflow > 0f) {
             val seconds = (System.nanoTime() - subtitleAt) / 1e9
             val travel = overflow / 28.0
             val phase = seconds % (travel * 2 + 3)
@@ -122,8 +125,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             ui.beginClip(LayoutBounds(infoX, coverBox.y + 23f, infoW, 20f))
             ui.text(sub, infoX - offset, coverBox.y + 27f, 11f, Theme.TEXT_SECONDARY)
             ui.endClip()
-        } else if (t != null && MusicPlayer.message.isEmpty()) {
-            // 歌手名可以点，打开歌手页
+        } else if (t != null && snap.message.isEmpty() && !snap.remote) {
+            // 歌手名可以点，打开歌手页；远端曲目只显示来源，不提供歌手跳转
             drawArtistLinks(screen, t, infoX, coverBox.y + 27f, infoW, 11f, Theme.TEXT_SECONDARY)
         } else ui.text(ui.trim(sub, infoW, 11f), infoX, coverBox.y + 27f, 11f, Theme.TEXT_SECONDARY)
 
@@ -145,8 +148,9 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val queueB = LayoutBounds(cx + 88f, cy - 16f, 30f, 32f)
         val stopB = LayoutBounds(queueB.right + 2f, cy - 16f, 28f, 32f)
         modeButton = LayoutBounds(cx - MODE_BUTTON_OFFSET, cy - 16f, 32f, 32f)
-        val mode = MusicPlayer.mode
+        val mode = if (snap.remote) MusicPlayer.Mode.SEQUENTIAL else MusicPlayer.mode
         toggleButton(modeButton, cy, modeOpen, modeA, mode.glyph) {
+            if (snap.remote) return@toggleButton
             val opening = !modeOpen
             dismissMenu()
             modeOpen = opening
@@ -154,13 +158,13 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         }
         val stopScale = button(stopB, stopA)
         ui.icon("■", stopB.x + 14f, cy, 12f * stopScale, Theme.TEXT_PRIMARY)
-        ui.hits += stopB to { stopA.press.v -= 7f; Library.stopPlayback() }
+        ui.hits += stopB to { stopA.press.v -= 7f; PlaybackView.stop() }
         val kPrev = button(prevB, prevA)
         val kPlay = drawPlayDisc(playB)
         val kNext = button(nextB, nextA)
         val kQueue = button(queueB, queueA)
         // 播放 ↔ 暂停：两个图标交叉淡入淡出，暂停的两道竖条从中间长出来，三角形收小淡出
-        val p = playMorph.tick(if (MusicPlayer.state == MusicPlayer.State.PLAYING) 1f else 0f).coerceIn(0f, 1f)
+        val p = playMorph.tick(if (snap.playing) 1f else 0f).coerceIn(0f, 1f)
         if (p > 0.01f) {
             ctx.pushOpacity(p)
             val bh = 16f * kPlay * (0.55f + 0.45f * p)
@@ -182,17 +186,19 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         ui.card(LayoutBounds(nc + 3.8f * kNext, cy - 5.5f * kNext, 2.2f * kNext, 11f * kNext), Theme.TEXT_PRIMARY, 1f)
         val q = queueA.on.tick(if (ScreenState.page == Page.QUEUE) 1f else 0f)
         ui.icon("≡", queueB.x + 14f, cy, 14f * kQueue, mixColor(Theme.TEXT_PRIMARY, RED, q))
-        ui.hits += prevB to { prevA.press.v -= 7f; ClientMusic.control { MusicPlayer.prev() } }
-        ui.hits += playB to { playA.press.v -= 7f; ClientMusic.control { MusicPlayer.togglePause() } }
-        ui.hits += nextB to { nextA.press.v -= 7f; ClientMusic.control { MusicPlayer.next() } }
+        ui.hits += prevB to { prevA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.prev() } }
+        ui.hits += playB to { playA.press.v -= 7f; PlaybackView.togglePause() }
+        ui.hits += nextB to { nextA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.next() } }
         ui.hits += queueB to {
             queueA.press.v -= 7f
-            if (ScreenState.page == Page.QUEUE) screen.goBackOrHome() else screen.go(Page.QUEUE)
+            if (!snap.remote) {
+                if (ScreenState.page == Page.QUEUE) screen.goBackOrHome() else screen.go(Page.QUEUE)
+            }
         }
 
         // 进度条：在栏的底部，两端上方标时间（当前时间亮一点）；鼠标移上去变粗、出现圆钮
-        val dur = MusicPlayer.durationMs
-        val pos = MusicPlayer.positionMs
+        val dur = snap.durationMs
+        val pos = snap.positionMs
         // 两头各留一段，不贴着播放栏的圆角
         progRect = LayoutBounds(bar.x + PROGRESS_INSET, bar.bottom - 11f, bar.width - PROGRESS_INSET * 2, 3f)
         val kn = progKnob.tick(if (seeking || progRect.expand(0f, 6f).contains(ui.mx, ui.my)) 1f else 0f).coerceIn(0f, 1.2f)
@@ -267,6 +273,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     }
 
     private fun drawQuality(bar: LayoutBounds, y: Float) {
+        if (PlaybackView.snapshot().remote) return
         val preferred = module.preferredQuality
         val stream = MusicPlayer.neteaseStream
         val badge = LayoutBounds(bar.right - 62f, y - 14f, 49f, 28f)
@@ -362,7 +369,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val ctx = ui.ctx
         val hover = playA.hover.tick(if (ui.hover(b)) 1f else 0f).coerceIn(0f, 1f)
         val k = 1f + playA.press.tick(0f) * 0.14f + hover * 0.06f
-        if (MusicPlayer.state == MusicPlayer.State.PLAYING) {
+        if (PlaybackView.snapshot().playing) {
             val phase = (System.nanoTime() / 1e9 % 2.8 / 2.8).toFloat()
             if (phase < 0.7f) {
                 val ring = b.scaled(k * (1f + 0.4f * phase / 0.7f))
@@ -412,7 +419,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     /** 点在进度条 / 音量条上就处理掉，返回 true；按在进度条上开始拖动 */
     fun mouseDown(mx: Int, my: Int): Boolean {
         if (progRect.expand(0f, 6f).contains(mx, my)) {
-            if (MusicPlayer.durationMs > 0) {
+            val snap = PlaybackView.snapshot()
+            if (!snap.remote && snap.durationMs > 0) {
                 seeking = true
                 seekFraction = fractionAt(mx)
             }
@@ -435,10 +443,10 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         volumeDragging = false
         if (!seeking) return
         seeking = false
-        val dur = MusicPlayer.durationMs
+        val dur = PlaybackView.snapshot().durationMs
         if (dur > 0) {
             val position = (seekFraction * dur).toLong()
-            ClientMusic.control { MusicPlayer.seek(position) }
+            PlaybackView.seek(position)
         }
     }
 
@@ -449,7 +457,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         if (volRect.height <= 0f) return
         val volume = ((volRect.bottom - y) / volRect.height).coerceIn(0f, 1f)
         module.setVolume(volume)
-        MusicPlayer.volume = volume
+        PlaybackView.setVolume(volume)
     }
 }
 

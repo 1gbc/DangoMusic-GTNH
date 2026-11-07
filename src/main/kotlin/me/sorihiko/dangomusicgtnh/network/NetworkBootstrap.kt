@@ -8,6 +8,7 @@ import cpw.mods.fml.common.network.simpleimpl.IMessageHandler
 import cpw.mods.fml.common.network.simpleimpl.MessageContext
 import cpw.mods.fml.common.network.simpleimpl.SimpleNetworkWrapper
 import cpw.mods.fml.relauncher.Side
+import me.sorihiko.dangomusicgtnh.DangoLogger
 import me.sorihiko.dangomusicgtnh.multiplayer.NearbyProtocol
 import net.minecraft.entity.player.EntityPlayerMP
 
@@ -42,19 +43,37 @@ object NetworkBootstrap {
         )
     }
 
+    private fun fits(json: String): Boolean {
+        val size = json.toByteArray(Charsets.UTF_8).size
+        if (size <= NearbyProtocol.MAX_PACKET_BYTES) return true
+        DangoLogger.warn("DangoMusic packet dropped: {} bytes (limit {})", size, NearbyProtocol.MAX_PACKET_BYTES)
+        return false
+    }
+
     fun sendToServer(type: Int, payload: Any) {
         val ch = channel ?: return
-        ch.sendToServer(C2SMessage(type, gson.toJson(payload)))
+        val json = gson.toJson(payload)
+        if (!fits(json)) return
+        try {
+            ch.sendToServer(C2SMessage(type, json))
+        } catch (e: Exception) {
+            DangoLogger.warn("DangoMusic client packet {} send failed: {}", type, e.javaClass.simpleName)
+        }
     }
 
     fun sendTo(player: EntityPlayerMP, type: Int, payload: Any) {
-        val ch = channel ?: return
-        ch.sendTo(S2CMessage(type, gson.toJson(payload)), player)
+        val json = gson.toJson(payload)
+        sendJsonTo(player, type, json)
     }
 
     fun sendJsonTo(player: EntityPlayerMP, type: Int, json: String) {
         val ch = channel ?: return
-        ch.sendTo(S2CMessage(type, json), player)
+        if (!fits(json)) return
+        try {
+            ch.sendTo(S2CMessage(type, json), player)
+        } catch (e: Exception) {
+            DangoLogger.warn("DangoMusic server packet {} send failed: {}", type, e.javaClass.simpleName)
+        }
     }
 }
 

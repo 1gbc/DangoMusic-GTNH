@@ -3,6 +3,7 @@ package me.sorihiko.dangomusicgtnh.multiplayer
 import me.sorihiko.dangomusicgtnh.lyrics.LyricLine
 import me.sorihiko.dangomusicgtnh.lyrics.Lyrics
 import me.sorihiko.dangomusicgtnh.music.MusicSource
+import me.sorihiko.dangomusicgtnh.music.NearbyMedia
 import me.sorihiko.dangomusicgtnh.music.NeteaseTrack
 
 /**
@@ -23,6 +24,7 @@ object NearbyProtocol {
         const val LYRICS = 4
         const val RELAY_REQUEST = 5
         const val RELAY_CANCEL = 6
+        const val GROUP_ACTION = 7
     }
 
     /** Server -> client. */
@@ -42,9 +44,6 @@ object NearbyProtocol {
     const val MAX_ARTISTS = 16
     const val MAX_RELAY_BYTES = 16 * 1024 * 1024
     const val RELAY_CHUNK_BYTES = 4096
-
-    /** Sharing quality: 0 = 128k, 1 = 192k, 2 = 320k. */
-    fun qualityId(quality: Int): Int = quality.coerceIn(0, 2)
 }
 
 /** A track as it travels over the network; platform IDs are preserved. */
@@ -70,8 +69,8 @@ data class SharedTrack(
             id = id,
             name = name.take(NearbyProtocol.MAX_TRACK_NAME),
             artists = artists.take(NearbyProtocol.MAX_ARTISTS).map { it.take(120) },
-            durationMs = durationMs.coerceAtLeast(0L),
-            coverUrl = coverUrl.take(NearbyProtocol.MAX_URL),
+            durationMs = durationMs.coerceIn(0L, 24L * 60L * 60L * 1000L),
+            coverUrl = coverUrl.take(NearbyProtocol.MAX_URL).takeIf { NearbyMedia.isAllowedRelayHost(it, false) }.orEmpty(),
             source = src,
             nativeId = nativeId,
             mediaId = mediaId.ifEmpty { nativeId },
@@ -89,7 +88,7 @@ data class SharedTrack(
             nativeId = track.nativeId,
             id = track.id,
             name = track.name.take(NearbyProtocol.MAX_TRACK_NAME),
-            artists = track.artists.take(NearbyProtocol.MAX_ARTISTS),
+            artists = track.artists.take(NearbyProtocol.MAX_ARTISTS).map { it.take(120) },
             durationMs = track.durationMs,
             coverUrl = track.coverUrl.take(NearbyProtocol.MAX_URL),
             cloud = track.cloud,
@@ -105,6 +104,66 @@ data class SharedLyricLine(
     val timeMs: Long = 0L,
     val text: String = "",
     val translation: String? = null,
+    val romanization: String? = null,
+)
+
+data class LyricsStyle(
+    val font: String = "",
+    val smooth: Boolean = false,
+    val textColor: Int = 0xF7E1D7,
+    val translationColor: Int = 0x803D66,
+    val scale: Float = 1f,
+    val distance: Float = 8.7f,
+    val maxLines: Int = 1,
+    val glow: Boolean = false,
+    val glowStrength: Float = 0.3f,
+    val glowRadius: Float = 0.5f,
+    val translation: Boolean = false,
+    val romanization: Boolean = false,
+    val ktv: Boolean = false,
+    val ktvBaseColor: Int = 0xD8D8D8,
+    val ktvSungColor: Int = 0xFF345E,
+    val wiggle: Boolean = true,
+    val wiggleFps: Int = 8,
+    val wiggleAmount: Float = 0.8f,
+)
+
+data class LyricsAnchor(
+    val x: Double = 0.0,
+    val y: Double = 0.0,
+    val z: Double = 0.0,
+    val yaw: Float = 0f,
+    val pitch: Float = 0f,
+    val scale: Float = 1f,
+    /** Host's wiggle frame at capture time; -1 when unavailable. */
+    val wiggleFrame: Long = -1L,
+)
+
+/** Keeps remote-controlled style values inside the range the renderer can handle. */
+fun LyricsStyle.sanitized(): LyricsStyle {
+    fun Float.finiteOr(fallback: Float): Float = if (isFinite()) this else fallback
+    return copy(
+        font = font.take(120),
+        scale = scale.finiteOr(1f).coerceIn(0.3f, 3f),
+        distance = distance.finiteOr(8.7f).coerceIn(3f, 40f),
+        maxLines = maxLines.coerceIn(1, 8),
+        glowStrength = glowStrength.finiteOr(0.3f).coerceIn(0f, 3f),
+        glowRadius = glowRadius.finiteOr(0.5f).coerceIn(0f, 1f),
+        wiggleFps = wiggleFps.coerceIn(1, 24),
+        wiggleAmount = wiggleAmount.finiteOr(0.8f).coerceIn(0f, 2f),
+    )
+}
+
+fun LyricsAnchor.sanitized(): LyricsAnchor = copy(
+    x = x.takeIf { it.isFinite() }?.coerceIn(-3.0e7, 3.0e7) ?: 0.0,
+    y = y.takeIf { it.isFinite() }?.coerceIn(-3.0e7, 3.0e7) ?: 0.0,
+    z = z.takeIf { it.isFinite() }?.coerceIn(-3.0e7, 3.0e7) ?: 0.0,
+    yaw = yaw.takeIf { it.isFinite() } ?: 0f,
+    pitch = pitch.takeIf { it.isFinite() } ?: 0f,
+    // The host's world scale is around 0.004..0.55; keep the real range instead
+    // of clamping it to 0.1 (which would make remote text visibly larger).
+    scale = scale.takeIf { it.isFinite() }?.coerceIn(0.001f, 2f) ?: 0.05f,
+    wiggleFrame = wiggleFrame.coerceAtLeast(-1L),
 )
 
 data class Hello(
@@ -128,6 +187,8 @@ data class Prefs(
     val seeLyrics: Boolean = true,
     val hearGroup: Boolean = true,
     val shareGroup: Boolean = true,
+    /** Group id this player is currently listening to; empty = no active group. */
+    val activeGroup: String = "",
 )
 
 data class NowPlayingState(
@@ -136,6 +197,8 @@ data class NowPlayingState(
     val playing: Boolean = false,
     /** Short-lived URL resolved under the host's account; optional. */
     val url: String? = null,
+    /** World anchor of the host's current 3D lyric line; optional. */
+    val anchor: LyricsAnchor? = null,
 )
 
 data class RemoteHost(
@@ -151,7 +214,7 @@ data class RemoteHost(
     val playing: Boolean = false,
     val shareLyrics: Boolean = false,
     val url: String? = null,
-    val urlAtMs: Long = 0L,
+    val anchor: LyricsAnchor? = null,
     /** Client-local receive time; not sent by the server. */
     val receivedAtMs: Long = 0L,
 )
@@ -159,6 +222,43 @@ data class RemoteHost(
 data class NearbyUpdate(
     val hosts: List<RemoteHost> = emptyList(),
     val group: GroupView? = null,
+    val groupUi: GroupUi? = null,
+)
+
+data class GroupPlayer(
+    val name: String = "",
+    val uuid: String = "",
+)
+
+data class GroupSummary(
+    val id: String = "",
+    val name: String = "",
+    val host: String = "",
+    val members: Int = 0,
+    val max: Int = 0,
+)
+
+data class GroupInvite(
+    val groupId: String = "",
+    val groupName: String = "",
+    val from: String = "",
+)
+
+data class GroupAction(
+    val action: String = "",
+    val name: String = "",
+    val target: String = "",
+)
+
+data class GroupUi(
+    /** Currently selected/listened group, if any. */
+    val group: GroupView? = null,
+    val players: List<GroupPlayer> = emptyList(),
+    val invites: List<GroupInvite> = emptyList(),
+    /** Open groups the player has not joined. */
+    val groups: List<GroupSummary> = emptyList(),
+    /** All groups this player is a member of, including offline members. */
+    val groupsJoined: List<GroupView> = emptyList(),
 )
 
 data class GroupView(
@@ -166,6 +266,9 @@ data class GroupView(
     val name: String = "",
     val host: String = "",
     val hostUuid: String = "",
+    /** Current group speaker; any member can become it. */
+    val speaker: String = "",
+    val speakerUuid: String = "",
     val members: List<String> = emptyList(),
     val idle: Boolean = false,
 )
@@ -173,13 +276,13 @@ data class GroupView(
 data class LyricsData(
     val trackKey: String = "",
     val lines: List<SharedLyricLine> = emptyList(),
+    val style: LyricsStyle? = null,
 )
 
 data class RelayRequest(
     val transferId: Int = 0,
     val trackKey: String = "",
     val url: String? = null,
-    val quality: Int = 1,
 )
 
 data class RelayChunk(
@@ -206,6 +309,7 @@ fun shareableLyrics(lyrics: Lyrics?): List<SharedLyricLine>? {
                 timeMs = line.timeMs.coerceAtLeast(0L),
                 text = line.text.trim().take(NearbyProtocol.MAX_LYRIC_CHARS),
                 translation = line.translation?.trim()?.take(NearbyProtocol.MAX_LYRIC_CHARS)?.takeIf { it.isNotEmpty() },
+                romanization = line.romanization?.trim()?.take(NearbyProtocol.MAX_LYRIC_CHARS)?.takeIf { it.isNotEmpty() },
             )
         }
         .toList()
@@ -217,4 +321,5 @@ fun LyricLine.toShared(): SharedLyricLine = SharedLyricLine(
     timeMs = timeMs.coerceAtLeast(0L),
     text = text.trim().take(NearbyProtocol.MAX_LYRIC_CHARS),
     translation = translation?.trim()?.take(NearbyProtocol.MAX_LYRIC_CHARS)?.takeIf { it.isNotEmpty() },
+    romanization = romanization?.trim()?.take(NearbyProtocol.MAX_LYRIC_CHARS)?.takeIf { it.isNotEmpty() },
 )

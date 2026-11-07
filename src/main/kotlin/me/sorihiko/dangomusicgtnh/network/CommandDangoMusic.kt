@@ -15,7 +15,7 @@ class CommandDangoMusic : CommandBase() {
     override fun getCommandName(): String = "dangomusic"
 
     override fun getCommandUsage(sender: ICommandSender?): String =
-        "/dangomusic group create <name> | join <name> | leave | info | status | reload"
+        "/dangomusic group create <name> | join <name> | leave [name] | info [name] | status | reload"
 
     override fun getRequiredPermissionLevel(): Int = 0
 
@@ -33,6 +33,7 @@ class CommandDangoMusic : CommandBase() {
                     throw CommandException("需要 OP 权限")
                 }
                 ServerConfig.reload()
+                NearbyServer.broadcastWelcome()
                 reply(sender, "DangoMusic 服务端配置已重载")
             }
             else -> reply(sender, getCommandUsage(sender))
@@ -66,8 +67,11 @@ class CommandDangoMusic : CommandBase() {
                 }
                 reply(sender, NearbyServer.groupJoin(player, name) ?: "已加入音乐群组：$name")
             }
-            "leave" -> reply(sender, NearbyServer.groupLeave(player) ?: "已离开音乐群组")
-            "info" -> reply(sender, NearbyServer.groupInfo(player))
+            "leave" -> {
+                val result = NearbyServer.groupLeave(player, args.getOrNull(2))
+                reply(sender, result ?: "你不在音乐群组中")
+            }
+            "info" -> reply(sender, NearbyServer.groupInfo(player, args.getOrNull(2)))
             else -> reply(sender, getCommandUsage(sender))
         }
     }

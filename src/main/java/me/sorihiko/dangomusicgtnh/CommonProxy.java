@@ -17,6 +17,10 @@ public class CommonProxy {
     }
 
     public void serverStarting(FMLServerStartingEvent event) {
-        ServerBootstrap.serverStarting(event);
+        // FMLServerStartingEvent also fires for the integrated server on a client.
+        // Keep the server-only command (and classes) off the client side.
+        if (FMLCommonHandler.instance().getSide().isServer()) {
+            ServerBootstrap.serverStarting(event);
+        }
     }
 }

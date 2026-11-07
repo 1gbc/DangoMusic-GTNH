@@ -28,11 +28,13 @@ object NearbyMedia {
         maxBytes: Int = 64 * 1024 * 1024,
         connectMs: Int = 8000,
         readMs: Int = 20000,
+        allowed: ((URL) -> Boolean)? = null,
     ): ByteArray? {
         if (url.isBlank() || url.length > 2048) return null
         var current: URL = try { URL(url) } catch (_: Exception) { return null }
         repeat(6) {
             if (current.protocol != "https" && current.protocol != "http") return null
+            if (allowed != null && !allowed(current)) return null
             val conn = current.openConnection() as? HttpURLConnection ?: return null
             try {
                 conn.instanceFollowRedirects = false

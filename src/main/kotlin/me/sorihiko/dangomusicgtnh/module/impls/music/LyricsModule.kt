@@ -26,8 +26,12 @@ import me.sorihiko.dangomusicgtnh.music.CoverArt
 import me.sorihiko.dangomusicgtnh.music.Dance
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.NeteaseTrack
+import me.sorihiko.dangomusicgtnh.music.PlaybackView
+import me.sorihiko.dangomusicgtnh.multiplayer.LyricsAnchor
+import me.sorihiko.dangomusicgtnh.multiplayer.LyricsStyle
 import me.sorihiko.dangomusicgtnh.multiplayer.SharedLyricLine
 import me.sorihiko.dangomusicgtnh.multiplayer.shareableLyrics
+import me.sorihiko.dangomusicgtnh.network.NearbyClient
 
 import java.util.Random
 import java.util.concurrent.ConcurrentHashMap
@@ -281,6 +285,9 @@ class LyricsModule : Module() {
         if (f.resumedAt == 0L) 1f else ((System.nanoTime() - f.resumedAt) / 3e8f).coerceIn(0f, 1f)
 
     private var active: Floating? = null
+
+    /** 最近一帧实际渲染的活动歌词世界姿态；附近共享用它复现位置/朝向/缩放 */
+    @Volatile private var sharedPose: LyricsAnchor? = null
     private var upcoming = emptyList<Floating>()
     private data class StackRow(val lyric: Floating, val center: Float)
 
@@ -323,6 +330,7 @@ class LyricsModule : Module() {
         current = null
         currentKey = null
         active = null
+        sharedPose = null
         fading.clear()
         flash.reset()
         lastIndex = -1
@@ -331,10 +339,20 @@ class LyricsModule : Module() {
     // ---------------------------------------------------------------- 当前歌曲 / 时钟
 
     private fun nowPlaying(): NowPlaying? {
-        if (!MusicPlayer.active) return null
-        val t = MusicPlayer.current ?: return null
-        return NowPlaying(t, MusicPlayer.state == MusicPlayer.State.PLAYING)
+        val snap = PlaybackView.snapshot()
+        val t = snap.track ?: return null
+        // When the listener opts out of the host's lyrics (or the host does not
+        // share them), use this client's own lyrics data and single-player style.
+        if (snap.remote && !NearbyClient.shouldUseLocalLyrics()) return null
+        return NowPlaying(t, snap.playing)
     }
+
+    private fun playbackPositionMs(): Long = PlaybackView.snapshot().positionMs
+
+    private fun playbackDurationMs(): Long = PlaybackView.snapshot().durationMs
+
+    private fun playbackBeatPulse(positionMs: Long): Float =
+        if (PlaybackView.snapshot().remote) 0f else MusicPlayer.beatPulse(positionMs)
 
     private val notFoundAt = ConcurrentHashMap<String, Long>()
 
@@ -348,6 +366,39 @@ class LyricsModule : Module() {
     /** Line-level lyrics for the nearby/group projection; null until the payload is loaded. */
     internal fun shareLines(track: NeteaseTrack): List<SharedLyricLine>? =
         shareableLyrics(lyricsFor(track.key))
+
+    /** Visual settings so a listener sees the same font, colors, scale and glow. */
+    internal fun shareStyle(): LyricsStyle = LyricsStyle(
+        font = lyricFont.value,
+        smooth = smoothFont.get(),
+        textColor = textColor.value,
+        translationColor = translationColor.value,
+        scale = scale.value,
+        distance = distance.value,
+        maxLines = maxLyricLines.value,
+        glow = glow.get(),
+        glowStrength = glowStrength.value,
+        glowRadius = glowRadius.value,
+        translation = translation.get(),
+        romanization = romanization.get(),
+        ktv = ktvMode.get(),
+        ktvBaseColor = ktvBaseColor.value,
+        ktvSungColor = ktvSungColor.value,
+        wiggle = wiggle.get(),
+        wiggleFps = wiggleFps.value,
+        wiggleAmount = wiggleAmount.value,
+    )
+
+    /** World position of the host's currently rendered lyric line, if any. */
+    internal fun shareAnchor(): LyricsAnchor? {
+        val f = active ?: return null
+        sharedPose?.let { return it }
+        return LyricsAnchor(
+            f.x, f.y, f.z, f.yaw, f.pitch,
+            0.03f * scale.value * (distance.value / 6.5f),
+            f.lastWiggleFrame ?: -1L,
+        )
+    }
 
     internal fun isLoadingLyrics(track: NeteaseTrack): Boolean = track.key in pending
 
@@ -378,25 +429,30 @@ class LyricsModule : Module() {
         val now = System.nanoTime()
         val s = nowPlaying()
         if (s == null) {
-            // 超过 3 秒没在放歌就清掉
-            if (current != null && (now - lastSeenNanos) / 1e9 > 3.0) {
+            // Remote playback may be active while this client deliberately renders
+            // the host's projection instead of local lyrics. Clear immediately in
+            // that case so the two lyric layers do not overlap for three seconds.
+            val remoteOptOut = PlaybackView.snapshot().remote
+            if (current != null && (remoteOptOut || (now - lastSeenNanos) / 1e9 > 3.0)) {
                 current = null
                 currentKey = null
                 active?.let { startFade(it) }
                 active = null
+                sharedPose = null
                 lastIndex = -1
             }
             return
         }
         lastSeenNanos = now
         requestLyrics(s.track)
-        val p = MusicPlayer.positionMs.toDouble()
+        val p = playbackPositionMs().toDouble()
         if (s.key != currentKey) {
             fading.removeAll { it.scrollOut > 0f }
             currentKey = s.key
             songPos = p
             active?.let { startFade(it) }
             active = null
+            sharedPose = null
             lastIndex = -1
         } else {
             if (abs(p - songPos) > 300) {
@@ -455,7 +511,7 @@ class LyricsModule : Module() {
             val pos = songPos.toLong()
             val ktv = ktvMode.get()
             val lyricIndex = if (ktv) lyrics.ktvIndexAt(pos) else lyrics.indexAt(pos)
-            val section = if (ktv && ktvInstrumental.get() && lyricIndex < 0) lyrics.instrumentalAt(pos.coerceAtLeast(0L), MusicPlayer.durationMs) else null
+            val section = if (ktv && ktvInstrumental.get() && lyricIndex < 0) lyrics.instrumentalAt(pos.coerceAtLeast(0L), playbackDurationMs()) else null
             val idx = if (section != null) -2 - section.ordinal else lyricIndex
             val sectionLabel = section?.displayLabel()
             if (paused) {
@@ -531,7 +587,7 @@ class LyricsModule : Module() {
         val floor = e.playerEyeY?.minus(GROUND_MARGIN)?.takeIf { aboveGround.get() }
         gfx.guarded {
             val songNow = songPos.toLong()
-            val beat = if (s != null) MusicPlayer.beatPulse(MusicPlayer.positionMs) else 0f
+            val beat = if (s != null) playbackBeatPulse(playbackPositionMs()) else 0f
             if (!worldMode.get()) {
                 // 3D lyrics 关掉 = 不显示歌词
             } else if (useFlash) {
@@ -652,7 +708,7 @@ class LyricsModule : Module() {
         val text = line.text
         val startMs = line.timeMs
         val animationEnd = if (nextMs == Long.MAX_VALUE) {
-            val boundary = MusicPlayer.durationMs.takeIf { it > startMs } ?: Long.MAX_VALUE
+            val boundary = playbackDurationMs().takeIf { it > startMs } ?: Long.MAX_VALUE
             line.ktvEndMs(boundary).takeUnless { it == Long.MAX_VALUE } ?: (startMs + 3500L)
         } else nextMs
         val ct = charTimes(line, animationEnd)
@@ -852,7 +908,7 @@ class LyricsModule : Module() {
      */
     private fun drawKtv(f: Floating, positionMs: Long, alpha: Float, preview: Boolean, wiggleFrame: Long?) {
         val boundary = if (f.nextMs == Long.MAX_VALUE) {
-            MusicPlayer.durationMs.takeIf { it > f.startMs } ?: Long.MAX_VALUE
+            playbackDurationMs().takeIf { it > f.startMs } ?: Long.MAX_VALUE
         } else f.nextMs
         val sung = if (preview) 0f else f.lyric.sungCharacters(positionMs, boundary)
         drawKtvLines(f.lines, sung, alpha, -halfMain(f), wiggleFrame = wiggleFrame)
@@ -1262,6 +1318,17 @@ class LyricsModule : Module() {
                 Math.toDegrees(atan2(-(ry + facingLift), horizontal)).toFloat()
             } else f.pitch
             val safe = if (multiline && view != null) protectSteepView(view, rx, ry + lift, rz, yaw, pitch) else null
+            if (f === active) {
+                sharedPose = LyricsAnchor(
+                    world.cameraX + (safe?.x ?: rx),
+                    world.cameraY + (safe?.y ?: (ry + lift)),
+                    world.cameraZ + (safe?.z ?: rz),
+                    safe?.yaw ?: yaw,
+                    safe?.pitch ?: pitch,
+                    s,
+                    f.lastWiggleFrame ?: -1L,
+                )
+            }
             world.push(safe?.x ?: rx, safe?.y ?: (ry + lift), safe?.z ?: rz, safe?.yaw ?: yaw, safe?.pitch ?: pitch, s)
             try {
                 if (f === active) {

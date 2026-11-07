@@ -179,6 +179,7 @@ internal class Sidebar(private val screen: MusicScreen) {
         section(I18n.text("DISCOVER"))
         nav("▤", I18n.text("Charts"), page == Page.CHARTS, false) { screen.go(Page.CHARTS) }
         nav("♫", I18n.text("Now Playing"), page == Page.QUEUE, false) { screen.go(Page.QUEUE) }
+        nav("♬", I18n.text("Music group"), page == Page.GROUP, false) { screen.go(Page.GROUP) }
         val netease = MusicSources.selected == MusicSource.NETEASE
         val playlists = Library.playlists
         // 云盘是固定入口，不跟着歌单滚动；列表未加载完时也允许直接打开。
