@@ -471,7 +471,7 @@ class LyricsModule : Module() {
                 } else if (idx >= 0) {
                     val line = lyrics.lines[idx]
                     if (line.text.isNotBlank()) {
-                        val next = lyrics.lines.getOrNull(idx + 1)?.timeMs ?: (line.timeMs + 5000)
+                        val next = lyrics.lines.getOrNull(idx + 1)?.timeMs ?: Long.MAX_VALUE
                         active = spawn(line, next).also { nextLine ->
                             if (resumed) nextLine.resumedAt = System.nanoTime()
                             if (anchor != null) {
@@ -505,7 +505,7 @@ class LyricsModule : Module() {
                 .take(count - 1)
                 .map { i ->
                     val line = lyrics.lines[i]
-                    spawn(line, lyrics.lines.getOrNull(i + 1)?.timeMs ?: line.timeMs + 3500L)
+                    spawn(line, lyrics.lines.getOrNull(i + 1)?.timeMs ?: Long.MAX_VALUE)
                 }.toList()
         }
         val stack = active?.let(::layoutStack).orEmpty()
@@ -841,13 +841,16 @@ class LyricsModule : Module() {
      * 发光由 [DeepGlow] 另外做（先把字画到发光画布上），这里只画字本身。
      */
     private fun drawKtv(f: Floating, positionMs: Long, alpha: Float, preview: Boolean, wiggleFrame: Long?) {
-        val sung = if (preview) 0f else f.lyric.sungCharacters(positionMs, f.nextMs)
+        val boundary = if (f.nextMs == Long.MAX_VALUE) {
+            MusicPlayer.durationMs.takeIf { it > f.startMs } ?: Long.MAX_VALUE
+        } else f.nextMs
+        val sung = if (preview) 0f else f.lyric.sungCharacters(positionMs, boundary)
         drawKtvLines(f.lines, sung, alpha, -halfMain(f), wiggleFrame = wiggleFrame)
         val phonetic = phoneticRows(f)
         val translated = translationRows(f)
         if (phonetic.isNotEmpty() || translated.isNotEmpty()) {
             val pen = DangoClient.gfx.text
-            val progress = if (preview) 0f else f.lyric.sungFraction(positionMs, f.nextMs)
+            val progress = if (preview) 0f else f.lyric.sungFraction(positionMs, boundary)
             pen.push()
             try {
                 pen.translate(0f, halfMain(f) + ANNOTATION_GAP)
