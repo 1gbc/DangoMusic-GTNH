@@ -220,7 +220,7 @@ internal class Sidebar(private val screen: MusicScreen) {
             } else if (ui.hover(row)) {
                 ui.card(row, Theme.CARD_HOVER, 9f)
             }
-            val liked = i == firstOwned   // 第一个自己的歌单就是"我喜欢的音乐"
+            val liked = netease && i == firstOwned   // 第一个自己的歌单就是"我喜欢的音乐"
             // 歌单封面的小缩略图；"我喜欢的音乐"和还没加载出封面的照旧画图标
             val thumb = if (liked || p.coverUrl.isEmpty()) null else CoverCache.playlistRounded(p, 0.25f)
             if (thumb != null) ui.drawCover(LayoutBounds(row.x + 9f, row.y + 5f, 18f, 18f), thumb)
@@ -231,8 +231,8 @@ internal class Sidebar(private val screen: MusicScreen) {
         }
         ui.endClip()
         if (list.isEmpty() && (menuNow == null || listArea.y + 18f < menuNow.y)) {
-            val loggedIn = if (MusicSources.selected == MusicSource.NETEASE) NeteaseApi.loggedIn else NativeAccounts.get(MusicSources.selected) != null
-            val msg = if (Library.playlistsLoading) I18n.text("Loading...") else if (loggedIn) I18n.text("No playlists") else I18n.text("Log in to see your playlists")
+            val loggedIn = loggedIn(MusicSources.selected)
+            val msg = if (Library.playlistsLoading) I18n.text("Loading...") else if (MusicSources.selected == MusicSource.APPLE && me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.connected && !loggedIn) I18n.text("Restoring login or checking library access") else if (loggedIn) I18n.text("No playlists") else I18n.text("Log in to see your playlists")
             ui.text(msg, x + 2f, listArea.y + 6f, 11f, Theme.TEXT_TERTIARY)
             if (Library.playlistsLoading) ui.progressBar(LayoutBounds(x + 2f, listArea.y + 24f, iw - 4f, 3f), null)
         }
@@ -277,10 +277,23 @@ internal class Sidebar(private val screen: MusicScreen) {
         Color(lerp(a.r, b.r, t), lerp(a.g, b.g, t), lerp(a.b, b.b, t), lerp(a.a, b.a, t))
 
     private fun loggedIn(source: MusicSource): Boolean =
-        if (source == MusicSource.NETEASE) NeteaseApi.loggedIn else NativeAccounts.get(source) != null
+        if (source == MusicSource.APPLE) me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized else if (source == MusicSource.NETEASE) NeteaseApi.loggedIn else NativeAccounts.get(source) != null
 
     /** 账号栏：头像 + 昵称（没登录时是"登录 xx"），右边是当前音源，点开菜单切换音源 / 退出登录 */
     private fun drawAccount(side: LayoutBounds) {
+        if (MusicSources.selected == MusicSource.APPLE) {
+            val b = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
+            ui.card(b, Theme.CARD, 10f)
+            ui.text("Apple Music", b.x + 10f, b.y + 8f, 12f, Theme.TEXT_PRIMARY)
+            ui.text(I18n.text(if (me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized) "Signed in" else "Log in"), b.x + 10f, b.y + 24f, 10f, Theme.TEXT_SECONDARY)
+            val chip = LayoutBounds(b.right - 30f, b.y, 30f, 40f)
+            chipRect = chip
+            menuRects += chip
+            ui.icon("⇄", chip.x + 15f, chip.y + 20f, 12f, Theme.TEXT_PRIMARY)
+            ui.hits += chip to { menuOpen = !menuOpen }
+            ui.hits += LayoutBounds(b.x, b.y, b.width - 30f, b.height) to { screen.login.open() }
+            return
+        }
         val ub = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
         val av = LayoutBounds(ub.x + 6f, ub.y + 6f, 28f, 28f)
         val source = MusicSources.selected
@@ -425,7 +438,7 @@ internal class Sidebar(private val screen: MusicScreen) {
                 hits += row0 to {
                     menuOpen = false
                     try {
-                        if (current == MusicSource.NETEASE) NeteaseApi.logout() else NativeAccounts.logout(current)
+                        if (current == MusicSource.APPLE) me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.disconnect() else if (current == MusicSource.NETEASE) NeteaseApi.logout() else NativeAccounts.logout(current)
                         Library.refreshAll()
                     } catch (_: Exception) { Library.showStatus("Unable to clear the saved login. Please try again.") }
                 }

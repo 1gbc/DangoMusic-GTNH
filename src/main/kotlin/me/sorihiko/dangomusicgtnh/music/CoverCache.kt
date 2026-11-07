@@ -165,7 +165,7 @@ object CoverCache {
     /** 已经下载好的原图（取颜色用，渲染线程调用）；还没下好是 null */
     fun image(key: String): BufferedImage? = sources[key]
 
-    /** 四个角挖成圆角（抗锯齿：边缘按覆盖率给透明度） */
+    /** 连续曲率圆角，与形状/玻璃着色器保持一致；半径为边长一半时保留圆形。 */
     private fun roundCorners(src: BufferedImage, ratio: Float): BufferedImage {
         val w = src.width
         val h = src.height
@@ -175,11 +175,9 @@ object CoverCache {
             for (x in 0 until w) {
                 val px = x + 0.5f
                 val py = y + 0.5f
-                // 到最近的圆角圆心的距离（不在角落区域时为 0）
-                val dx = kotlin.math.max(kotlin.math.max(r - px, px - (w - r)), 0f)
-                val dy = kotlin.math.max(kotlin.math.max(r - py, py - (h - r)), 0f)
-                val d = kotlin.math.sqrt(dx * dx + dy * dy)
-                val cover = (r - d + 0.5f).coerceIn(0f, 1f)
+                val d = ContinuousCorners.distance((px - w * 0.5f).toDouble(), (py - h * 0.5f).toDouble(),
+                    w * 0.5, h * 0.5, r.toDouble())
+                val cover = (0.5 - d).coerceIn(0.0, 1.0)
                 val argb = src.getRGB(x, y)
                 val a = (((argb ushr 24) and 0xFF) * cover).toInt()
                 out.setRGB(x, y, (a shl 24) or (argb and 0xFFFFFF))

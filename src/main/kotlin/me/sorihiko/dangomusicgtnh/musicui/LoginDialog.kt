@@ -42,6 +42,7 @@ internal class LoginDialog(private val screen: MusicScreen) {
     fun open() {
         showing = true
         provider = MusicSources.selected
+        if (provider == MusicSource.APPLE) { me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.startNative(); return }
         if (native) NativeLogin.start(provider) else NeteaseLogin.start()
     }
 
@@ -79,6 +80,7 @@ internal class LoginDialog(private val screen: MusicScreen) {
     }
 
     fun draw() {
+        if (provider == MusicSource.APPLE) { drawApple(); return }
         val ctx = ui.ctx
         hits.clear()
         val state = this.state
@@ -210,6 +212,36 @@ internal class LoginDialog(private val screen: MusicScreen) {
             ctx.drawShape(b, ShapeStyle(RED, 14f))
             ui.text(label, b.x + 14f, b.y + 9f, 12f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
             hits += b to { NativeLogin.start(provider) }
+        }
+    }
+
+    private fun drawApple() {
+        hits.clear()
+        val web = me.sorihiko.dangomusicgtnh.music.AppleWebPlayer
+        if (web.connected && web.authorized) { showing = false; Library.refreshAll(); return }
+        val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 248f) / 2f, 420f, 248f)
+        ui.ctx.drawGlass(box, Theme.GLASS_WINDOW)
+        ui.text("Apple Music", box.x + 20f, box.y + 20f, 18f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        val connectionLabel = if (web.authorized) "Apple Music 已连接"
+            else if (web.connected) "正在恢复账号，首次使用请完成官方授权" else "正在连接后台播放组件"
+        ui.text(I18n.text(connectionLabel), box.x + 20f, box.y + 58f, 13f, Theme.TEXT_PRIMARY)
+        ui.wrap2(I18n.text(web.message.ifEmpty { "Playback is handled by the official webpage" }), box.width - 40f, 12f).forEachIndexed { i, line ->
+            ui.text(line, box.x + 20f, box.y + 82f + i * 16f, 12f, Theme.TEXT_SECONDARY)
+        }
+        val labels = listOf("重试连接", "Apple 官方账号授权", "断开连接", "返回播放器")
+        labels.forEachIndexed { i, label ->
+            val row = i / 2
+            val b = LayoutBounds(box.x + 20f + (i % 2) * 192f, box.y + 138f + row * 38f, 184f, 30f)
+            ui.card(b, if (ui.hover(b)) Theme.CARD_HOVER else Theme.CARD, 9f)
+            ui.text(I18n.text(label), b.x + 12f, b.y + 10f, 12f, Theme.TEXT_PRIMARY)
+            hits += b to {
+                when (i) {
+                    0 -> web.startNative()
+                    1 -> if (web.nativeRunning) web.command("show") else web.startNative()
+                    2 -> web.disconnect()
+                    else -> close()
+                }
+            }
         }
     }
 

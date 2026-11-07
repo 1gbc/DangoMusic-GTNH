@@ -347,5 +347,9 @@ internal object Library {
         else artistFailedIds.remove(artistKey(source, id))
     }
 
-    private fun publicError(error: Exception) = if (error is SourceAccessException) error.message.orEmpty() else "Source unavailable. Please retry."
+    private fun publicError(error: Exception) = when (error) {
+        is java.util.concurrent.CancellationException -> ""
+        is SourceAccessException -> error.message.orEmpty()
+        else -> "Source unavailable. Please retry."
+    }
 }

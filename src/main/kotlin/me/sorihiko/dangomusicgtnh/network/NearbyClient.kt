@@ -417,7 +417,7 @@ object NearbyClient {
     }
 
     private fun sendNowPlaying(module: NearbyModule) {
-        val track = MusicPlayer.current
+        val track = MusicPlayer.current?.takeUnless { it.source == me.sorihiko.dangomusicgtnh.music.MusicSource.APPLE }
         val sharing = module.enabled && track != null &&
             (module.shareMusic.get() || (module.shareGroup.get() && isInGroup()))
         val key = if (sharing) track!!.key else ""
@@ -449,7 +449,7 @@ object NearbyClient {
             shareUrlAtMs = 0L
             return
         }
-        val track = MusicPlayer.current ?: return
+        val track = MusicPlayer.current?.takeUnless { it.source == me.sorihiko.dangomusicgtnh.music.MusicSource.APPLE } ?: return
         val now = System.currentTimeMillis()
         // Sharing URLs are short-lived; refresh them periodically instead of reusing
         // the URL forever when the same track is replayed.
@@ -485,7 +485,7 @@ object NearbyClient {
     }
 
     private fun sendLyrics(module: NearbyModule) {
-        val track = MusicPlayer.current
+        val track = MusicPlayer.current?.takeUnless { it.source == me.sorihiko.dangomusicgtnh.music.MusicSource.APPLE }
         if (!module.shareLyrics.get() || !module.enabled || track == null) {
             if (lastLyricsKey != null) {
                 NetworkBootstrap.sendToServer(NearbyProtocol.C2S.LYRICS, LyricsData())

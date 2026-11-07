@@ -559,3 +559,59 @@ My groups	我的群组
 You have not joined a group	你还没有加入群组
 Listen	收听
 Current	当前
+
+Browser connection	浏览器连接
+Browser connected	浏览器已连接
+Pair the browser extension	请配对浏览器扩展
+Open official webpage	打开官方网页
+Copy pairing link	复制配对链接
+Reconnect	重新配对
+Disconnect	断开连接
+Pair the Apple Music browser extension	请将配对链接粘贴到 Apple Music 浏览器扩展
+Playback is handled by the official webpage	音乐由 Apple Music 官方网页播放
+Unable to start Apple Music local bridge	无法启动 Apple Music 本机桥接
+Apple Music control failed	Apple Music 控制失败
+Connect Apple Music using the account button	请点击账号入口连接 Apple Music
+Apple Music browser disconnected; pair again	Apple Music 浏览器已断开，请重新配对
+Apple Music controls are waiting for the browser	正在等待浏览器确认播放控制
+Apple Music browser controls connected; browse and queue songs in the official webpage	Apple Music 歌曲浏览与播放队列暂由官方网页管理
+Search in the official Apple Music webpage for now	此测试版请在 Apple Music 官方网页搜索歌曲
+Unable to open browser	无法打开浏览器
+Start embedded player	启动内嵌播放器
+Show login window	显示登录窗口
+Hide player window	隐藏播放窗口
+Install the Apple Music playback component in config/dangomusicgtnh/apple-player	请先将播放组件安装到 config/dangomusicgtnh/apple-player
+The embedded Apple player currently requires Windows	内嵌 Apple 播放组件目前仅支持 Windows
+Complete Apple login in the embedded player, then hide its window	请在内嵌播放器中登录 Apple Music，完成后可隐藏窗口
+Unable to launch embedded Apple player; check the component and .NET Desktop Runtime	无法启动内嵌播放器，请检查组件和 .NET Desktop Runtime
+Complete Apple login in the player window	请在播放组件窗口中完成 Apple 登录
+Embedded Apple player exited; restart it or check the component	内嵌播放器已退出，请重启或检查组件，退出码
+Starting embedded Apple player	正在启动内嵌 Apple 播放器…
+Embedded player is not connected; show its window to check startup	内嵌播放器尚未连接，请显示窗口检查启动状态
+Embedded player connected	内嵌播放器已连接
+Embedded player not connected	内嵌播放器未连接
+Library songs	媒体库歌曲
+Log in to Apple Music	登录 Apple Music
+Signed in to Apple Music	已登录 Apple Music
+Signed in	已登录
+Sign in to Apple Music in the login window	请在弹出的官方窗口中登录 Apple Music
+Apple Music request failed; check login, region and connection	Apple Music 请求失败，请检查登录、地区权限和网络
+Apple Music player is disconnected	Apple Music 播放组件已断开
+Apple Music session changed; retry	Apple Music 会话已变化，请重试
+Apple Music could not load this song	Apple Music 无法加载此歌曲
+Loading Apple Music song	正在加载 Apple Music 歌曲
+Apple Music operation timed out; check the login window	Apple Music 操作超时，请检查登录窗口
+Apple Music: sign in once, then search and play in the game	Apple Music：登录后可在游戏内搜索、查看媒体库并播放
+Refresh your Apple Music library	请刷新 Apple Music 媒体库
+Close	关闭
+Apple Music region unavailable; sign in and retry	无法取得 Apple Music 地区，请登录后重试
+Too many Apple Music playlists; reconnect to refresh	Apple Music 歌单过多，请重新连接后刷新
+Restoring Apple Music session; library access is not ready	正在恢复 Apple Music 登录，媒体库权限尚未就绪
+Apple Music library interface is unavailable; check the player window	Apple Music 媒体库接口不可用，请查看播放组件窗口
+Apple Music website sign-in is not yet authorized for library access	官方网页已连接，但媒体库尚未授权，请完成官方授权后刷新
+Apple Music library permission is not ready; finish official authorization	Apple Music 媒体库权限未就绪，请完成官方授权
+Apple Music denied this library request; check subscription and region	Apple Music 拒绝此媒体库请求，请检查订阅和地区权限
+Apple Music popular songs	Apple Music 热门歌曲
+Search songs, open charts or browse your library	搜索歌曲、查看热门歌曲或浏览媒体库
+Refresh library	刷新媒体库
+Restoring login or checking library access	正在恢复登录或检查媒体库权限

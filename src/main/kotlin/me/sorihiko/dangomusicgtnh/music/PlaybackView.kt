@@ -45,7 +45,7 @@ object PlaybackView {
                 playing = MusicPlayer.state == MusicPlayer.State.PLAYING,
                 loading = MusicPlayer.state == MusicPlayer.State.LOADING,
                 message = MusicPlayer.message,
-                sourceLabel = I18n.text("Local"),
+                sourceLabel = I18n.text(if (track?.source == MusicSource.APPLE) "Apple Music" else "Local"),
             )
         }
         val host = NearbyClient.activeHost()

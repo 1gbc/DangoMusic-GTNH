@@ -455,10 +455,9 @@ class LyricsModule : Module() {
             sharedPose = null
             lastIndex = -1
         } else {
-            if (abs(p - songPos) > 300) {
-                lastIndex = -1
-                fading.removeAll { it.scrollOut > 0f }
-            }
+            // Browser telemetry arrives in batches, not every rendered frame.
+            // The lyric index below handles real seeks; a clock correction within
+            // the same line must not respawn its random world anchor.
             songPos = p
         }
         current = s
