@@ -150,7 +150,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         modeButton = LayoutBounds(cx - MODE_BUTTON_OFFSET, cy - 16f, 32f, 32f)
         val mode = if (snap.remote) MusicPlayer.Mode.SEQUENTIAL else MusicPlayer.mode
         toggleButton(modeButton, cy, modeOpen, modeA, mode.glyph) {
-            if (snap.remote || t?.source == MusicSource.APPLE) return@toggleButton
+            if (snap.remote) return@toggleButton
             val opening = !modeOpen
             dismissMenu()
             modeOpen = opening
@@ -191,7 +191,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         ui.hits += nextB to { nextA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.next() } }
         ui.hits += queueB to {
             queueA.press.v -= 7f
-            if (!snap.remote && t?.source != MusicSource.APPLE) {
+            if (!snap.remote) {
                 if (ScreenState.page == Page.QUEUE) screen.goBackOrHome() else screen.go(Page.QUEUE)
             }
         }

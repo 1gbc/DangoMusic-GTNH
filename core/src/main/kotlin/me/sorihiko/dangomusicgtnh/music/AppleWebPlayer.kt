@@ -11,6 +11,8 @@ object AppleWebPlayer {
         private set
     @Volatile private var selected = false
     private var lastVolume = -1f
+    @Volatile private var loadStartedAt = 0L
+    private var endedOnce = false
     @Volatile private var connectionEpoch = 0L
     @Volatile private var nativeProcess: Process? = null
     @Volatile var nativeMode = false
@@ -20,6 +22,7 @@ object AppleWebPlayer {
     private val nativeWorker = Executors.newSingleThreadExecutor { r -> Thread(r, "Dango-AppleNative").apply { isDaemon = true } }
     val nativeRunning get() = nativeProcess?.isAlive == true
     val connected get() = server?.connected() == true
+    val authorized get() = server?.authorized() == true
     val pairingLink get() = server?.pairingLink().orEmpty()
     fun ensureStarted() { if (server == null) connect() }
     fun startNative() {
@@ -77,6 +80,7 @@ object AppleWebPlayer {
     @Synchronized fun connect() {
         try {
             ++connectionEpoch
+            AppleMusicSource.clear()
             nativeMode = false
             startupFailure = ""
             if (server == null) server = AppleWebServer() else server?.reconnect()
@@ -84,7 +88,26 @@ object AppleWebPlayer {
             lastVolume = -1f
         } catch (_: Exception) { message = "Unable to start Apple Music local bridge" }
     }
+    fun request(op: String, value: String, offset: Int): JsonObject {
+        if (!authorized) throw SourceAccessException("Sign in to Apple Music in the login window")
+        val endpoint = server ?: throw SourceAccessException("Apple Music player is disconnected")
+        val epoch = connectionEpoch
+        try {
+            val result = endpoint.request(op, value, offset)
+            if (epoch != connectionEpoch) throw SourceAccessException("Apple Music session changed; retry")
+            return result
+        } catch (_: Exception) { throw SourceAccessException("Apple Music request failed; check login, region and connection") }
+    }
+    fun load(track: NeteaseTrack): Boolean {
+        if (!authorized) { message = "Sign in to Apple Music in the login window"; return false }
+        return try {
+            server?.playSong(track.mediaId.removePrefix("library:"), track.mediaId.startsWith("library:"))
+            loadStartedAt = System.nanoTime()
+            true
+        } catch (_: Exception) { message = "Apple Music could not load this song"; false }
+    }
     fun command(name: String, value: Double? = null) {
+        if (name == "stop") loadStartedAt = 0L
         try { server?.command(name, value) } catch (_: Exception) { message = "Apple Music control failed" }
     }
     fun tick() {
@@ -107,18 +130,29 @@ object AppleWebPlayer {
             else -> ""
         }
         if (s == null || !s.get("available").asBoolean || s.get("title").asString.isEmpty()) {
+            if (loadStartedAt != 0L && System.nanoTime() - loadStartedAt < 20_000_000_000L && server?.error().isNullOrEmpty()) return
+            loadStartedAt = 0L
             MusicPlayer.clearAppleState()
             return
         }
         fun str(k: String) = s.get(k)?.asString.orEmpty()
         val id = str("id").ifEmpty { str("title") + ":" + str("artist") }
-        val track = NeteaseTrack(MusicSources.stableId(MusicSource.APPLE, id), str("title"), listOf(str("artist")),
-            s.get("durationMs").asLong, str("cover"), MusicSource.APPLE, id).apply { albumName = str("album") }
+        loadStartedAt = 0L
+        val track = MusicPlayer.queue.firstOrNull { it.source == MusicSource.APPLE && (it.nativeId == id || it.mediaId.removePrefix("library:") == id) }
+            ?: NeteaseTrack(MusicSources.stableId(MusicSource.APPLE, id), str("title"), listOf(str("artist")),
+                s.get("durationMs").asLong, str("cover"), MusicSource.APPLE, id).apply { albumName = str("album") }
+        track.durationMs = s.get("durationMs").asLong
+        if (str("cover").isNotEmpty()) track.coverUrl = str("cover")
         MusicPlayer.acceptAppleState(track, s.get("positionMs").asLong, s.get("playing").asBoolean)
+        val ended = s.get("ended")?.asBoolean == true
+        if (ended && !endedOnce) { endedOnce = true; MusicPlayer.finishAppleTrack() }
+        if (!ended) endedOnce = false
     }
     fun disconnect() {
         val retired = synchronized(this) {
             ++connectionEpoch
+            AppleMusicSource.clear()
+            loadStartedAt = 0L
             val old = server to nativeProcess
             server = null
             nativeProcess = null

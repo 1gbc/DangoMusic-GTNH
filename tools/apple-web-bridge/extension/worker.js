@@ -36,10 +36,12 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
     if(!config||config.tabId!==sender.tab.id)return {};
     try{
       const state=await run(config.tabId);
-      const response=await post(config,'/sync',config.key,{ack:config.ack,state,commandError:config.commandError||''});
+      const response=await post(config,'/sync',config.key,{ack:config.ack,state,commandError:config.commandError||'',commandResult:config.commandResult||null});
+      config.commandResult=null;
       config.commandError='';
       if(response.command&&response.command.id>config.ack){
-        try{await run(config.tabId,response.command);}catch{config.commandError='Official player rejected control: '+response.command.name;}
+        try{const outcome=await run(config.tabId,response.command);if(response.command.name==='query')config.commandResult={...outcome,id:response.command.id};if(outcome.error)config.commandError=outcome.error;}
+        catch{config.commandError='Official player rejected control: '+response.command.name;if(response.command.name==='query')config.commandResult={id:response.command.id,error:config.commandError};}
         config.ack=response.command.id;
       }
       config.lastOk=Date.now();config.error=state.error||config.commandError||'';

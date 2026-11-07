@@ -285,7 +285,7 @@ internal class Sidebar(private val screen: MusicScreen) {
             val b = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
             ui.card(b, Theme.CARD, 10f)
             ui.text("Apple Music", b.x + 10f, b.y + 8f, 12f, Theme.TEXT_PRIMARY)
-            ui.text(I18n.text("Browser connection"), b.x + 10f, b.y + 24f, 10f, Theme.TEXT_SECONDARY)
+            ui.text(I18n.text(if (me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized) "Signed in" else "Log in"), b.x + 10f, b.y + 24f, 10f, Theme.TEXT_SECONDARY)
             val chip = LayoutBounds(b.right - 30f, b.y, 30f, 40f)
             chipRect = chip
             menuRects += chip

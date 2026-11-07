@@ -222,6 +222,12 @@ class NeteaseMusicModule : Module() {
         volume.setValue((volume.value + d).coerceIn(0f, 1f))
         MusicPlayer.volume = volume.value
         me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.tick()
+        val appleAuthorized = MusicSources.selected == MusicSource.APPLE && me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized
+        if (appleAuthorized != appleWasAuthorized) {
+            appleWasAuthorized = appleAuthorized
+            me.sorihiko.dangomusicgtnh.music.AppleMusicSource.clear()
+            me.sorihiko.dangomusicgtnh.musicui.Library.refreshAll()
+        }
     }
 
     fun selectPlaybackMode(mode: MusicPlayer.Mode) {
@@ -339,6 +345,8 @@ class NeteaseMusicModule : Module() {
         }
     }
 
+    private var appleWasAuthorized = false
+
     @EventHandler
     fun onTick(e: TickEvent) {
         // 即使播放器被关闭，也要初始化并保存界面语言。
@@ -350,6 +358,12 @@ class NeteaseMusicModule : Module() {
         if (++tickCount > 5) lyrics()?.let { if (!it.enabled) it.enabled = true }
         MusicPlayer.volume = volume.value
         me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.tick()
+        val appleAuthorized = MusicSources.selected == MusicSource.APPLE && me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized
+        if (appleAuthorized != appleWasAuthorized) {
+            appleWasAuthorized = appleAuthorized
+            me.sorihiko.dangomusicgtnh.music.AppleMusicSource.clear()
+            me.sorihiko.dangomusicgtnh.musicui.Library.refreshAll()
+        }
         val mode = audioOutput.value
         if (MusicPlayer.outputMode != mode) ClientMusic.control { MusicPlayer.outputMode = mode }
         MusicPlayer.normalize = normalize.get()

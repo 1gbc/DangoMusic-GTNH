@@ -590,3 +590,19 @@ Starting embedded Apple player	正在启动内嵌 Apple 播放器…
 Embedded player is not connected; show its window to check startup	内嵌播放器尚未连接，请显示窗口检查启动状态
 Embedded player connected	内嵌播放器已连接
 Embedded player not connected	内嵌播放器未连接
+Library songs	媒体库歌曲
+Log in to Apple Music	登录 Apple Music
+Signed in to Apple Music	已登录 Apple Music
+Signed in	已登录
+Sign in to Apple Music in the login window	请在弹出的官方窗口中登录 Apple Music
+Apple Music request failed; check login, region and connection	Apple Music 请求失败，请检查登录、地区权限和网络
+Apple Music player is disconnected	Apple Music 播放组件已断开
+Apple Music session changed; retry	Apple Music 会话已变化，请重试
+Apple Music could not load this song	Apple Music 无法加载此歌曲
+Loading Apple Music song	正在加载 Apple Music 歌曲
+Apple Music operation timed out; check the login window	Apple Music 操作超时，请检查登录窗口
+Apple Music: sign in once, then search and play in the game	Apple Music：登录后可在游戏内搜索、查看媒体库并播放
+Refresh your Apple Music library	请刷新 Apple Music 媒体库
+Close	关闭
+Apple Music region unavailable; sign in and retry	无法取得 Apple Music 地区，请登录后重试
+Too many Apple Music playlists; reconnect to refresh	Apple Music 歌单过多，请重新连接后刷新

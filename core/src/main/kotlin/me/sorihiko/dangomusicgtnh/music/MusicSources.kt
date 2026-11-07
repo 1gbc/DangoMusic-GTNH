@@ -87,13 +87,7 @@ object MusicSources {
         MusicSource.NETEASE -> netease
         MusicSource.QQ -> QqMusicSource
         MusicSource.KUGOU -> KugouMusicSource
-        MusicSource.APPLE -> object : MusicSourceApi {
-            override val source = MusicSource.APPLE
-            override val libraryWarning = "Apple Music browser controls connected; browse and queue songs in the official webpage"
-            override fun search(query: String): List<NeteaseTrack> = throw SourceAccessException("Search in the official Apple Music webpage for now")
-            override fun songUrl(track: NeteaseTrack): NeteaseApi.SongUrl? = null
-            override fun lyrics(track: NeteaseTrack): Lyrics? = null
-        }
+        MusicSource.APPLE -> AppleMusicSource
     }
 
     /** Compatibility ID for existing numeric UI fields. Identity is always [NeteaseTrack.key]. */

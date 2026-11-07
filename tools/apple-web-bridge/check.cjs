@@ -40,6 +40,23 @@ test('authenticated local bridge rejects stale playback after stop and reconnect
     assert.equal((await post('/sync',key,telemetry)).code,403);
   } finally {await bridge.close();}
 });
+test('catalog browsing returns only metadata and a stopped pending load never starts late', async()=>{
+  const vm=require('node:vm');
+  const source=fs.readFileSync(__dirname+'/extension/adapter.js','utf8');
+  let resolveQueue,plays=0,requests=[];
+  const player={isAuthorized:true,storefrontId:'us',api:{music:async(path,params)=>{requests.push(path);return {data:{results:{songs:{data:[{id:'123',type:'songs',attributes:{name:'Song',artistName:'Artist',durationInMillis:240000,developerToken:'secret'}}]}}}};}},
+    setQueue:()=>new Promise(r=>{resolveQueue=r;}),play:async()=>{plays++;},stop:async()=>{},volume:0.2};
+  Object.defineProperty(player,'developerToken',{get(){throw Error('Credentials must not be accessed');}});
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(source,context);
+  const result=await context.appleAdapter({name:'query',value:{op:'search',term:'Song',offset:0}});
+  assert.equal(result.items?.[0]?.title,'Song');
+  assert.equal(result.items[0].developerToken,undefined);
+  assert.ok(requests[0].startsWith('/v1/catalog/us/search'));
+  const load=context.appleAdapter({name:'load',value:{id:'123',library:false}});
+  await context.appleAdapter({name:'stop'});resolveQueue();await load;
+  assert.equal(plays,0,'Late setQueue completion must not autoplay after stop');
+});
 test('page adapter reads the actual player clock and validates controls without reading credentials', async()=>{
   const vm=require('node:vm');
   const source=fs.readFileSync(__dirname+'/extension/adapter.js','utf8');

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DangoMusic Apple Web Bridge (Probe)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Explicitly pair one official Apple Music tab with DangoMusic on this computer.",
   "permissions": ["scripting", "storage", "activeTab"],
   "host_permissions": ["https://music.apple.com/*", "http://127.0.0.1/*"],

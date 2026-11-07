@@ -42,7 +42,7 @@ internal class LoginDialog(private val screen: MusicScreen) {
     fun open() {
         showing = true
         provider = MusicSources.selected
-        if (provider == MusicSource.APPLE) { me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.ensureStarted(); return }
+        if (provider == MusicSource.APPLE) { me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.startNative(); return }
         if (native) NativeLogin.start(provider) else NeteaseLogin.start()
     }
 
@@ -218,17 +218,17 @@ internal class LoginDialog(private val screen: MusicScreen) {
     private fun drawApple() {
         hits.clear()
         val web = me.sorihiko.dangomusicgtnh.music.AppleWebPlayer
-        val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 338f) / 2f, 420f, 338f)
+        if (web.connected && web.authorized) { showing = false; return }
+        val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 248f) / 2f, 420f, 248f)
         ui.ctx.drawGlass(box, Theme.GLASS_WINDOW)
         ui.text("Apple Music", box.x + 20f, box.y + 20f, 18f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-        val connectionLabel = if (web.nativeMode) {
-            if (web.connected) "Embedded player connected" else "Embedded player not connected"
-        } else if (web.connected) "Browser connected" else "Pair the browser extension"
+        val connectionLabel = if (web.authorized) "Signed in to Apple Music"
+            else if (web.connected) "Sign in to Apple Music in the login window" else "Embedded player not connected"
         ui.text(I18n.text(connectionLabel), box.x + 20f, box.y + 58f, 13f, Theme.TEXT_PRIMARY)
         ui.wrap2(I18n.text(web.message.ifEmpty { "Playback is handled by the official webpage" }), box.width - 40f, 12f).forEachIndexed { i, line ->
             ui.text(line, box.x + 20f, box.y + 82f + i * 16f, 12f, Theme.TEXT_SECONDARY)
         }
-        val labels = listOf("Open official webpage", "Copy pairing link", "Reconnect", "Disconnect", "Start embedded player", "Show login window", "Hide player window", "Close")
+        val labels = listOf("Log in to Apple Music", "Show login window", "Disconnect", "Close")
         labels.forEachIndexed { i, label ->
             val row = i / 2
             val b = LayoutBounds(box.x + 20f + (i % 2) * 192f, box.y + 138f + row * 38f, 184f, 30f)
@@ -236,13 +236,9 @@ internal class LoginDialog(private val screen: MusicScreen) {
             ui.text(I18n.text(label), b.x + 12f, b.y + 10f, 12f, Theme.TEXT_PRIMARY)
             hits += b to {
                 when (i) {
-                    0 -> Thread({ try { java.awt.Desktop.getDesktop().browse(java.net.URI("https://music.apple.com/")) } catch (_: Exception) { Library.showStatus("Unable to open browser") } }, "Dango-AppleBrowser").apply { isDaemon = true }.start()
-                    1 -> { DangoClient.platform.clipboard = web.pairingLink }
-                    2 -> if (web.nativeMode) web.startNative() else web.connect()
-                    3 -> web.disconnect()
-                    4 -> web.startNative()
-                    5 -> if (web.nativeRunning) web.command("show") else web.startNative()
-                    6 -> if (web.nativeRunning) web.command("hide")
+                    0 -> web.startNative()
+                    1 -> if (web.nativeRunning) web.command("show") else web.startNative()
+                    2 -> web.disconnect()
                     else -> close()
                 }
             }

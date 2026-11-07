@@ -59,6 +59,8 @@ internal sealed class PlayerWindow : Form
     private long ack;
     private DateTime lastOk=DateTime.UtcNow;
     private bool polling,ready,closing;
+    private bool loginRequested,wasAuthorized;
+    private JsonNode? commandResult;
     private CoreWebView2Environment? environment;
     public PlayerWindow(Uri link,string profile,int parentPid)
     {
@@ -101,16 +103,18 @@ internal sealed class PlayerWindow : Form
     private async void OpenLoginPopup(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled=true;
-        if(!AppleNavigation(e.Uri))return;
-        using var deferral=e.GetDeferral();
+        if(!AppleNavigation(e.Uri)&&e.Uri!="about:blank")return;
+        var deferral=e.GetDeferral();
         try
         {
             var popup=new Form {Text="Apple 官方账号登录",Width=700,Height=800};
             var view=new WebView2 {Dock=DockStyle.Fill};popup.Controls.Add(view);
             await view.EnsureCoreWebView2Async(environment);
-            view.CoreWebView2.NavigationStarting+=(_,n)=>{if(!AppleNavigation(n.Uri))n.Cancel=true;};
+            view.CoreWebView2.NavigationStarting+=(_,n)=>{if(!AppleNavigation(n.Uri)&&n.Uri!="about:blank")n.Cancel=true;};
+            view.CoreWebView2.WindowCloseRequested+=(_,_)=>popup.Close();
             e.NewWindow=view.CoreWebView2;popup.Show(this);
         }catch{status.Text="无法打开登录窗口，请重启组件后重试。";}
+        finally{deferral.Complete();}
     }
     private async Task<JsonNode> Post(string path,string key,JsonNode data)
     {
@@ -129,7 +133,7 @@ internal sealed class PlayerWindow : Form
         {
             string js=adapter+"\nappleAdapter("+(command?.ToJsonString()??"null")+").then(result=>chrome.webview.postMessage({nonce:'"+nonce+"',result})).catch(()=>chrome.webview.postMessage({nonce:'"+nonce+"',result:{available:false,error:'Official player rejected control'}}));";
             await web.CoreWebView2.ExecuteScriptAsync(js);
-            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            return await completion.Task.WaitAsync(TimeSpan.FromSeconds(7));
         }
         finally {replies.Remove(nonce);}
     }
@@ -140,14 +144,24 @@ internal sealed class PlayerWindow : Form
         try
         {
             var state=await Evaluate(null);
-            var result=await Post("/sync",session,new JsonObject { ["ack"]=ack,["state"]=state,["commandError"]=commandError });
+            bool authorized=state["authorized"]?.GetValue<bool>()==true;
+            if(authorized&&!wasAuthorized){Hide();loginRequested=true;}
+            if(!authorized&&state["available"]?.GetValue<bool>()==true&&!loginRequested){loginRequested=true;await Evaluate(new JsonObject{["name"]="login"});}
+            wasAuthorized=authorized;
+            var result=await Post("/sync",session,new JsonObject { ["ack"]=ack,["state"]=state,["commandError"]=commandError,["commandResult"]=commandResult?.DeepClone() });
+            commandResult=null;
             commandError="";lastOk=DateTime.UtcNow;
             if(result["command"] is JsonNode command && command["id"]!.GetValue<long>()>ack)
             {
                 string name=command["name"]!.GetValue<string>();
                 if(name=="show"){Show();WindowState=FormWindowState.Normal;Activate();}
                 else if(name=="hide")Hide();
-                else{var outcome=await Evaluate(command);if(outcome["error"] is JsonNode error)commandError=error.GetValue<string>();}
+                else{
+                    JsonNode outcome;
+                    try{outcome=await Evaluate(command);}catch{outcome=new JsonObject{["error"]="Apple Music operation timed out; check the login window"};}
+                    if(name=="query"){outcome["id"]=command["id"]!.GetValue<long>();commandResult=outcome;}
+                    if(outcome["error"] is JsonNode error)commandError=error.GetValue<string>();
+                }
                 ack=command["id"]!.GetValue<long>();
             }
             status.Text=string.IsNullOrEmpty(commandError)?"组件已连接游戏；可隐藏此窗口。完整歌曲与后台播放请实测。":commandError;
