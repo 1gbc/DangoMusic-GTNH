@@ -585,3 +585,8 @@ The embedded Apple player currently requires Windows	内嵌 Apple 播放组件�
 Complete Apple login in the embedded player, then hide its window	请在内嵌播放器中登录 Apple Music，完成后可隐藏窗口
 Unable to launch embedded Apple player; check the component and .NET Desktop Runtime	无法启动内嵌播放器，请检查组件和 .NET Desktop Runtime
 Complete Apple login in the player window	请在播放组件窗口中完成 Apple 登录
+Embedded Apple player exited; restart it or check the component	内嵌播放器已退出，请重启或检查组件，退出码
+Starting embedded Apple player	正在启动内嵌 Apple 播放器…
+Embedded player is not connected; show its window to check startup	内嵌播放器尚未连接，请显示窗口检查启动状态
+Embedded player connected	内嵌播放器已连接
+Embedded player not connected	内嵌播放器未连接

@@ -17,21 +17,27 @@ internal static class Program
             try { return string.IsNullOrEmpty(CoreWebView2Environment.GetAvailableBrowserVersionString()) ? 5 : 0; }
             catch { return 6; }
         }
+        int startupStage=10;
         try
         {
-            Console.InputEncoding=Encoding.UTF8;
+            using var input=new StreamReader(Console.OpenStandardInput(),new UTF8Encoding(false,true));
+            startupStage=11;
             // Pairing credentials arrive through a private parent/child pipe, never argv or disk.
-            var bootstrap=JsonNode.Parse(Console.ReadLine() ?? "")!;
+            var bootstrap=JsonNode.Parse(input.ReadLine() ?? "")!;
+            startupStage=12;
             string link=bootstrap["link"]!.GetValue<string>();
             string profile=bootstrap["profile"]!.GetValue<string>();
             if (!ValidLink(link)||!Path.IsPathFullyQualified(profile)) return 7;
+            startupStage=13;
             ApplicationConfiguration.Initialize();
+            startupStage=14;
             int parentPid=bootstrap["parentPid"]?.GetValue<int>()??0;
             if(parentPid<=0)return 8;
+            startupStage=15;
             Application.Run(new PlayerWindow(new Uri(link), profile,parentPid));
             return 0;
         }
-        catch { return 1; } // No Apple URLs, credentials, script errors or account data in logs.
+        catch { return 100+startupStage; } // Stage codes only; never log account data or bootstrap.
     }
     internal static bool ValidLink(string value) => Uri.TryCreate(value,UriKind.Absolute,out var u)
         && u.Scheme=="http" && u.Host=="127.0.0.1" && u.Port>0 && u.AbsolutePath=="/" && u.Query=="" && u.UserInfo==""

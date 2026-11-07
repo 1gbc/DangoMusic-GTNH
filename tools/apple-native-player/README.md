@@ -1,4 +1,4 @@
-# 内嵌 Apple Music 播放组件 · 5.30 实验版
+# 内嵌 Apple Music 播放组件 · 5.31 实验版
 
 目标：不再需要保持 Chrome/Edge 标签页或安装扩展。Mod 启动并管理一个使用 Windows WebView2 的播放组件，组件负责官方网页的账号与受保护播放，游戏负责播放界面和控制。
 
@@ -7,7 +7,7 @@
 ## 安装
 
 1. 退出游戏。旧 Node 控制台输入 `stop`、`quit`；旧浏览器标签页停止 Apple Music 播放。
-2. 将 `dangomusicgtnh-0.1.0-dev.5.30.jar` 替换实例 mods 中的旧版本。
+2. 将 `dangomusicgtnh-0.1.0-dev.5.31.jar` 替换实例 mods 中的旧版本。
 3. 将组件 ZIP 中 **apple-player** 文件夹整体放入实例的 `.minecraft/config/dangomusicgtnh/`，最终应存在：
    `config/dangomusicgtnh/apple-player/DangoApplePlayer.exe`。
 4. 需要 Windows x64、Microsoft Edge WebView2 Evergreen Runtime，以及 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。开发机器已检测到这两个运行环境。无需安装 .NET SDK、Node 或浏览器扩展。
@@ -42,3 +42,7 @@
 官方参考：[WebView2 WinForms](https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/winforms)、[MusicKit](https://developer.apple.com/musickit/)。
 
 补充验证记录：新增的原生组件进程异常输入检查被自动审批拒绝（仅返回 blocked by policy），未执行。最终包只通过编译和通信协议检查；先前 --self-test 返回 0，但不覆盖本次后续生命周期改动。需用户手动验证。
+
+## 5.31 启动修复
+
+5.30 无控制台启动时，设置 Console.InputEncoding 会抛异常，窗口出现前即退出。5.31 改用原始标准输入流读取 UTF-8，Python 两条无界面回归和与游戏一致的 Java ProcessBuilder 管道测试通过。不再覆盖启动错误，异常退出会显示阶段码（110 输入流、111 解析、112 字段、113 Windows Forms 初始化、114 父进程字段、115 窗口创建）。请同时更新 JAR 和组件文件。此前异常输入检查未执行的缺口，现已用只发送无效测试数据、不会打开登录窗口的回归补充。完整 DRM 播放仍待验证。

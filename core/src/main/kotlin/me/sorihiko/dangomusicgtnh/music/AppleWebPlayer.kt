@@ -13,6 +13,10 @@ object AppleWebPlayer {
     private var lastVolume = -1f
     @Volatile private var connectionEpoch = 0L
     @Volatile private var nativeProcess: Process? = null
+    @Volatile var nativeMode = false
+        private set
+    @Volatile private var startupFailure = ""
+    @Volatile private var nativeStartedAt = 0L
     private val nativeWorker = Executors.newSingleThreadExecutor { r -> Thread(r, "Dango-AppleNative").apply { isDaemon = true } }
     val nativeRunning get() = nativeProcess?.isAlive == true
     val connected get() = server?.connected() == true
@@ -20,16 +24,19 @@ object AppleWebPlayer {
     fun ensureStarted() { if (server == null) connect() }
     fun startNative() {
         nativeWorker.execute {
+            nativeMode = true
+            startupFailure = ""
             if (nativeRunning && connected) { command("show"); return@execute }
             val directory = DangoMusic.instance.clientDir.resolve("apple-player").toFile()
             val executable = directory.resolve("DangoApplePlayer.exe")
-            if (!executable.isFile) { message = "Install the Apple Music playback component in config/dangomusicgtnh/apple-player"; return@execute }
-            if (!System.getProperty("os.name", "").startsWith("Windows")) { message = "The embedded Apple player currently requires Windows"; return@execute }
+            if (!executable.isFile) { startupFailure = "Install the Apple Music playback component in config/dangomusicgtnh/apple-player"; message = startupFailure; return@execute }
+            if (!System.getProperty("os.name", "").startsWith("Windows")) { startupFailure = "The embedded Apple player currently requires Windows"; message = startupFailure; return@execute }
             try {
                 command("stop")
                 if (connected) Thread.sleep(1200)
                 nativeProcess?.destroy()
                 connect()
+                nativeMode = true
                 if (server == null) return@execute
                 val endpoint = server ?: return@execute
                 val expectedEpoch = connectionEpoch
@@ -37,6 +44,7 @@ object AppleWebPlayer {
                 synchronized(this) {
                     if (connectionEpoch != expectedEpoch) { child.destroy(); return@execute }
                     nativeProcess = child
+                    nativeStartedAt = System.nanoTime()
                 }
                 val bootstrap = JsonObject().apply {
                     addProperty("link", endpoint.pairingLink())
@@ -45,12 +53,32 @@ object AppleWebPlayer {
                 }
                 child.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(bootstrap.toString()); it.newLine() }
                 message = "Complete Apple login in the embedded player, then hide its window"
-            } catch (_: Exception) { message = "Unable to launch embedded Apple player; check the component and .NET Desktop Runtime" }
+                Thread({
+                    try {
+                        val exit = child.waitFor()
+                        synchronized(this) {
+                            if (nativeProcess === child) {
+                                nativeProcess = null
+                                if (connectionEpoch == expectedEpoch) {
+                                    server?.reconnect()
+                                    startupFailure = me.sorihiko.dangomusicgtnh.i18n.I18n.text("Embedded Apple player exited; restart it or check the component") + " [$exit]"
+                                    message = startupFailure
+                                }
+                            }
+                        }
+                    } catch (_: InterruptedException) { }
+                }, "Dango-AppleExit").apply { isDaemon = true }.start()
+            } catch (_: Exception) {
+                startupFailure = "Unable to launch embedded Apple player; check the component and .NET Desktop Runtime"
+                message = startupFailure
+            }
         }
     }
     @Synchronized fun connect() {
         try {
             ++connectionEpoch
+            nativeMode = false
+            startupFailure = ""
             if (server == null) server = AppleWebServer() else server?.reconnect()
             message = "Pair the Apple Music browser extension"
             lastVolume = -1f
@@ -70,6 +98,9 @@ object AppleWebPlayer {
         }
         val s = server?.snapshot()
         message = when {
+            startupFailure.isNotEmpty() -> startupFailure
+            nativeMode && nativeRunning && !connected && System.nanoTime() - nativeStartedAt < 15_000_000_000L -> "Starting embedded Apple player"
+            nativeMode && !connected -> "Embedded player is not connected; show its window to check startup"
             server == null -> "Connect Apple Music using the account button"
             !connected -> "Apple Music browser disconnected; pair again"
             server?.error()?.isNotEmpty() == true -> server!!.error()
@@ -91,6 +122,8 @@ object AppleWebPlayer {
             val old = server to nativeProcess
             server = null
             nativeProcess = null
+            startupFailure = ""
+            nativeMode = false
             old
         }
         val old = retired.first
