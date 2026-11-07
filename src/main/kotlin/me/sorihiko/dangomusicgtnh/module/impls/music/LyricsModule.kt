@@ -26,6 +26,8 @@ import me.sorihiko.dangomusicgtnh.music.CoverArt
 import me.sorihiko.dangomusicgtnh.music.Dance
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.NeteaseTrack
+import me.sorihiko.dangomusicgtnh.multiplayer.SharedLyricLine
+import me.sorihiko.dangomusicgtnh.multiplayer.shareableLyrics
 
 import java.util.Random
 import java.util.concurrent.ConcurrentHashMap
@@ -342,6 +344,10 @@ class LyricsModule : Module() {
         requestLyrics(track)
         return lyricsFor(track.key)
     }
+
+    /** Line-level lyrics for the nearby/group projection; null until the payload is loaded. */
+    internal fun shareLines(track: NeteaseTrack): List<SharedLyricLine>? =
+        shareableLyrics(lyricsFor(track.key))
 
     internal fun isLoadingLyrics(track: NeteaseTrack): Boolean = track.key in pending
 

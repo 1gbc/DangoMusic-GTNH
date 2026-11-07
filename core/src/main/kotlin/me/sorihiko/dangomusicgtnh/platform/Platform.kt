@@ -74,6 +74,9 @@ interface Platform {
     /** 玩家眼睛的位置和朝向；不在世界里时是 null */
     val player: PlayerPose?
 
+    /** 玩家所在维度；用于远端歌词投影的同维度判断。 */
+    val dimension: Int get() = 0
+
     /** 天黑的程度（原版的 sky darken：0 = 白天，11 = 半夜，下雨也会变暗）；不在世界里时是 null */
     val skyDarken: Int? get() = null
 

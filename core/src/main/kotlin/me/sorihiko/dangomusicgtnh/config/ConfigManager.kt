@@ -79,6 +79,11 @@ class ConfigManager(
                     }
                 }
             }
+            // Newly added modules (for example Nearby) are absent from an older config.
+            // Enable their documented default instead of leaving them silently off.
+            for (module in modules()) {
+                if (!enabledMap.containsKey(module)) enabledMap[module] = module.enabledByDefault
+            }
             pendingEnabled = enabledMap
             DangoLogger.info("Config loaded: {}", file.toString())
         } catch (e: Exception) {

@@ -4,6 +4,7 @@ import me.sorihiko.dangomusicgtnh.gfx.Gfx
 import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.module.impls.music.DynamicIslandModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.LyricsModule
+import me.sorihiko.dangomusicgtnh.module.impls.music.NearbyModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.SongCardModule
 import me.sorihiko.dangomusicgtnh.music.MusicScreen
@@ -31,6 +32,7 @@ object DangoClient {
                 LyricsModule(),
                 SongCardModule(),
                 DynamicIslandModule(),
+                NearbyModule(),
             ),
         )
         musicModule.applyLanguage() // ConfigManager 已读回手动选择，优先于首次默认值。

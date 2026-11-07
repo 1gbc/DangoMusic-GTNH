@@ -18,6 +18,13 @@ interface MusicSourceApi {
     val libraryWarning: String get() = ""
     fun search(query: String): List<NeteaseTrack>
     fun songUrl(track: NeteaseTrack): NeteaseApi.SongUrl?
+
+    /**
+     * Resolve a URL at a reduced quality for sharing with nearby players.
+     * 0 = 128k, 1 = 192k, 2 = 320k. Sources without quality selection use [songUrl].
+     */
+    fun sharingUrl(track: NeteaseTrack, quality: Int): NeteaseApi.SongUrl? = songUrl(track)
+
     fun lyrics(track: NeteaseTrack): Lyrics?
     fun playlists(): List<NeteasePlaylist> = emptyList()
     fun recommend(): List<NeteasePlaylist> = emptyList()
@@ -40,6 +47,14 @@ object MusicSources {
         override val source = MusicSource.NETEASE
         override fun search(query: String) = NeteaseApi.search(query)
         override fun songUrl(track: NeteaseTrack) = NeteaseApi.songUrl(track)
+        override fun sharingUrl(track: NeteaseTrack, quality: Int): NeteaseApi.SongUrl? {
+            val q = when (quality.coerceIn(0, 2)) {
+                0 -> NeteaseQuality.STANDARD
+                1 -> NeteaseQuality.HIGHER
+                else -> NeteaseQuality.EXHIGH
+            }
+            return NeteaseApi.songUrl(track, q)
+        }
         override fun lyrics(track: NeteaseTrack) = NeteaseApi.lyrics(track)
         override fun playlists(): List<NeteasePlaylist> {
             NeteaseApi.ensureCookieFile()

@@ -11,6 +11,7 @@ public final class ClientProxy extends CommonProxy {
 
     @Override
     public void preInit(FMLPreInitializationEvent event) {
+        super.preInit(event);
         File directory = new File(event.getModConfigurationDirectory(), DangoMusicGtnh.ID);
         ClientSettings settings = new ClientSettings(directory);
         ClientMusic.start(directory, settings.initialVolume);

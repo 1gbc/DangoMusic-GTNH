@@ -9,6 +9,7 @@ import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.TickEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
 import me.sorihiko.dangomusicgtnh.legacy.LegacyGl
+import me.sorihiko.dangomusicgtnh.network.NearbyClient
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.ScaledResolution
 import net.minecraftforge.client.event.GuiScreenEvent
@@ -37,6 +38,7 @@ internal object ClientRenderBridge {
             }
         }
         DangoMusic.callEvent(TickEvent)
+        NearbyClient.tick()
     }
 
     @SubscribeEvent
