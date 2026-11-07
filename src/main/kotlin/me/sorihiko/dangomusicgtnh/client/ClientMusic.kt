@@ -10,7 +10,9 @@ import me.sorihiko.dangomusicgtnh.legacy.mc
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.NativeLogin
+import me.sorihiko.dangomusicgtnh.music.NearbyAudioPlayer
 import me.sorihiko.dangomusicgtnh.music.NeteaseLogin
+import me.sorihiko.dangomusicgtnh.network.NearbyClient
 import me.sorihiko.dangomusicgtnh.platform.Platform
 import me.sorihiko.dangomusicgtnh.platform.ListenerEnvironment
 import me.sorihiko.dangomusicgtnh.platform.PlayerAction
@@ -47,6 +49,8 @@ internal object ClientMusic {
         val hasSettings = directory.resolve("settings.json").isFile
         mc = Minecraft.getMinecraft()
         DangoClient.start(ClientPlatform(directory.toPath()), LegacyGfx)
+        NearbyClient.init()
+        FMLCommonHandler.instance().bus().register(NearbyClient)
         if (!hasSettings) setVolume(initialVolume)
         LegacyKeyBindings.register()
         FMLCommonHandler.instance().bus().register(ClientRenderBridge)
@@ -55,6 +59,7 @@ internal object ClientMusic {
             controls.shutdownNow()
             NeteaseLogin.cancel()
             NativeLogin.cancel()
+            NearbyAudioPlayer.stop()
             MusicPlayer.shutdown()
         }, "DangoMusic-shutdown"))
     }
@@ -100,6 +105,7 @@ private class ClientPlatform(override val configDir: Path) : Platform {
     override val player get() = client.thePlayer?.let { player ->
         PlayerPose(player.posX, player.posY + player.eyeHeight, player.posZ, player.rotationYaw, player.rotationPitch)
     }
+    override val dimension get() = client.thePlayer?.dimension ?: 0
 
     private val absorption = IdentityHashMap<Block, Float>()
     private val soundDirections = arrayOf(

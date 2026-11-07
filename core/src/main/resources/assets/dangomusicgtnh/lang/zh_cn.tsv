@@ -491,3 +491,71 @@ Interlude	间奏
 Outro	尾声
 Choose the color of the KTV highlight	设置 KTV 已唱文字的配色
 Lyrics offset · %+.1f s	歌词对齐 · %+.1f 秒
+Multiplayer	多人
+Nearby music	附近音乐
+Players within the server radius	服务器半径内的玩家
+Share my music	共享我的音乐
+Let nearby players and group members hear your music	让附近玩家和群组成员听到你的音乐
+Hear nearby music	收听附近音乐
+Play the music of players within the server radius	播放服务器半径内玩家的音乐
+Share quality	共享音质
+Quality requested for the shared URL	共享地址请求的音质
+Standard (128k)	标准（128k）
+Higher (192k)	较高（192k）
+High (320k)	高（320k）
+Nearby lyrics	附近歌词
+Line projection over the host	在主机上方显示歌词投影
+Share my lyrics	共享我的歌词
+Let nearby players and group members see your current line	让附近玩家和群组成员看到你当前的歌词
+See nearby lyrics	查看附近歌词
+Show the current line above nearby hosts	在附近主机上方显示当前歌词
+Music group	音乐群组
+Distance-free listening	不受距离限制
+Hear group	收听群组
+Follow the group host regardless of distance	跟随群组房主，不受距离限制
+Share to group	共享到群组
+Let group members hear your music	让群组成员听到你的音乐
+Local	本地
+Nearby	附近
+Group	群组
+Listen with friends, no distance limit	和朋友一起听，不受距离限制
+The server does not have DangoMusic sharing enabled	服务器未启用 DangoMusic 共享
+Install the same mod on the server to use groups	在服务端安装同一个模组后即可使用群组
+Host: %s	房主：%s
+%d / %d members	%d / %d 名成员
+Only the host can invite players	只有房主可以邀请玩家
+Invite players	邀请玩家
+No online players to invite	没有可邀请的在线玩家
+Invite	邀请
+Create a group	创建群组
+Group name	群组名称
+Only the host needs to create a group	只需房主创建群组
+Open groups	公开群组
+No open groups	暂无公开群组
+Invitations	邀请
+From %s	来自 %s
+Accept	接受
+Decline	拒绝
+%s · %d/%d	%s · %d/%d
+Leave	离开
+Create	创建
+Group invite from %s	来自 %s 的群组邀请
+Full	已满
+Confirm leave	确认离开
+Confirm disband	确认解散
+Host is sharing music	房主正在共享音乐
+Host is not playing	房主暂未播放
+Create a group and invite friends	创建群组，邀请朋友一起听
+No invitations	暂无邀请
+Groups need the optional server component	群组需要服务端安装可选组件
+Leave the group or start your own; your local music always has priority	退出群组或自己创建；本地音乐始终优先
+No one is sharing music	暂无人共享音乐
+You are sharing music	你正在共享音乐
+Sharing: %s	正在共享：%s
+Any member can share music; the latest started track wins	任何成员都可以共享音乐；最新开始播放的曲目优先
+Your local music always has priority	本地音乐始终优先
+Follow the group speaker regardless of distance	跟随当前群组共享者，不受距离限制
+My groups	我的群组
+You have not joined a group	你还没有加入群组
+Listen	收听
+Current	当前

@@ -6,6 +6,7 @@ import me.sorihiko.dangomusicgtnh.i18n.I18n
 import me.sorihiko.dangomusicgtnh.module.Module
 import me.sorihiko.dangomusicgtnh.module.impls.music.DynamicIslandModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.LyricsModule
+import me.sorihiko.dangomusicgtnh.module.impls.music.NearbyModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.SongCardModule
 import me.sorihiko.dangomusicgtnh.module.values.BooleanValue
@@ -49,6 +50,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         "lyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "ktvLyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "audioOutput" to listOf("Auto", "Java Sound", "Game audio (OpenAL)"),
+        "shareQuality" to listOf("Standard (128k)", "Higher (192k)", "High (320k)"),
     )
 
     /** 显示成百分比的选项 */
@@ -287,6 +289,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             "posX" to ::percent, "posY" to ::percent,
             "notifyTime" to { v: Any -> "%.1f s".format((v as FloatValue).value) },
         ))
+        val nearby = Src(mm.get(NearbyModule::class.java))
         val environment = player.take(listOf("envAudio", "envRain", "envStrength", "envRays"))
         val music = listOf(
             Group("Dynamic Island", "Overlay", island.m, true,
@@ -298,7 +301,16 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             Group("Hotkeys", "Click, then press a key · Backspace clears", player.m, false, player.take()),
             nowPlaying,
         )
-        return listOf(lyrics, music)
+        val nearbyGroups = mutableListOf(
+            Group("Nearby music", "Players within the server radius", nearby.m, false,
+                nearby.take(listOf("shareMusic", "hearNearby", "shareQuality"))),
+            Group("Nearby lyrics", "Line projection over the host", nearby.m, false,
+                nearby.take(listOf("shareLyrics", "seeLyrics"))),
+            Group("Music group", "Distance-free listening", nearby.m, false,
+                nearby.take(listOf("hearGroup", "shareGroup"))),
+        )
+        nearby.take().let { if (it.isNotEmpty()) nearbyGroups += Group("Other", "More", nearby.m, false, it) }
+        return listOf(lyrics, music, nearbyGroups)
     }
 
     // ---------------------------------------------------------------- 绘制
@@ -553,8 +565,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     /** 标签：Lyrics / Music & HUD。红色选中块用弹簧滑过去，滑动时被拉长一点；文字颜色跟着渐变 */
     private fun drawTabs(page: LayoutBounds) {
-        val names = listOf(I18n.text("Lyrics"), I18n.text("Music & HUD"))
-        val tabW = 104f
+        val names = listOf(I18n.text("Lyrics"), I18n.text("Music & HUD"), I18n.text("Multiplayer"))
+        val tabW = 96f
         val bar = LayoutBounds(page.right - tabW * names.size - 8f, page.y + 2f, tabW * names.size + 8f, 32f)
         ui.card(bar, Theme.CARD, 11f)
         val p = tabPill.tick(ScreenState.settingsTab.toFloat())

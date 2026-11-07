@@ -8,6 +8,7 @@ Minecraft 1.7.10 / Forge 10.13.4.1614 的客户端移植工程，基于 [DangoMu
 - [Phase 3 验证](docs/PHASE3_VALIDATION.md)
 - [Phase 4 验证](docs/PHASE4_VALIDATION.md)
 - [Phase 5–6 验证](docs/PHASE5_VALIDATION.md)
+- [附近共享与音乐群组](docs/NEARBY_SHARING.md)
 
 ## 编译
 

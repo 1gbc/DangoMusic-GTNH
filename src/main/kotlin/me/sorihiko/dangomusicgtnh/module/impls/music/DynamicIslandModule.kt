@@ -13,7 +13,7 @@ import me.sorihiko.dangomusicgtnh.module.values.BooleanValue
 import me.sorihiko.dangomusicgtnh.module.values.FloatValue
 import me.sorihiko.dangomusicgtnh.module.values.ModuleValue
 import me.sorihiko.dangomusicgtnh.music.CoverCache
-import me.sorihiko.dangomusicgtnh.music.MusicPlayer
+import me.sorihiko.dangomusicgtnh.music.PlaybackView
 import me.sorihiko.dangomusicgtnh.musicui.fmtTime
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
@@ -80,7 +80,7 @@ class DynamicIslandModule : Module() {
     private var lastNanos = 0L
 
     private var lastTrackId = ""
-    private var lastState: MusicPlayer.State? = null
+    private var lastPlaying: Boolean? = null
 
     private val clock = SimpleDateFormat("HH:mm")
 
@@ -92,8 +92,9 @@ class DynamicIslandModule : Module() {
         temp = null
         contentAlpha = 0f
         lastNanos = 0L
-        lastTrackId = MusicPlayer.current?.key ?: ""
-        lastState = MusicPlayer.state
+        val snap = PlaybackView.snapshot()
+        lastTrackId = snap.track?.key ?: ""
+        lastPlaying = snap.playing
     }
 
     private fun show(kind: Kind, ms: Long) {
@@ -102,19 +103,17 @@ class DynamicIslandModule : Module() {
     }
 
     private fun watchMusic() {
-        val cur = MusicPlayer.current
-        val st = MusicPlayer.state
+        val snap = PlaybackView.snapshot()
+        val cur = snap.track
         if (cur == null) {
             lastTrackId = ""
         } else if (cur.key != lastTrackId) {
             lastTrackId = cur.key
             if (!showingMergedCard && songNotify.get()) show(Kind.SONG, (notifyTime.value * 1000).toLong())
-        } else if (!showingMergedCard && lastState != null && st != lastState && songNotify.get() &&
-            (st == MusicPlayer.State.PAUSED || (st == MusicPlayer.State.PLAYING && lastState == MusicPlayer.State.PAUSED))
-        ) {
+        } else if (!showingMergedCard && lastPlaying != null && snap.playing != lastPlaying && songNotify.get()) {
             if (temp != Kind.SONG || tempUntil - System.currentTimeMillis() < 1500L) show(Kind.SONG, 1500L)
         }
-        lastState = st
+        lastPlaying = snap.playing
     }
 
     private fun desired(): Kind {
@@ -125,7 +124,7 @@ class DynamicIslandModule : Module() {
         val t = temp
         if (t != null && System.currentTimeMillis() < tempUntil) {
             val ok = when (t) {
-                Kind.SONG -> MusicPlayer.current != null
+                Kind.SONG -> PlaybackView.snapshot().track != null
                 Kind.IDLE -> true
             }
             if (ok) return t
@@ -134,7 +133,7 @@ class DynamicIslandModule : Module() {
         return Kind.IDLE
     }
 
-    private fun musicIdle() = showMusic.get() && MusicPlayer.active
+    private fun musicIdle() = showMusic.get() && PlaybackView.isActive()
 
     internal val showingMergedCard: Boolean
         get() = enabled && mergeCoverProgress.get() && musicIdle()
@@ -143,17 +142,19 @@ class DynamicIslandModule : Module() {
 
     private fun sizeOf(kind: Kind): Pair<Float, Float> = when (kind) {
         Kind.SONG -> {
-            val t = MusicPlayer.current
+            val snap = PlaybackView.snapshot()
+            val t = snap.track
             val tw = if (t == null) 0f else max(
                 width(t.name, 14f, Theme.FONT_SEMIBOLD).coerceAtMost(260f),
-                width(t.artists.joinToString(" / "), 11f).coerceAtMost(260f),
+                width(t.artists.joinToString(" / "), 11f).coerceAtMost(220f),
             )
             (76f + max(tw, 150f) + 44f) to 68f
         }
         Kind.IDLE -> {
-            val t = MusicPlayer.current
+            val snap = PlaybackView.snapshot()
+            val t = snap.track
             val width = if (t != null && musicIdle()) {
-                78f + width(t.name, 12f, Theme.FONT_SEMIBOLD).coerceAtMost(170f)
+                78f + width(idleTitle(t.name, snap.sourceLabel), 12f, Theme.FONT_SEMIBOLD).coerceAtMost(240f)
             } else 44f + idleWidth()
             width to 32f
         }
@@ -197,7 +198,7 @@ class DynamicIslandModule : Module() {
         val want = desired()
 
         // 内容切换：先淡出旧内容，再换成新内容淡入
-        if (MusicPlayer.current == null && shown == Kind.SONG) {
+        if (PlaybackView.snapshot().track == null && shown == Kind.SONG) {
             shown = Kind.IDLE
             contentAlpha = 1f
         } else if (shown != want) {
@@ -285,29 +286,34 @@ class DynamicIslandModule : Module() {
     }
 
     private fun drawMusicIdle(ctx: GuiCanvas, b: LayoutBounds) {
-        val t = MusicPlayer.current ?: return
+        val snap = PlaybackView.snapshot()
+        val t = snap.track ?: return
         // 胶囊两头是半圆：封面往里挪一点、圆角跟着胶囊的弧度走，看起来才居中
         val cover = LayoutBounds(b.x + 9f, b.y + 5f, 22f, 22f)
         drawCover(ctx, cover, t.let { CoverCache.trackRounded(it, 0.36f) ?: CoverCache.track(it) })
-        val playing = MusicPlayer.state == MusicPlayer.State.PLAYING
+        val playing = snap.playing
         val tx = cover.right + 9f
-        val title = trim(t.name, 170f, 12f, Theme.FONT_SEMIBOLD)
+        val title = trim(idleTitle(t.name, snap.sourceLabel), 240f, 12f, Theme.FONT_SEMIBOLD)
         text(ctx, title, tx, b.y + 16f - 12f * 0.39f, 12f, if (playing) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
         bars(ctx, b.right - 12f - 14f, b.y + 22f, playing, 11f)
     }
 
     private fun drawSong(ctx: GuiCanvas, b: LayoutBounds) {
-        val t = MusicPlayer.current ?: return
+        val snap = PlaybackView.snapshot()
+        val t = snap.track ?: return
         val cover = LayoutBounds(b.x + 10f, b.y + 10f, 48f, 48f)
         drawCover(ctx, cover, CoverCache.trackRounded(t) ?: CoverCache.track(t))
         val tx = cover.right + 10f
         val tw = b.right - 14f - tx
 
         text(ctx, trim(t.name, tw - 4f, 14f, Theme.FONT_SEMIBOLD), tx, b.y + 12f, 14f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-        text(ctx, trim(t.artists.joinToString(" / "), tw, 11f), tx, b.y + 31f, 11f, Theme.TEXT_SECONDARY)
+        val source = trim(snap.sourceLabel, 110f, 9f)
+        val sourceW = width(source, 9f)
+        text(ctx, trim(t.artists.joinToString(" / "), (tw - sourceW - 6f).coerceAtLeast(20f), 11f), tx, b.y + 31f, 11f, Theme.TEXT_SECONDARY)
+        if (source.isNotEmpty()) text(ctx, source, b.right - 14f - sourceW, b.y + 33f, 9f, Theme.TEXT_TERTIARY)
 
-        val dur = MusicPlayer.durationMs
-        val pos = MusicPlayer.positionMs.coerceIn(0L, dur.coerceAtLeast(0L))
+        val dur = snap.durationMs
+        val pos = snap.positionMs.coerceIn(0L, dur.coerceAtLeast(0L))
         val left = fmtTime(pos)
         val right = if (dur > 0L) "-${fmtTime(dur - pos)}" else "--:--"
         val timeSize = 9f
@@ -324,6 +330,9 @@ class DynamicIslandModule : Module() {
             ctx.drawShape(LayoutBounds(bar.x, bar.y, fill, bar.height), ShapeStyle(Theme.TEXT_PRIMARY, min(1.5f, fill / 2f)))
         }
     }
+
+    private fun idleTitle(name: String, source: String): String =
+        if (source.isBlank()) name else "$name · $source"
 
     private fun drawCover(ctx: GuiCanvas, b: LayoutBounds, tex: Texture?) {
         CoverCache.upload()

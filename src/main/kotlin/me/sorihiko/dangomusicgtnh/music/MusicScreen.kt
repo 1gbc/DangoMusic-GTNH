@@ -8,6 +8,7 @@ import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.musicui.ArtistPage
 import me.sorihiko.dangomusicgtnh.musicui.ArtistRef
 import me.sorihiko.dangomusicgtnh.musicui.GridPage
+import me.sorihiko.dangomusicgtnh.musicui.GroupPage
 import me.sorihiko.dangomusicgtnh.musicui.Library
 import me.sorihiko.dangomusicgtnh.musicui.LoginDialog
 import me.sorihiko.dangomusicgtnh.musicui.LyricsPage
@@ -53,6 +54,7 @@ class MusicScreen(
     internal val login = LoginDialog(this)
     internal val grid = GridPage(this)
     private val artistPage = ArtistPage(this)
+    private val groupPage = GroupPage(this)
     private val settings = SettingsPage(this, module)
     private val lyricsPage = LyricsPage(ui, module)
     private var lyricsOpen = false
@@ -60,7 +62,8 @@ class MusicScreen(
 
     /** 平台层根据搜索、筛选和设置输入框的焦点开关系统输入法。 */
     val textInputActive: Boolean
-        get() = !lyricsOpen && !login.visible && closingAt == 0L && (sidebar.searchFocused || tracks.filterFocused || settings.editing)
+        get() = !lyricsOpen && !login.visible && closingAt == 0L &&
+            (sidebar.searchFocused || tracks.filterFocused || settings.editing || groupPage.editing)
     private val bar = PlayerBar(this, module)
 
     private var openedAt = 0L
@@ -117,6 +120,7 @@ class MusicScreen(
     }
 
     internal fun go(p: Page) {
+        groupPage.clearFocus()
         closeLyrics()
         tracks.clearFilter()
         ScreenState.page = p
@@ -140,6 +144,10 @@ class MusicScreen(
         }
         if (ScreenState.page == Page.SETTINGS) {
             ScreenState.page = ScreenState.settingsBack
+            return
+        }
+        if (ScreenState.page == Page.GROUP) {
+            go(Page.HOME)
             return
         }
         val b = ScreenState.backPage
@@ -520,6 +528,7 @@ class MusicScreen(
         tracks.area = LayoutBounds()
         settings.area = LayoutBounds()
         artistPage.area = LayoutBounds()
+        groupPage.area = LayoutBounds()
 
         val s = ScreenState
         // 设置页的标签切换有自己的过渡动画，不算换页（否则整页会从透明重新淡入，看起来闪一下）
@@ -544,6 +553,7 @@ class MusicScreen(
             }
             Page.SETTINGS -> settings.draw(body)
             Page.ARTIST -> artistPage.draw(body)
+            Page.GROUP -> groupPage.draw(body)
             else -> tracks.draw(body)
         }
     }
@@ -585,6 +595,7 @@ class MusicScreen(
         if (bar.mouseDown(mx, my)) return
         if (!lyricsOpen && tracks.scrollbarDown(mx, my)) return
         val hit = ui.hits.firstOrNull { it.first.contains(mx, my) }
+        if (!lyricsOpen && ScreenState.page == Page.GROUP) groupPage.clearFocus()
         if (lyricsOpen) {
             if (hit == null) lyricsPage.dismissMenu() else hit.second()
             return
@@ -636,6 +647,7 @@ class MusicScreen(
             sidebar.listArea.contains(lx, ly) -> sidebar.scrollBy(step)
             grid.area.contains(lx, ly) -> grid.scroll(wheel)
             artistPage.area.contains(lx, ly) -> artistPage.scroll(wheel)
+            groupPage.area.contains(lx, ly) -> groupPage.scrollBy(wheel)
             tracks.area.contains(lx, ly) -> tracks.scroll(wheel, step)
         }
     }
@@ -655,6 +667,7 @@ class MusicScreen(
         if (keyCode == Keys.ESCAPE && bar.dismissMenu()) return
         // 正在输入 / 录按键的地方先拿走按键
         if (!lyricsOpen) {
+            if (ScreenState.page == Page.GROUP && groupPage.keyTyped(typedChar, keyCode)) return
             if (settings.keyTyped(typedChar, keyCode)) return
             if (sidebar.keyTyped(typedChar, keyCode)) return
             if (tracks.filterKeyTyped(typedChar, keyCode)) return
@@ -673,11 +686,11 @@ class MusicScreen(
         when {
             // 其它页面 Ctrl+F 是全网搜索
             !lyricsOpen && platform.ctrlDown && keyCode == Keys.F -> sidebar.searchFocused = true
-            keyCode == Keys.SPACE -> ClientMusic.control { MusicPlayer.togglePause() }
+            keyCode == Keys.SPACE -> PlaybackView.togglePause()
             keyCode == Keys.BACK -> goBack()
             !lyricsOpen && tracks.coverflowKey(keyCode) -> {}
-            keyCode == Keys.RIGHT -> ClientMusic.control { MusicPlayer.seek(MusicPlayer.positionMs + 5000) }
-            keyCode == Keys.LEFT -> ClientMusic.control { MusicPlayer.seek(MusicPlayer.positionMs - 5000) }
+            keyCode == Keys.RIGHT -> PlaybackView.seek(PlaybackView.snapshot().positionMs + 5000)
+            keyCode == Keys.LEFT -> PlaybackView.seek(PlaybackView.snapshot().positionMs - 5000)
             keyCode == Keys.ESCAPE -> if (lyricsOpen) goBack() else close()
         }
     }

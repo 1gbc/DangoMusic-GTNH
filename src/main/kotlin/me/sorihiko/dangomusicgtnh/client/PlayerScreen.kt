@@ -1,6 +1,7 @@
 package me.sorihiko.dangomusicgtnh.client
 
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
+import me.sorihiko.dangomusicgtnh.music.PlaybackView
 import me.sorihiko.dangomusicgtnh.music.MusicSource
 import me.sorihiko.dangomusicgtnh.music.MusicSources
 import me.sorihiko.dangomusicgtnh.music.NativeLogin
@@ -88,9 +89,9 @@ internal class PlayerScreen(private val parent: GuiScreen?) : GuiScreen() {
                     if (source == MusicSource.NETEASE) NeteaseLogin.start() else NativeLogin.start(source)
                 }
             }
-            3 -> ClientMusic.control { MusicPlayer.prev() }
-            4 -> ClientMusic.control { MusicPlayer.togglePause() }
-            5 -> ClientMusic.control { MusicPlayer.next() }
+            3 -> PlaybackView.previous()
+            4 -> PlaybackView.togglePause()
+            5 -> PlaybackView.next()
             6 -> ClientMusic.setVolume(MusicPlayer.volume - 0.05f)
             7 -> ClientMusic.setVolume(MusicPlayer.volume + 0.05f)
             8 -> mc.displayGuiScreen(parent)
@@ -151,9 +152,11 @@ internal class PlayerScreen(private val parent: GuiScreen?) : GuiScreen() {
             val index = firstTrack + (y - listTop) / rowHeight
             val result = tracks
             if (index in result.indices) ClientMusic.control { MusicPlayer.playQueue(result, index) }
-        } else if (y in height - 46..height - 36 && MusicPlayer.active) {
-            val target = MusicPlayer.durationMs * (x - left) / panelWidth
-            ClientMusic.control { MusicPlayer.seek(target) }
+        } else if (y in height - 46..height - 36) {
+            val snap = PlaybackView.snapshot()
+            if (!snap.remote && snap.durationMs > 0) {
+                PlaybackView.seek(snap.durationMs * (x - left) / panelWidth)
+            }
         }
     }
 
@@ -162,17 +165,19 @@ internal class PlayerScreen(private val parent: GuiScreen?) : GuiScreen() {
         drawCenteredString(fontRendererObj, "DangoMusic GTNH Edition", width / 2, 9, 0xFFFFFF)
         query.drawTextBox()
         if (loginVisible) drawLogin() else drawResults(mouseX, mouseY)
-        val playing = MusicPlayer.current
-        val now = if (playing == null) "Stopped" else "${playing.name}  ${formatTime(MusicPlayer.positionMs)} / ${formatTime(MusicPlayer.durationMs)}"
+        val snap = PlaybackView.snapshot()
+        val playing = snap.track
+        val suffix = if (snap.sourceLabel.isNotEmpty()) "  [${snap.sourceLabel}]" else ""
+        val now = if (playing == null) "Stopped" else "${playing.name}  ${formatTime(snap.positionMs)} / ${formatTime(snap.durationMs)}$suffix"
         drawString(fontRendererObj, fontRendererObj.trimStringToWidth(now, panelWidth - 60), left, height - 66, 0xFFFFFF)
         drawString(fontRendererObj, "Vol ${(MusicPlayer.volume * 100).toInt()}%", left + panelWidth - 55, height - 66, 0xC0C0C0)
-        drawString(fontRendererObj, fontRendererObj.trimStringToWidth(MusicPlayer.message, panelWidth), left, height - 54, 0xC0C0C0)
+        drawString(fontRendererObj, fontRendererObj.trimStringToWidth(snap.message, panelWidth), left, height - 54, 0xC0C0C0)
         val end = left + panelWidth
-        val elapsed = MusicPlayer.positionMs.coerceIn(0, MusicPlayer.durationMs.coerceAtLeast(0))
-        val progress = elapsed * panelWidth / MusicPlayer.durationMs.coerceAtLeast(1)
+        val elapsed = snap.positionMs.coerceIn(0, snap.durationMs.coerceAtLeast(0))
+        val progress = elapsed * panelWidth / snap.durationMs.coerceAtLeast(1)
         drawRect(left, height - 44, end, height - 38, 0xFF3C3C3C.toInt())
         drawRect(left, height - 44, left + progress.toInt(), height - 38, 0xFF59A8FF.toInt())
-        pauseButton.displayString = if (MusicPlayer.state == MusicPlayer.State.PAUSED) "Resume" else "Pause"
+        pauseButton.displayString = if (snap.playing) "Pause" else "Resume"
         super.drawScreen(mouseX, mouseY, partialTicks)
     }
 

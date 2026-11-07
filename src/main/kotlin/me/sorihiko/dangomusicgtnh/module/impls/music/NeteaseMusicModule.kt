@@ -21,6 +21,7 @@ import me.sorihiko.dangomusicgtnh.music.EnvironmentAudio
 import me.sorihiko.dangomusicgtnh.music.RoomAcoustics
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.NeteaseApi
+import me.sorihiko.dangomusicgtnh.music.PlaybackView
 import me.sorihiko.dangomusicgtnh.music.NeteaseQuality
 import me.sorihiko.dangomusicgtnh.music.MusicSources
 import me.sorihiko.dangomusicgtnh.music.MusicSource
@@ -189,10 +190,10 @@ class NeteaseMusicModule : Module() {
 
     private val hotkeys: List<Pair<PlayerAction, () -> Unit>> by lazy {
         listOf(
-            PlayerAction.STOP to { Library.stopPlayback() },
-            PlayerAction.PAUSE to { ClientMusic.control { MusicPlayer.togglePause() } },
-            PlayerAction.PREVIOUS to { ClientMusic.control { MusicPlayer.prev() } },
-            PlayerAction.NEXT to { ClientMusic.control { MusicPlayer.next() } },
+            PlayerAction.STOP to { PlaybackView.stop() },
+            PlayerAction.PAUSE to { PlaybackView.togglePause() },
+            PlayerAction.PREVIOUS to { PlaybackView.previous() },
+            PlayerAction.NEXT to { PlaybackView.next() },
             PlayerAction.VOLUME_UP to { changeVolume(0.05f) },
             PlayerAction.VOLUME_DOWN to { changeVolume(-0.05f) },
             PlayerAction.LYRICS to { lyrics()?.toggleLyrics() },
