@@ -1,6 +1,78 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+test('official website sign-in initializes its own session and media errors are filtered',async()=>{
+  const vm=require('node:vm');let clicked=false,listener;
+  const player={isAuthorized:true,authorize(){throw Error('Do not bypass website sign-in');},
+    addEventListener(name,handler){assert.equal(name,'mediaPlaybackError');listener=handler;}};
+  const button={textContent:'登录',disabled:false,getClientRects:()=>[{}],click(){clicked=true;}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},document:{querySelectorAll:()=>[button]},
+    MusicKit:{getInstance:()=>player,Events:{mediaPlaybackError:'mediaPlaybackError'}},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const login=await context.appleAdapter({name:'login'});assert.equal(login.loginRoute,'website');assert.equal(clicked,true);
+  listener({error:{reason:'MEDIA_LICENSE',description:'https://private.invalid/?token=SECRET'}});
+  const state=await context.appleAdapter(null);assert.match(state.error,/MEDIA_LICENSE/);assert.ok(!state.error.includes('SECRET'));
+});
+test('account storefront is read through the public API without modifying SDK checks or reading tokens',async()=>{
+  const vm=require('node:vm');const player={api:{music:async path=>{
+    assert.equal(path,'/v1/me/storefront');return {data:{data:[{id:'cn'}]}};
+  }}};
+  Object.defineProperty(player,'developerToken',{get(){throw Error('No token access');}});
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  assert.equal((await context.appleAdapter({name:'region'})).storefront,'cn');
+  player.api.music=async()=>({data:{data:[{id:'https://evil.invalid/'}]}});
+  assert.equal((await context.appleAdapter({name:'region'})).storefront,'');
+});
+test('home cards preserve resource types and playback errors remain useful without leaking response data', async()=>{
+  const vm=require('node:vm');const paths=[];
+  const player={isAuthorized:true,storefrontId:'cn',api:{music:async(path,params)=>{
+    paths.push(path);
+    if(path==='/v1/me/recent/played') {
+      assert.equal(params.limit,10,'Recent resources maximum is 10, not the shared 25');
+      assert.equal(params.types,'albums,library-albums,playlists,library-playlists,stations','The recent resources types parameter is required');
+      return {data:{data:[{id:'123',type:'albums',attributes:{name:'Recent album'}}]}};
+    }
+    if(path==='/v1/me/recommendations')return {data:{data:[{relationships:{contents:{data:[{id:'pl.abc',type:'playlists',attributes:{name:'For you'}}]}}}]}};
+    if(path.endsWith('/tracks'))return {data:{data:[{id:'456',type:'songs',attributes:{name:'Song'}}]}};
+    throw {status:403,developerToken:'SECRET'};
+  }},setQueue:async()=>{},play:async()=>{const e=Error('PRIVATE RESPONSE');e.name='NotAllowedError';throw e;}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const query=op=>context.appleAdapter({name:'query',value:{op,offset:0}});
+  const recent=await query('recent');assert.equal(recent.items[0].kind,'albums');
+  const recommend=await query('recommend');assert.equal(recommend.items[0].id,'pl.abc');
+  const tracks=await context.appleAdapter({name:'query',value:{op:'resourceTracks',id:'albums:123',offset:0}});
+  assert.equal(tracks.items[0].id,'456');assert.ok(paths.includes('/v1/catalog/cn/albums/123/tracks'));
+  const denied=await query('songs');assert.match(denied.error,/HTTP 403/);assert.ok(!JSON.stringify(denied).includes('SECRET'));
+  const playback=await context.appleAdapter({name:'load',value:{id:'456',library:false}});
+  assert.match(playback.error,/play failed \[NotAllowedError UNKNOWN\]/);assert.ok(!playback.error.includes('PRIVATE'));
+  await assert.rejects(context.appleAdapter({name:'query',value:{op:'resourceTracks',id:'albums:../../outside',offset:0}}));
+});
+test('pagination follows only the server cursor, including full final and filtered pages',async()=>{
+  const vm=require('node:vm');let response;
+  const player={isAuthorized:true,storefrontId:'cn',api:{music:async()=>response}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const page=()=>context.appleAdapter({name:'query',value:{op:'resourceTracks',id:'playlists:pl.test',offset:0}});
+  const rows=Array.from({length:25},(_,i)=>({id:String(i),type:i===0?'music-videos':'songs',attributes:{name:'Song'}}));
+  response={data:{data:rows}};let result=await page();
+  assert.equal(result.items.length,24);assert.equal(result.hasMore,false,'A full last page must not trigger a nonexistent page and HTTP 404');
+  response={data:{data:rows,next:'/v1/catalog/cn/playlists/pl.test/tracks?offset=50'}};
+  result=await page();assert.equal(result.nextOffset,50,'Use the supplied offset, never visible or raw row count');
+  response={data:{data:rows,next:'https://evil.invalid/v1/catalog/cn/playlists/pl.test/tracks?offset=50'}};
+  assert.equal((await page()).hasMore,false,'Ignore untrusted pagination origins');
+});
+test('SDK reasons distinguish queue from playback and library songs use the named descriptor',async()=>{
+  const vm=require('node:vm');let descriptor;
+  const player={isAuthorized:true,setQueue:async value=>{descriptor=value;throw {name:'CONTENT_EQUIVALENT',reason:'CONTENT_EQUIVALENT',description:'PRIVATE'};},play:async()=>{}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},MusicKit:{getInstance:()=>player},URL,setTimeout,clearTimeout});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const error=await context.appleAdapter({name:'load',value:{id:'i.test',library:true}});
+  assert.equal(descriptor.librarySong,'i.test');
+  assert.match(error.error,/queue failed \[CONTENT_EQUIVALENT UNKNOWN\]/);
+  assert.ok(!error.error.includes('PRIVATE'));
+});
 test('authenticated local bridge rejects stale playback after stop and reconnect', async () => {
   assert.ok(fs.existsSync(__dirname + '/bridge.cjs'), 'The official-web bridge must exist');
   const {createBridge} = require('./bridge.cjs');
@@ -77,8 +149,12 @@ test('catalog browsing returns only metadata and a stopped pending load never st
   assert.equal(result.items[0].developerToken,undefined);
   assert.ok(requests[0].startsWith('/v1/catalog/us/search'));
   const load=context.appleAdapter({name:'load',value:{id:'123',library:false}});
+  await Promise.resolve(); // Let the authorization await reach setQueue before stopping.
   await context.appleAdapter({name:'stop'});resolveQueue();await load;
   assert.equal(plays,0,'Late setQueue completion must not autoplay after stop');
+  const cancelledBeforeQueue=context.appleAdapter({name:'load',value:{id:'123',library:false}});
+  await context.appleAdapter({name:'stop'});await cancelledBeforeQueue;
+  assert.equal(plays,0,'Stop during the authorization await must cancel the load too');
 });
 test('page adapter reads the actual player clock and validates controls without reading credentials', async()=>{
   const vm=require('node:vm');

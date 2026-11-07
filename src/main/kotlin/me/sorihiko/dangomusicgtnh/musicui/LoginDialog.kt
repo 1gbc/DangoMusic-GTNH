@@ -218,17 +218,17 @@ internal class LoginDialog(private val screen: MusicScreen) {
     private fun drawApple() {
         hits.clear()
         val web = me.sorihiko.dangomusicgtnh.music.AppleWebPlayer
-        if (web.connected && web.authorized) { showing = false; return }
+        if (web.connected && web.authorized) { showing = false; Library.refreshAll(); return }
         val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 248f) / 2f, 420f, 248f)
         ui.ctx.drawGlass(box, Theme.GLASS_WINDOW)
         ui.text("Apple Music", box.x + 20f, box.y + 20f, 18f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-        val connectionLabel = if (web.authorized) "Signed in to Apple Music"
-            else if (web.connected) "Sign in to Apple Music in the login window" else "Embedded player not connected"
+        val connectionLabel = if (web.authorized) "Apple Music 已连接"
+            else if (web.connected) "正在恢复账号，首次使用请完成官方授权" else "正在连接后台播放组件"
         ui.text(I18n.text(connectionLabel), box.x + 20f, box.y + 58f, 13f, Theme.TEXT_PRIMARY)
         ui.wrap2(I18n.text(web.message.ifEmpty { "Playback is handled by the official webpage" }), box.width - 40f, 12f).forEachIndexed { i, line ->
             ui.text(line, box.x + 20f, box.y + 82f + i * 16f, 12f, Theme.TEXT_SECONDARY)
         }
-        val labels = listOf("Log in to Apple Music", "Show login window", "Disconnect", "Close")
+        val labels = listOf("重试连接", "Apple 官方账号授权", "断开连接", "返回播放器")
         labels.forEachIndexed { i, label ->
             val row = i / 2
             val b = LayoutBounds(box.x + 20f + (i % 2) * 192f, box.y + 138f + row * 38f, 184f, 30f)

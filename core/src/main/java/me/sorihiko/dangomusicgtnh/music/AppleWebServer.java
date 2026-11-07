@@ -38,7 +38,7 @@ public final class AppleWebServer implements AutoCloseable {
     private void cancelRequests(){for(CompletableFuture<JsonObject> f:requests.values())f.completeExceptionally(new IOException("Apple Music request cancelled"));requests.clear();}
     public synchronized void reconnect(){cancelRequests();session=null;owner=null;state=null;commands.clear();authorized=false;authState="restoring";stopped=false;pairing=random();born=System.nanoTime();lastAck=sequence;error="";}
     public JsonObject request(String op,String value,int offset)throws Exception{
-        if(!Arrays.asList("search","charts","songs","playlists","playlistTracks").contains(op)||value==null||value.length()>200||offset<0||offset>10000)throw new IllegalArgumentException("Invalid browse request");
+        if(!Arrays.asList("search","charts","songs","playlists","playlistTracks","recent","recommend","resourceTracks").contains(op)||value==null||value.length()>200||offset<0||offset>10000)throw new IllegalArgumentException("Invalid browse request");
         CompletableFuture<JsonObject> future=new CompletableFuture<>();long id;
         synchronized(this){
             if(!connected())throw new IOException("Apple player disconnected");
@@ -54,7 +54,7 @@ public final class AppleWebServer implements AutoCloseable {
         JsonObject c=new JsonObject(),v=new JsonObject();c.addProperty("id",++sequence);c.addProperty("name","load");v.addProperty("id",id);v.addProperty("library",library);c.add("value",v);commands.add(c);
     }
     public synchronized void command(String name,Double value){
-        if(!Arrays.asList("play","pause","stop","next","previous","seek","volume","show","hide","login").contains(name))throw new IllegalArgumentException("Unsupported control");
+        if(!Arrays.asList("play","pause","stop","next","previous","seek","volume","show","hide","login","shutdown").contains(name))throw new IllegalArgumentException("Unsupported control");
         if((name.equals("seek")||name.equals("volume"))&&(value==null||Double.isNaN(value)||Double.isInfinite(value)||value<0||value>(name.equals("volume")?1:86400)))throw new IllegalArgumentException("Invalid control value");
         if(!connected())return;
         if(name.equals("stop")){stopped=true;state=null;commands.clear();cancelRequests();}
@@ -104,7 +104,7 @@ public final class AppleWebServer implements AutoCloseable {
         finally{x.close();}
     }
     private static JsonObject sanitize(JsonObject source){
-        JsonObject r=new JsonObject();for(String k:Arrays.asList("title","artist","album","id","error"))r.addProperty(k,text(source,k,300));
+        JsonObject r=new JsonObject();for(String k:Arrays.asList("title","artist","album","id","kind","error"))r.addProperty(k,text(source,k,300));
         for(String k:Arrays.asList("positionMs","durationMs")){double v=source.has(k)?source.get(k).getAsDouble():0;r.addProperty(k,Double.isNaN(v)||Double.isInfinite(v)?0:Math.max(0,Math.min(v,86400000)));}
         for(String k:Arrays.asList("playing","available","authorized","ended"))r.addProperty(k,source.has(k)&&source.get(k).getAsBoolean());
         String cover="";try{URI u=URI.create(text(source,"cover",2048));if("https".equals(u.getScheme())&&u.getHost()!=null&&(u.getHost().equals("mzstatic.com")||u.getHost().endsWith(".mzstatic.com"))&&u.getUserInfo()==null)cover=u.toString();}catch(Exception ignored){}

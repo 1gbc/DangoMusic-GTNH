@@ -19,6 +19,7 @@ object AppleWebPlayer {
     @Volatile var nativeMode = false
         private set
     @Volatile private var startupFailure = ""
+    @Volatile private var playbackFailure = ""
     @Volatile private var nativeStartedAt = 0L
     private val nativeWorker = Executors.newSingleThreadExecutor { r -> Thread(r, "Dango-AppleNative").apply { isDaemon = true } }
     val nativeRunning get() = nativeProcess?.isAlive == true
@@ -105,9 +106,14 @@ object AppleWebPlayer {
             val result = endpoint.request(op, value, offset)
             if (epoch != connectionEpoch) throw SourceAccessException("Apple Music session changed; retry")
             return result
-        } catch (_: Exception) { throw SourceAccessException("Apple Music request failed; check login, region and connection") }
+        } catch (e: Exception) {
+            if (e.cause?.message == "Apple Music request cancelled") throw java.util.concurrent.CancellationException()
+            if (e is java.util.concurrent.TimeoutException) throw SourceAccessException("Apple Music 游戏与组件请求超时 [RPC_TIMEOUT]")
+            throw SourceAccessException("Apple Music 游戏与组件连接异常 [RPC_CONNECTION]")
+        }
     }
     fun load(track: NeteaseTrack): Boolean {
+        playbackFailure = ""
         if (!authorized) { message = "Sign in to Apple Music in the login window"; return false }
         return try {
             server?.playSong(track.mediaId.removePrefix("library:"), track.mediaId.startsWith("library:"))
@@ -116,7 +122,7 @@ object AppleWebPlayer {
         } catch (_: Exception) { message = "Apple Music could not load this song"; false }
     }
     fun command(name: String, value: Double? = null) {
-        if (name == "stop") loadStartedAt = 0L
+        if (name == "stop") { loadStartedAt = 0L; playbackFailure = "" }
         try { server?.command(name, value) } catch (_: Exception) { message = "Apple Music control failed" }
     }
     fun tick() {
@@ -129,8 +135,11 @@ object AppleWebPlayer {
             command("volume", lastVolume.toDouble())
         }
         val s = server?.snapshot()
+        val controlError = server?.error().orEmpty()
+        if (controlError.startsWith("Apple Music queue failed") || controlError.startsWith("Apple Music play failed")) playbackFailure = controlError
         message = when {
             startupFailure.isNotEmpty() -> startupFailure
+            playbackFailure.isNotEmpty() -> playbackFailure
             nativeMode && nativeRunning && !connected && System.nanoTime() - nativeStartedAt < 15_000_000_000L -> "Starting embedded Apple player"
             nativeMode && !connected -> "Embedded player is not connected; show its window to check startup"
             server == null -> "Connect Apple Music using the account button"
@@ -142,7 +151,7 @@ object AppleWebPlayer {
             else -> ""
         }
         if (s == null || !s.get("available").asBoolean || s.get("title").asString.isEmpty()) {
-            if (loadStartedAt != 0L && System.nanoTime() - loadStartedAt < 20_000_000_000L && server?.error().isNullOrEmpty()) return
+            if (loadStartedAt != 0L && System.nanoTime() - loadStartedAt < 65_000_000_000L && server?.error().isNullOrEmpty()) return
             loadStartedAt = 0L
             MusicPlayer.clearAppleState()
             return
@@ -170,17 +179,21 @@ object AppleWebPlayer {
             nativeProcess = null
             startupFailure = ""
             nativeMode = false
+            playbackFailure = ""
             old
         }
         val old = retired.first
         val child = retired.second
         old?.command("stop", null)
+        if (child != null) old?.command("shutdown", null)
         MusicPlayer.clearAppleState()
         // Allow the extension to receive/ack stop before retiring its endpoint.
         if (old != null) Thread({
-            try { Thread.sleep(2000) } catch (_: InterruptedException) { }
+            try {
+                if (child == null) Thread.sleep(2000)
+                else if (!child.waitFor(20, java.util.concurrent.TimeUnit.SECONDS)) child.destroy()
+            } catch (_: InterruptedException) { }
             old.close()
-            child?.destroy()
         }, "Dango-AppleDisconnect").apply { isDaemon = true }.start()
     }
 }

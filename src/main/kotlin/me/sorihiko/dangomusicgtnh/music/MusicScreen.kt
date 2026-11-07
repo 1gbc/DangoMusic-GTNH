@@ -58,7 +58,7 @@ class MusicScreen(
     private val settings = SettingsPage(this, module)
     private val lyricsPage = LyricsPage(ui, module)
     private var lyricsOpen = false
-    internal val canOpenLyrics get() = MusicSources.selected == MusicSource.NETEASE
+    internal val canOpenLyrics get() = MusicSources.selected == MusicSource.NETEASE || MusicSources.selected == MusicSource.APPLE
 
     /** 平台层根据搜索、筛选和设置输入框的焦点开关系统输入法。 */
     val textInputActive: Boolean
@@ -548,7 +548,8 @@ class MusicScreen(
                 val label = if (rec.isNullOrEmpty()) I18n.text("Your playlists") else I18n.text("Recommended playlists")
                 val apple = MusicSources.selected == MusicSource.APPLE
                 grid.draw(body, if (apple) "Apple Music" else I18n.text("Welcome to Dango Music!"),
-                    if (apple) I18n.text("Search songs, open charts or browse your library") else "$label · ${items.size}", items, Library.recommendLoading && items.isEmpty())
+                    if (apple) me.sorihiko.dangomusicgtnh.music.AppleMusicSource.homeWarning.ifEmpty { "最近播放、推荐歌单与专辑" } else "$label · ${items.size}", items, Library.recommendLoading && items.isEmpty(),
+                    if (apple) me.sorihiko.dangomusicgtnh.music.AppleMusicSource::homeSection else null)
                 if (apple && body.width > 280f) {
                     val refresh = LayoutBounds(body.right - 110f, body.y, 106f, 28f)
                     ui.card(refresh, Theme.CARD, 9f)
