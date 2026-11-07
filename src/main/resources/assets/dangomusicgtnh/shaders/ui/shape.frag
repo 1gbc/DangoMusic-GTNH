@@ -26,9 +26,14 @@ float sdRoundBox(vec2 p, vec2 b, float r) {
     q = max(q, 0.0);
     vec2 square = q * q;
     float norm = sqrt(sqrt(dot(square, square)));
-    float gradient = length(square * q) / max(norm * norm * norm, 0.0001);
-    // First-order distance normalization keeps borders and AA consistent around the corner.
-    return (norm - r) / max(gradient, 0.70710678) + inside;
+    if (r == 0.0) return length(q) + inside;
+    vec2 unit = q / max(norm, 0.0001);
+    float gradient = length(unit * unit * unit);
+    // Normalize near the contour; smoothly use the unnormalized distance inside.
+    // A vanishing interior gradient must not amplify glass bevel/refraction depth.
+    float blend = smoothstep(0.25, 0.75, norm / r);
+    float scale = mix(1.0, 1.0 / max(gradient, 0.70710678), blend);
+    return (norm - r) * scale + inside;
 }
 
 void main() {

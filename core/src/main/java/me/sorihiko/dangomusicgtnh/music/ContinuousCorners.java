@@ -15,7 +15,15 @@ public final class ContinuousCorners {
             return Math.hypot(x, y) - r;
         }
         double norm = Math.sqrt(Math.sqrt(qx * qx * qx * qx + qy * qy * qy * qy));
-        double gradient = Math.hypot(qx * qx * qx, qy * qy * qy) / Math.max(norm * norm * norm, 0.0001);
-        return (norm - r) / Math.max(gradient, 0.70710678) + inside;
+        if (r == 0) return Math.hypot(qx, qy) + inside;
+        double ux = qx / Math.max(norm, 0.0001);
+        double uy = qy / Math.max(norm, 0.0001);
+        double gradient = Math.hypot(ux * ux * ux, uy * uy * uy);
+        // Normalize only near the contour. Deep inside, a vanishing gradient must
+        // not amplify the negative distance used by glass bevels and refraction.
+        double blend = Math.max(0, Math.min((norm / r - 0.25) / 0.5, 1));
+        blend = blend * blend * (3 - 2 * blend);
+        double scale = 1 + (1 / Math.max(gradient, 0.70710678) - 1) * blend;
+        return (norm - r) * scale + inside;
     }
 }
