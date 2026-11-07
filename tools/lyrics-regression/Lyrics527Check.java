@@ -17,10 +17,17 @@ class Lyrics527Check {
         check(lrc.ktvIndexAt(13000L) == 1, "Next line starts on its timestamp");
         check(lrc.instrumentalAt(22000L, 25000L) == null, "Cannot infer LRC outro from a fixed duration");
 
+        LyricLine lastLine = lrc.getLines().get(1);
+        check(lastLine.sungFraction(12999L, Long.MAX_VALUE) == 0f, "Untimed last line must not highlight before its start");
+        check(lastLine.sungCharacters(13000L, Long.MAX_VALUE) == 4f, "Unknown duration must highlight the whole last LRC line");
+        check(Math.abs(lastLine.sungFraction(19000L, 25000L) - 0.5f) < 0.001f, "Known duration must still pace the last LRC line");
+
         LyricSplit.INSTANCE.setEnabled(true);
         Lyrics unsplit = new Lyrics(List.of(new LyricLine(1000L, "甲乙 丙丁"), new LyricLine(13000L, "戊己")), "test");
         check(unsplit.getLines().size() == 2, "LRC must preserve original timestamps");
         LyricLine timed = new LyricLine(1000L, "abcdef", List.of(new LyricWord(1000L, 6000L, "abcdef")));
+        check(Math.abs(timed.sungFraction(4000L, Long.MAX_VALUE) - 0.5f) < 0.001f,
+            "Unknown duration must preserve real word timing");
         Lyrics yrc = new Lyrics(List.of(timed, new LyricLine(13000L, "next")), "test");
         check(yrc.instrumentalAt(4000L, 20000L) == null, "Still singing a timed line");
         check(yrc.instrumentalAt(8000L, 20000L) == Lyrics.Instrumental.INTERLUDE, "Timed gap still identifies interlude");

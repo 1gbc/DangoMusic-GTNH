@@ -645,10 +645,14 @@ class LyricsModule : Module() {
     private fun spawn(line: LyricLine, nextMs: Long): Floating {
         val text = line.text
         val startMs = line.timeMs
-        val ct = charTimes(line, nextMs)
+        val animationEnd = if (nextMs == Long.MAX_VALUE) {
+            val boundary = MusicPlayer.durationMs.takeIf { it > startMs } ?: Long.MAX_VALUE
+            line.ktvEndMs(boundary).takeUnless { it == Long.MAX_VALUE } ?: (startMs + 3500L)
+        } else nextMs
+        val ct = charTimes(line, animationEnd)
         val lines = wrap(text, 200)
         val chars = lines.sumOf { it.length }
-        val lineDur = (nextMs - startMs).coerceAtLeast(400L)
+        val lineDur = (animationEnd - startMs).coerceAtLeast(400L)
         val reveal = min((chars * 55L).coerceAtLeast(250L), (lineDur * 0.6).toLong())
 
         val phonetic = line.romanization?.takeIf { it.isNotBlank() }?.let { wrap(it, TRANSLATION_WRAP) }.orEmpty()

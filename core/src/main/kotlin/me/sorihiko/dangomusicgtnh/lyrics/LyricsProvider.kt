@@ -40,6 +40,8 @@ class LyricLine @JvmOverloads constructor(
         if (length == 0 || positionMs < timeMs) return 0f
         val timed = words.orEmpty()
         if (timed.isEmpty()) {
+            // With no end timestamp, highlight the whole line as soon as it starts.
+            if (nextLineMs == Long.MAX_VALUE) return length.toFloat()
             return length * ((positionMs - timeMs).toFloat() / (ktvEndMs(nextLineMs) - timeMs).coerceAtLeast(1L)).coerceIn(0f, 1f)
         }
         var sung = 0f
