@@ -18,8 +18,17 @@ uniform float u_Opacity;
 varying vec2 v_Position;
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
+    r = clamp(r, 0.0, min(b.x, b.y));
+    // Keep genuinely circular controls and avatar masks circular.
+    if (abs(b.x - b.y) < 0.001 && r >= min(b.x, b.y) - 0.001) return length(p) - r;
     vec2 q = abs(p) - b + r;
-    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    float inside = min(max(q.x, q.y), 0.0);
+    q = max(q, 0.0);
+    vec2 square = q * q;
+    float norm = sqrt(sqrt(dot(square, square)));
+    float gradient = length(square * q) / max(norm * norm * norm, 0.0001);
+    // First-order distance normalization keeps borders and AA consistent around the corner.
+    return (norm - r) / max(gradient, 0.70710678) + inside;
 }
 
 void main() {
