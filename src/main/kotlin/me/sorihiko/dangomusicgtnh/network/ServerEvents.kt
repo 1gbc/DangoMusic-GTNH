@@ -1,17 +1,11 @@
 package me.sorihiko.dangomusicgtnh.network
 
-import cpw.mods.fml.common.event.FMLServerStartingEvent
 import cpw.mods.fml.common.eventhandler.SubscribeEvent
 import cpw.mods.fml.common.gameevent.PlayerEvent
 import cpw.mods.fml.common.gameevent.TickEvent
 import net.minecraft.entity.player.EntityPlayerMP
 
 object ServerEvents {
-    @SubscribeEvent
-    fun onServerStarting(event: FMLServerStartingEvent) {
-        event.registerServerCommand(CommandDangoMusic())
-    }
-
     @SubscribeEvent
     fun onServerTick(event: TickEvent.ServerTickEvent) {
         if (event.phase == TickEvent.Phase.END) NearbyServer.tick()
