@@ -74,7 +74,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
 
         // 左：封面 + 歌名 / 歌手
         val cs = 48f
-        val cx = bar.x + bar.width / 2f
+        // 整组按钮的范围为 [cx - MODE_BUTTON_OFFSET, cx + 148]，按整组宽度居中。
+        val cx = bar.x + bar.width / 2f - (148f - MODE_BUTTON_OFFSET) / 2f
         val canLike = t != null && t.source == MusicSource.NETEASE && NeteaseApi.loggedIn
         val leftLimit = cx - MODE_BUTTON_OFFSET - 4f
         // 窄窗口里先把封面往左收，给标题、收藏和心动模式保留各自的点击范围。
@@ -178,14 +179,14 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             ctx.popOpacity()
         }
         // ⏮ = 竖条 + ◀，⏭ = ▶ + 竖条（围绕按钮中心缩放）
-        val pc = prevB.x + 14f
+        val pc = prevB.x + prevB.width / 2f
         ui.card(LayoutBounds(pc - 6f * kPrev, cy - 5.5f * kPrev, 2.2f * kPrev, 11f * kPrev), Theme.TEXT_PRIMARY, 1f)
         ui.icon("◀", pc + 2.5f * kPrev, cy, 12f * kPrev, Theme.TEXT_PRIMARY)
-        val nc = nextB.x + 14f
+        val nc = nextB.x + nextB.width / 2f
         ui.icon("▶", nc - 2.5f * kNext, cy, 12f * kNext, Theme.TEXT_PRIMARY)
         ui.card(LayoutBounds(nc + 3.8f * kNext, cy - 5.5f * kNext, 2.2f * kNext, 11f * kNext), Theme.TEXT_PRIMARY, 1f)
         val q = queueA.on.tick(if (ScreenState.page == Page.QUEUE) 1f else 0f)
-        ui.icon("≡", queueB.x + 14f, cy, 14f * kQueue, mixColor(Theme.TEXT_PRIMARY, RED, q))
+        ui.icon("≡", queueB.x + queueB.width / 2f, cy, 14f * kQueue, mixColor(Theme.TEXT_PRIMARY, RED, q))
         ui.hits += prevB to { prevA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.prev() } }
         ui.hits += playB to { playA.press.v -= 7f; PlaybackView.togglePause() }
         ui.hits += nextB to { nextA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.next() } }
