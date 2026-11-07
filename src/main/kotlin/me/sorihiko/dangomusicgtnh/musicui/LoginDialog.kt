@@ -218,14 +218,14 @@ internal class LoginDialog(private val screen: MusicScreen) {
     private fun drawApple() {
         hits.clear()
         val web = me.sorihiko.dangomusicgtnh.music.AppleWebPlayer
-        val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 280f) / 2f, 420f, 280f)
+        val box = LayoutBounds((ui.lw - 420f) / 2f, (ui.lh - 338f) / 2f, 420f, 338f)
         ui.ctx.drawGlass(box, Theme.GLASS_WINDOW)
         ui.text("Apple Music", box.x + 20f, box.y + 20f, 18f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
         ui.text(I18n.text(if (web.connected) "Browser connected" else "Pair the browser extension"), box.x + 20f, box.y + 58f, 13f, Theme.TEXT_PRIMARY)
         ui.wrap2(I18n.text(web.message.ifEmpty { "Playback is handled by the official webpage" }), box.width - 40f, 12f).forEachIndexed { i, line ->
             ui.text(line, box.x + 20f, box.y + 82f + i * 16f, 12f, Theme.TEXT_SECONDARY)
         }
-        val labels = listOf("Open official webpage", "Copy pairing link", "Reconnect", "Disconnect", "Close")
+        val labels = listOf("Open official webpage", "Copy pairing link", "Reconnect", "Disconnect", "Start embedded player", "Show login window", "Hide player window", "Close")
         labels.forEachIndexed { i, label ->
             val row = i / 2
             val b = LayoutBounds(box.x + 20f + (i % 2) * 192f, box.y + 138f + row * 38f, 184f, 30f)
@@ -237,6 +237,9 @@ internal class LoginDialog(private val screen: MusicScreen) {
                     1 -> { DangoClient.platform.clipboard = web.pairingLink }
                     2 -> web.connect()
                     3 -> web.disconnect()
+                    4 -> web.startNative()
+                    5 -> if (web.nativeRunning) web.command("show") else web.startNative()
+                    6 -> if (web.nativeRunning) web.command("hide")
                     else -> close()
                 }
             }

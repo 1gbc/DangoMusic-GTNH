@@ -32,7 +32,7 @@ public final class AppleWebServer implements AutoCloseable {
     public String error(){return error;}
     public synchronized void reconnect(){session=null;owner=null;state=null;commands.clear();stopped=false;pairing=random();born=System.nanoTime();lastAck=sequence;error="";}
     public synchronized void command(String name,Double value){
-        if(!Arrays.asList("play","pause","stop","next","previous","seek","volume").contains(name))throw new IllegalArgumentException("Unsupported control");
+        if(!Arrays.asList("play","pause","stop","next","previous","seek","volume","show","hide").contains(name))throw new IllegalArgumentException("Unsupported control");
         if((name.equals("seek")||name.equals("volume"))&&(value==null||Double.isNaN(value)||Double.isInfinite(value)||value<0||value>(name.equals("volume")?1:86400)))throw new IllegalArgumentException("Invalid control value");
         if(!connected())return;
         if(name.equals("stop")){stopped=true;state=null;commands.clear();}
@@ -43,7 +43,7 @@ public final class AppleWebServer implements AutoCloseable {
     private void handle(HttpExchange x) throws IOException {
         try {
             String origin=x.getRequestHeaders().getFirst("Origin");
-            if(!("127.0.0.1:"+server.getAddress().getPort()).equals(x.getRequestHeaders().getFirst("Host"))||origin==null||!origin.matches("chrome-extension://[a-p]{32}")){reply(x,403,"{}");return;}
+            if(!("127.0.0.1:"+server.getAddress().getPort()).equals(x.getRequestHeaders().getFirst("Host"))||origin==null||!(origin.matches("chrome-extension://[a-p]{32}")||origin.equals("dango-native://player"))){reply(x,403,"{}");return;}
             String path=x.getRequestURI().toString(),auth=x.getRequestHeaders().getFirst("Authorization");
             if(!x.getRequestMethod().equals("POST")||!(path.equals("/pair")||path.equals("/sync"))){reply(x,405,"{}");return;}
             // Read outside the state lock so a stalled browser cannot freeze game controls.
