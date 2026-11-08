@@ -27,6 +27,8 @@ import net.minecraft.client.gui.GuiMainMenu
 import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.gui.ScaledResolution
 import net.minecraft.util.MathHelper
+import net.minecraft.util.MovingObjectPosition
+import net.minecraft.util.Vec3
 import net.minecraftforge.common.MinecraftForge
 import org.lwjgl.input.Keyboard
 import org.lwjgl.input.Mouse
@@ -134,6 +136,28 @@ private class ClientPlatform(override val configDir: Path) : Platform {
                 else -> 0.1f
             }
         }
+    }
+
+    override fun clearFraction(x0: Double, y0: Double, z0: Double, x1: Double, y1: Double, z1: Double): Double {
+        val world = client.theWorld ?: return 1.0
+        val dx = x1 - x0
+        val dy = y1 - y0
+        val dz = z1 - z0
+        val len2 = dx * dx + dy * dy + dz * dz
+        if (len2 < 1e-8) return 1.0
+        // 起点会被 func_147447_a 改写，每次都要新建；忽略没有碰撞箱的方块（草、花、火把），不停在液体上
+        val hit = try {
+            world.func_147447_a(
+                Vec3.createVectorHelper(x0, y0, z0), Vec3.createVectorHelper(x1, y1, z1),
+                false, true, false,
+            )
+        } catch (_: RuntimeException) {
+            null
+        } ?: return 1.0
+        if (hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return 1.0
+        val v = hit.hitVec ?: return 1.0
+        val t = ((v.xCoord - x0) * dx + (v.yCoord - y0) * dy + (v.zCoord - z0) * dz) / len2
+        return t.coerceIn(0.0, 1.0)
     }
 
     override val environment: ListenerEnvironment?

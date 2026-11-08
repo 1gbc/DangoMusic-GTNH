@@ -80,6 +80,8 @@ Stay on screen	保持在屏幕内
 Lyrics glide back into view when you turn away, so they never leave the screen	转动视角时，歌词平滑移回屏幕内
 Above ground	保持离地
 Lyrics never appear below your eyes, so they don't sink into the ground	避免歌词过低或沉入地面
+Avoid blocks	避让方块
+Lyrics move in front of walls, leaves and the ground instead of going through them	歌词遇到墙、树叶或地面时停在方块前面，不再穿进去
 Spread	分布范围
 How far left or right each line can appear (degrees)	每句歌词的左右偏移范围（度）
 Split lines	自动拆句
@@ -615,3 +617,7 @@ Apple Music popular songs	Apple Music 热门歌曲
 Search songs, open charts or browse your library	搜索歌曲、查看热门歌曲或浏览媒体库
 Refresh library	刷新媒体库
 Restoring login or checking library access	正在恢复登录或检查媒体库权限
+Group takes over	进群自动切换
+Joining or listening to a group pauses your own music and plays the group's song	加入或收听群组时，暂停自己的音乐，改放群组正在放的歌
+Resume after group	离开群组后继续播放
+Your own music continues when you leave the group or stop listening to it	离开群组或关闭收听群组后，接着播放之前暂停的音乐

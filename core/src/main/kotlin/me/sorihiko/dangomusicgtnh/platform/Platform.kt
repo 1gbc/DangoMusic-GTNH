@@ -89,6 +89,12 @@ interface Platform {
      */
     fun soundAbsorption(x: Int, y: Int, z: Int): Float = -1f
 
+    /**
+     * 从 (x0,y0,z0) 看向 (x1,y1,z1)：线段上第一个有碰撞箱的方块挡在多远处（0..1，占整段的比例），
+     * 没挡住返回 1。花草、火把这类没有碰撞箱的方块不算；树叶、玻璃算。在渲染线程上调用
+     */
+    fun clearFraction(x0: Double, y0: Double, z0: Double, x1: Double, y1: Double, z1: Double): Double = 1.0
+
     // ---------------------------------------------------------------- 界面
 
     /** 仅在本地聊天栏显示提示；世界未就绪时返回 false，不能向服务器发送聊天消息。 */
