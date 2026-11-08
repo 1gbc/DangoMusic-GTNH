@@ -53,9 +53,26 @@ object MusicPlayer {
 
     private val loader = Executors.newSingleThreadExecutor { r -> Thread(r, "Dango-MusicLoader").apply { isDaemon = true } }
     private val radioWorker = Executors.newSingleThreadExecutor { r -> Thread(r, "Dango-MusicRadio").apply { isDaemon = true } }
+    private val prefetcher = Executors.newSingleThreadExecutor { r -> Thread(r, "Dango-MusicPrefetch").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
+
+    /**
+     * 开着淡入淡出时，声卡里最多排多少毫秒还没放的音频。越大越不容易被 GC / 卡顿打断，
+     * 但暂停、切歌的淡出要等排队的这段放完才开始。
+     */
+    @Volatile var audioBufferMs = 400
+
+    /** 预取好的下一首（网易云）：地址、整首音频和分析结果；切到它时直接解码，不再等下载 */
+    private class Prepared(
+        val key: String, val quality: NeteaseQuality, val normalized: Boolean, val url: NeteaseApi.SongUrl,
+        val bytes: ByteArray, val measuredDuration: Long, val measuredGain: Float?, val atMs: Long,
+    )
+    @Volatile private var prepared: Prepared? = null
+    /** 正在预取的曲目；换成别的值（或 null）就让进行中的预取停下 */
+    @Volatile private var prefetchKey: String? = null
     private val decoderWorker = ThreadPoolExecutor(
         1, 1, 0, TimeUnit.MILLISECONDS, ArrayBlockingQueue(1),
-        { r -> Thread(r, "Dango-MusicDecode").apply { isDaemon = true } },
+        // 解码线程优先级略高于游戏的后台线程：GTNH 负载重时少断音
+        { r -> Thread(r, "Dango-MusicDecode").apply { isDaemon = true; priority = Thread.NORM_PRIORITY + 2 } },
         ThreadPoolExecutor.DiscardOldestPolicy()
     )
 
@@ -116,7 +133,8 @@ object MusicPlayer {
     // ---------------------------------------------------------------- 队列控制
 
     enum class Mode(val label: String, val glyph: String) {
-        SEQUENTIAL("Sequential playback", "≡"),
+        // 顺序播放到最后一首会回到第一首（列表循环）：用循环箭头，不再和播放队列的 ≡ 撞图标；单曲循环另外叠一个“1”
+        SEQUENTIAL("Sequential playback", "↻"),
         SHUFFLE("Shuffle playback", "⇄"),
         REPEAT_ONE("Repeat one", "↻"),
     }
@@ -196,6 +214,43 @@ object MusicPlayer {
 
     private val failedTracks = HashSet<String>()
     private val failureTimer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "Dango-Skip").apply { isDaemon = true } }
+
+    /** 退出游戏时不要把“停止”当成用户主动停止而清掉续播进度 */
+    @Volatile private var shuttingDown = false
+
+    init {
+        // 播放中每 15 秒记一次进度，崩溃或强退也最多丢 15 秒
+        failureTimer.scheduleWithFixedDelay({
+            try {
+                synchronized(this) {
+                    if (state == State.PLAYING && current?.source != MusicSource.APPLE) ResumeStore.save(queue, index, positionMs)
+                }
+            } catch (_: Throwable) {
+            }
+        }, 15L, 15L, TimeUnit.SECONDS)
+    }
+
+    /**
+     * 进游戏时恢复上次的队列和进度：停在暂停状态，不自动出声、不提前下载；
+     * 按播放时才从记住的进度开始加载（和网易云桌面版一样）。
+     */
+    @Synchronized fun restoreSession(session: ResumeStore.Session): Boolean {
+        if (current != null || state != State.STOPPED || session.index !in session.tracks.indices) return false
+        val track = session.tracks[session.index]
+        if (track.source == MusicSource.APPLE) return false
+        queue = session.tracks
+        originalQueue = session.tracks
+        index = session.index
+        current = track
+        audio = null
+        neteaseStream = null
+        val duration = track.durationMs
+        pausedAtMs = if (duration > 0L) session.positionMs.coerceIn(0L, max(0L, duration - 1000L)) else session.positionMs.coerceAtLeast(0L)
+        message = ""
+        state = State.PAUSED
+        ResumeStore.adopt(session.tracks)
+        return true
+    }
     private class PendingFade(var pausing: Boolean, var finish: () -> Unit)
     private var pendingFade: PendingFade? = null
     @Volatile var skipNotice = 0L
@@ -221,6 +276,8 @@ object MusicPlayer {
         neteaseQuality = quality
         val track = current ?: return
         if (!active || track.source != MusicSource.NETEASE) return
+        // 恢复的上次会话还没加载：只记下音质，按播放时再按新音质加载，启动时不提前下载
+        if (state == State.PAUSED && audio == null && line == null) return
         if (pendingFade?.pausing == false) return // The selected track will load at the new quality.
         loadTrack(track, positionMs, pendingFade?.pausing == true || state == State.PAUSED || (state == State.LOADING && loadingPaused))
     }
@@ -248,6 +305,7 @@ object MusicPlayer {
         loadingPaused = paused
         state = State.LOADING
         message = "加载中…"
+        ResumeStore.save(queue, index, position)
         val quality = neteaseQuality
         loader.execute { load(gen, track, quality, position, paused) }
     }
@@ -351,6 +409,9 @@ object MusicPlayer {
                     l.fadeTo(1f)
                     l.start()
                     state = State.PLAYING
+                } else if (audio == null) {
+                    // 恢复的上次会话：还没加载过，从记住的进度开始加载
+                    current?.let { loadTrack(it, pausedAtMs, false) }
                 } else {
                     state = State.PLAYING
                     seekLocal(pausedAtMs, fadeIn = playbackFades)
@@ -363,9 +424,12 @@ object MusicPlayer {
     private fun pauseLine() {
         pausedAtMs = positionMs
         state = State.PAUSED
-        val out = line ?: return
-        out.stop()
-        pausedAtMs = seekBaseMs + out.positionMicros / 1000
+        val out = line
+        if (out != null) {
+            out.stop()
+            pausedAtMs = seekBaseMs + out.positionMicros / 1000
+        }
+        if (current?.source != MusicSource.APPLE) ResumeStore.save(queue, index, pausedAtMs)
     }
 
     private fun fadeOut(pausing: Boolean = false, finish: () -> Unit): Boolean {
@@ -379,7 +443,7 @@ object MusicPlayer {
             val request = PendingFade(pausing, finish)
             pendingFade = request
             out.fadeTo(0f)
-            checkFade(request, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(450))
+            checkFade(request, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(450L + audioBufferMs.coerceIn(0, 1500)))  // 排队的音频放完淡出才真正开始
         }
         return true
     }
@@ -405,13 +469,24 @@ object MusicPlayer {
 
     fun seek(ms: Long) {
         if (current?.source == MusicSource.APPLE) { AppleWebPlayer.command("seek", ms.coerceIn(0L, durationMs).toDouble() / 1000); return }
-        if (audio == null) return
+        if (audio == null) {
+            // 恢复后还没加载：只改记住的进度，按播放时从这里开始
+            synchronized(this) {
+                if (state == State.PAUSED && line == null && current != null) {
+                    pausedAtMs = ms.coerceIn(0L, max(0L, durationMs - 500))
+                }
+            }
+            return
+        }
         seekLocal(ms)
     }
 
     @Synchronized private fun seekLocal(ms: Long, fadeIn: Boolean = false) {
         if (pendingFade?.pausing == false) return
-        val bytes = audio ?: return
+        val bytes = audio ?: run {
+            if (state == State.PAUSED && line == null && current != null) pausedAtMs = ms.coerceIn(0L, max(0L, durationMs - 500))
+            return
+        }
         val target = ms.coerceIn(0L, max(0L, durationMs - 500))
         // 暂停时拖动：停在新位置，仍保持暂停
         if (pendingFade?.pausing == true) state = State.PAUSED
@@ -421,7 +496,10 @@ object MusicPlayer {
         startDecode(gen, bytes, target, fadeIn)
     }
 
-    @Synchronized fun stop() {
+    @Synchronized fun stop() = stop(clearResume = true)
+
+    /** [clearResume] = false：不是用户主动停止（比如切换音源），保留续播记录 */
+    @Synchronized fun stop(clearResume: Boolean) {
         if (MusicSources.selected == MusicSource.APPLE || current?.source == MusicSource.APPLE) AppleWebPlayer.command("stop")
         heartMode = false
         radio = null
@@ -432,14 +510,26 @@ object MusicPlayer {
         current = null
         state = State.STOPPED
         message = ""
+        prefetchKey = null
+        prepared = null
+        if (clearResume && !shuttingDown) ResumeStore.clear()
     }
 
     @Synchronized fun shutdown() {
+        shuttingDown = true
+        try {
+            val track = current
+            if (track != null && track.source != MusicSource.APPLE && state != State.STOPPED && state != State.ERROR) {
+                ResumeStore.save(queue, index, positionMs, sync = true)
+            }
+        } catch (_: Throwable) {
+        }
         AppleWebPlayer.disconnect()
         stop()
         loader.shutdownNow()
         decoderWorker.shutdownNow()
         radioWorker.shutdownNow()
+        prefetcher.shutdownNow()
         failureTimer.shutdownNow()
     }
 
@@ -479,8 +569,11 @@ object MusicPlayer {
     private fun load(gen: Int, track: NeteaseTrack, quality: NeteaseQuality, position: Long, paused: Boolean) {
         if (gen != generation) return
         try {
+            val ready = if (track.source == MusicSource.NETEASE) takePrepared(track, quality) else null
+            // 这首正在预取但还没好：停掉预取，免得两份下载抢带宽
+            if (ready == null && prefetchKey == track.key) prefetchKey = null
             val kugou = if (track.source == MusicSource.KUGOU) KugouMusicSource.loadAudio(track) { gen == generation } else null
-            val url = when (track.source) {
+            val url = ready?.url ?: when (track.source) {
                 MusicSource.KUGOU -> kugou?.info
                 MusicSource.NETEASE -> NeteaseApi.songUrl(track, quality) { gen == generation }
                 else -> MusicSources.api(track.source).songUrl(track)
@@ -489,8 +582,8 @@ object MusicPlayer {
             if (url == null) return fail(gen, if (track.source == MusicSource.NETEASE) "拿不到播放地址"
                 else if (NativeAccounts.get(track.source) != null) "No playable MP3. Your login may have expired, or this song is restricted by membership or region."
                 else "No guest MP3 available. Login, payment or regional restrictions may apply.")
-            if (track.source == MusicSource.NETEASE) message = "正在下载网易云音源…"
-            val bytes = kugou?.bytes ?: if (track.source == MusicSource.NETEASE) {
+            if (track.source == MusicSource.NETEASE && ready == null) message = "正在下载网易云音源…"
+            val bytes = ready?.bytes ?: kugou?.bytes ?: if (track.source == MusicSource.NETEASE) {
                 NeteaseApi.requestAudio(url.url, { gen == generation }) { percent ->
                     if (gen == generation) message = "正在下载网易云音源 $percent%"
                 }
@@ -502,8 +595,10 @@ object MusicPlayer {
                     else "网易云未提供有效的音频数据。")
             }
             // Cloud list duration units are not reliable. Use compressed audio timing before enabling seeking.
-            val measuredDuration = if (track.cloud) AudioAnalysis.duration(bytes) { gen == generation } else 0L
-            val measuredGain = if (normalize) AudioAnalysis.gain(bytes) { gen == generation } else null
+            val measuredDuration = ready?.measuredDuration
+                ?: if (track.cloud) AudioAnalysis.duration(bytes) { gen == generation } else 0L
+            val measuredGain = if (ready != null) ready.measuredGain
+                else if (normalize) AudioAnalysis.gain(bytes) { gen == generation } else null
             val stream = if (track.source == MusicSource.NETEASE) neteaseStreamOf(url, bytes) else null
             synchronized(this) {
                 if (gen != generation) return
@@ -521,9 +616,10 @@ object MusicPlayer {
                     state = State.PAUSED
                 }
                 startDecode(gen, bytes, position, fadeIn = position == 0L)
+                schedulePrefetch()
             }
-            DangoLogger.info("Audio analysis: source={} cloud={} durationMs={} localGain={} appliedGain={}",
-                track.source.key, track.cloud, measuredDuration, measuredGain != null, trackGain)
+            DangoLogger.info("Audio analysis: source={} cloud={} durationMs={} localGain={} appliedGain={} prefetched={}",
+                track.source.key, track.cloud, measuredDuration, measuredGain != null, trackGain, ready != null)
         } catch (e: Throwable) {
             if (gen != generation) return
             // 包括 NoClassDefFoundError 之类的 Error：不接住的话线程会悄悄退出，界面一直停在"加载中"
@@ -533,6 +629,68 @@ object MusicPlayer {
             } else {
                 DangoLogger.warn("Source {} load failed: {}", track.source.key, e.javaClass.simpleName)
                 fail(gen, if (e is SourceAccessException) e.message.orEmpty() else "Playback request failed. Check your connection or log in again.")
+            }
+        }
+    }
+
+    private fun takePrepared(track: NeteaseTrack, quality: NeteaseQuality): Prepared? {
+        val p = prepared ?: return null
+        if (System.currentTimeMillis() - p.atMs >= 30 * 60_000L) {
+            prepared = null
+            return null
+        }
+        // 网易云的地址会过期，但音频已经在内存里；只认同一首、同一音质、同一响度设置。
+        // 点了别的歌时留着它：之后切回原来的下一首还能用
+        if (p.key != track.key || p.quality != quality || p.normalized != normalize) return null
+        prepared = null
+        return p
+    }
+
+    /** 队列里接下来要放的那首（单曲循环、电台还没要到下一首时没有） */
+    private fun upcomingTrack(): NeteaseTrack? {
+        if (!heartMode && repeatOne) return null
+        val q = queue
+        val i = index
+        if (q.size < 2 || i !in q.indices) return null
+        if (radio != null && i + 1 >= q.size) return null
+        return q[(i + 1) % q.size]
+    }
+
+    /**
+     * 当前这首开始解码后，后台低优先级下载下一首（整首 + 响度分析），切过去时不用再等。
+     * 只缓存一首；队列、音质或响度设置变了就作废重下。
+     */
+    private fun schedulePrefetch() {
+        val next = upcomingTrack() ?: return
+        if (next.source != MusicSource.NETEASE) return
+        val quality = neteaseQuality
+        val norm = normalize
+        val key = next.key
+        val held = prepared
+        if (held != null && held.key == key && held.quality == quality && held.normalized == norm) return
+        if (held != null) prepared = null  // 不再是下一首了，释放内存
+        if (prefetchKey == key) return
+        prefetchKey = key
+        prefetcher.execute {
+            val alive = { prefetchKey == key }
+            try {
+                // 让当前这首先稳定播放几秒，再开始占带宽
+                Thread.sleep(5_000L)
+                if (!alive()) return@execute
+                val url = NeteaseApi.songUrl(next, quality, alive) ?: return@execute
+                val bytes = NeteaseApi.requestAudio(url.url, alive, PREFETCH_TIMEOUT_SECONDS) { } ?: return@execute
+                if (!alive() || bytes.isEmpty() || (!next.cloud && bytes.size < 10_000)) return@execute
+                val duration = if (next.cloud) AudioAnalysis.duration(bytes, alive) else 0L
+                val gain = if (norm) AudioAnalysis.gain(bytes, alive) else null
+                synchronized(this) {
+                    if (!alive()) return@execute
+                    prepared = Prepared(key, quality, norm, url, bytes, duration, gain, System.currentTimeMillis())
+                }
+                DangoLogger.info("Prefetched next track ({} KB)", bytes.size / 1024)
+            } catch (e: Throwable) {
+                if (alive()) DangoLogger.info("Prefetch skipped: {}", e.javaClass.simpleName)
+            } finally {
+                if (prefetchKey == key) prefetchKey = null
             }
         }
     }
@@ -606,6 +764,12 @@ object MusicPlayer {
     /**
      * 打开声音输出：按 [outputMode] 先试游戏的 OpenAL 或 Java Sound，打不开再换另一个。
      */
+    /** 声卡缓冲：排队上限再留 0.3 秒余量，至少 0.25 秒（以前固定 0.25 秒） */
+    internal fun lineBufferBytes(rate: Int, channels: Int): Int {
+        val ms = (audioBufferMs.coerceIn(100, 1500) + 300).coerceAtLeast(250)
+        return (rate.toLong() * channels * 2 * ms / 1000).toInt() / (channels * 2) * (channels * 2)
+    }
+
     private fun openOutput(format: AudioFormat, bufferBytes: Int): AudioOutput {
         if (preferGameAudio()) platformOutput(format)?.let { return it }
         return try {
@@ -633,7 +797,7 @@ object MusicPlayer {
             try { out?.close() } catch (_: Exception) {}
             return null
         }
-        val opened = out ?: openOutput(format, rate * channels * 2 / 4)
+        val opened = out ?: openOutput(format, lineBufferBytes(rate, channels))
         synchronized(this) {
             if (gen != generation) {
                 opened.close()
@@ -713,7 +877,7 @@ object MusicPlayer {
     }
 
     private fun fadingOutput(output: AudioOutput, gen: Int, rate: Int, channels: Int, fadeIn: Boolean) =
-        FadingAudioOutput(output, rate, channels, fadeIn, { gen == generation }, { state == State.PAUSED }, { playbackFades })
+        FadingAudioOutput(output, rate, channels, fadeIn, { gen == generation }, { state == State.PAUSED }, { playbackFades }, { audioBufferMs })
 
     @Synchronized private fun startDecode(gen: Int, bytes: ByteArray, startMs: Long, fadeIn: Boolean) {
         if (gen != generation) return
@@ -751,7 +915,7 @@ object MusicPlayer {
                 }
                 val output = out ?: run {
                     val format = AudioFormat(frame.rate.toFloat(), 16, frame.channels, true, false)
-                    val opened = openOutput(format, frame.rate * frame.channels * 2 / 4)   // 约 0.25 秒缓冲
+                    val opened = openOutput(format, lineBufferBytes(frame.rate, frame.channels))
                     synchronized(this) {
                         if (gen != generation) {
                             opened.close()
@@ -902,3 +1066,6 @@ object MusicPlayer {
     const val OUTPUT_GAME = 2
 
 }
+
+/** 预取不赶时间：慢网络下也给足时间把整首下完 */
+private const val PREFETCH_TIMEOUT_SECONDS = 600L

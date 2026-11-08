@@ -42,7 +42,7 @@ class NeteaseMusicModule : Module() {
     private val musicSource = IntValue(0, MusicSource.values().lastIndex, 0)
 
     fun selectSource(source: MusicSource) {
-        if (source != MusicSources.selected && (source == MusicSource.APPLE || MusicSources.selected == MusicSource.APPLE)) MusicPlayer.stop()
+        if (source != MusicSources.selected && (source == MusicSource.APPLE || MusicSources.selected == MusicSource.APPLE)) MusicPlayer.stop(clearResume = false)
         musicSource.setValue(source.ordinal)
         MusicSources.selected = source
     }
@@ -146,6 +146,15 @@ class NeteaseMusicModule : Module() {
     @ModuleValue("Playback fades", "Brief fades when switching, pausing or resuming songs")
     private val playbackFades = BooleanValue(true)
 
+    @ModuleValue("Interface style", "Classic: rounded corners, capsule switches with round knobs. Continuous corners: smoother squircle corners everywhere")
+    private val uiStyle = IntValue(0, 1, 0)
+
+    @ModuleValue("Resume last session", "Restore the last queue and song position (paused) when you start the game")
+    private val resumeSession = BooleanValue(true)
+
+    @ModuleValue("Audio buffer", "Milliseconds of audio queued ahead; raise it if playback stutters under load, lower it for snappier fades")
+    private val audioBuffer = FloatValue(100f, 1500f, 400f, 0)
+
     @ModuleValue("Environment audio", "Echo follows the room you are in (size and materials), muffled underwater")
     private val envAudio = BooleanValue(true)
 
@@ -203,6 +212,18 @@ class NeteaseMusicModule : Module() {
 
     override fun onEnable() {
         NeteaseApi.ensureCookieFile()
+        // 续播：ConfigManager 到第 3 个 tick 才启用模块，启动时直接恢复会看到 enabled=false。
+        // 在模块真正启用时恢复，每次启动只做一次；放到后台线程读文件
+        if (!restoreAttempted) {
+            restoreAttempted = true
+            Thread({
+                try {
+                    restoreLastSession()
+                } catch (e: Throwable) {
+                    me.sorihiko.dangomusicgtnh.DangoLogger.warn("Resume last session failed: {}", e.toString())
+                }
+            }, "DangoMusic-resume").apply { isDaemon = true }.start()
+        }
         ClientMusic.control {
             MusicPlayer.repeatOne = repeatOne.get()
             MusicPlayer.shuffle = shuffle.get() && !repeatOne.get()
@@ -211,7 +232,34 @@ class NeteaseMusicModule : Module() {
     }
 
     override fun onDisable() {
-        ClientMusic.control { MusicPlayer.stop() }
+        // 关掉音乐模块不算“主动停止”：保留续播记录，重新打开后下次启动还能恢复
+        ClientMusic.control { MusicPlayer.stop(clearResume = false) }
+    }
+
+    /** 本次启动是否已经尝试过续播（模块关了再开不重复恢复） */
+    private var restoreAttempted = false
+
+    /** 进游戏时恢复上次的队列和进度（暂停在原处）；关掉 Resume last session 就不恢复 */
+    internal fun restoreLastSession() {
+        val log = me.sorihiko.dangomusicgtnh.DangoLogger
+        if (!enabled || !resumeSession.get()) {
+            log.info("Resume last session skipped: module={} setting={}", enabled, resumeSession.get())
+            return
+        }
+        if (MusicSource.values().getOrNull(musicSource.value) == MusicSource.APPLE) {
+            log.info("Resume last session skipped: Apple Music is the selected source")
+            return
+        }
+        val session = me.sorihiko.dangomusicgtnh.music.ResumeStore.load()
+        if (session == null) {
+            log.info("Resume last session: nothing to restore")
+            return
+        }
+        if (MusicPlayer.restoreSession(session)) {
+            log.info("Restored last session: {} tracks, index {}, position {} ms", session.tracks.size, session.index, session.positionMs)
+        } else {
+            log.info("Resume last session skipped: the player is already in use")
+        }
     }
 
     fun setVolume(v: Float) {
@@ -351,6 +399,7 @@ class NeteaseMusicModule : Module() {
     fun onTick(e: TickEvent) {
         // 即使播放器被关闭，也要初始化并保存界面语言。
         applyLanguage()
+        me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous = uiStyle.value == 1
         MusicSources.selected = MusicSource.values()[musicSource.value]
         DangoMusic.instance.platform.syncKeyBindings(keyBindings.values)
         if (!enabled) return
@@ -369,6 +418,7 @@ class NeteaseMusicModule : Module() {
         MusicPlayer.normalize = normalize.get()
         MusicPlayer.originalAudio = originalAudio.get()
         MusicPlayer.playbackFades = playbackFades.get()
+        MusicPlayer.audioBufferMs = audioBuffer.value.toInt()
 
         // 环境音效：设置和玩家周围的环境交给解码线程
         EnvironmentAudio.enabled = envAudio.get() && !originalAudio.get()

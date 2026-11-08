@@ -20,6 +20,7 @@ class ShapeShader : GlShader(
             "u_ScreenSize",
             "u_Bounds",
             "u_Radius",
+            "u_Continuous",
             "u_FillColor",
             "u_BorderWidth",
             "u_BorderColor",
@@ -46,6 +47,7 @@ class ShapeShader : GlShader(
         setUniform2f("u_ScreenSize", screenSize.width, screenSize.height)
         setUniform4f("u_Bounds", bounds.x, bounds.y, bounds.width, bounds.height)
         setUniform1f("u_Radius", style.radius)
+        setUniform1f("u_Continuous", if (me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous) 1f else 0f)
         setUniformColor("u_FillColor", style.fillColor)
         setUniform1f("u_BorderWidth", style.borderWidth)
         setUniformColor("u_BorderColor", style.borderColor)

@@ -79,6 +79,10 @@ object NearbyClient {
     /** 让位前本地是在播放（而不是本来就暂停着）：离开群组时才需要接着放 */
     private var resumeLocal = false
     private var lastHearGroup = false
+    /** 本次连接里服务端建议的“上次所在房间”已经处理过（自动回房只做一次） */
+    private var rejoinChecked = false
+    /** 本次连接里用户主动停止收听过：不再自动回房 */
+    private var userDeselected = false
     private var pendingGroupSelectAt = 0L
 
     private val lyricsCache = ConcurrentHashMap<String, LyricsData>()
@@ -125,6 +129,8 @@ object NearbyClient {
         shareUrlAtMs = 0L
         resolvingUrlKey = null
         pendingGroupSelect = null
+        rejoinChecked = false
+        userDeselected = false
         // Keep activeGroupId across a reconnect: the server persists groups and
         // Prefs will re-select it if membership still exists.
         NearbyAudioPlayer.stop()
@@ -250,18 +256,26 @@ object NearbyClient {
     }
 
     /** Select the group heard/shared to; empty deselects. */
-    fun selectGroup(groupId: String) {
+    fun selectGroup(groupId: String) = selectGroup(groupId, takeover = true)
+
+    /** [takeover] = false：自动回房时如果自己已经在放歌，不去暂停它 */
+    private fun selectGroup(groupId: String, takeover: Boolean) {
+        if (groupId.isEmpty()) userDeselected = true
+        if (roomsSupported()) NetworkBootstrap.sendToServer(NearbyProtocol.C2S.GROUP_ACTION, GroupAction("select", groupId))
         val changed = groupId != activeGroupId
         activeGroupId = groupId
         pendingGroupSelect = null
         if (groupId.isNotEmpty()) {
             module()?.hearGroup?.set(true)
-            if (changed) requestTakeover()
+            if (changed && takeover) requestTakeover()
         } else {
             releaseLocal(resume = true)
         }
         prefsSent = null
     }
+
+    /** 服务端是否支持记住房间（旧版服务端组件不认识 "select"，发了会收到“未知操作”提示） */
+    private fun roomsSupported(): Boolean = available && welcome?.features?.contains("rooms") == true
 
     private fun requestTakeover() {
         takeoverUntil = System.currentTimeMillis() + 6_000L
@@ -384,9 +398,11 @@ object NearbyClient {
     /**
      * The remote stop button is a listening preference, not a one-shot mute:
      * turn both remote sources off so the server cannot immediately re-add the
-     * same host. The player can re-enable either toggle in Multiplayer settings.
+     * same host. Nearby listening comes back via "Hear nearby music" in Multiplayer
+     * settings; room listening comes back by pressing Listen on the room page.
      */
     fun stopForUser() {
+        val wasInRoom = activeGroupId.isNotEmpty()
         val module = module()
         val wasYielded = localYielded
         releaseLocal(resume = false)
@@ -402,6 +418,11 @@ object NearbyClient {
         activeGroupId = ""
         pendingGroupSelect = null
         prefsSent = null
+        // 停止 = 不再收听房间：告诉服务端，下次进服也不自动回房（只听附近时按停止不动记住的房间）
+        if (wasInRoom) {
+            userDeselected = true
+            if (roomsSupported()) NetworkBootstrap.sendToServer(NearbyProtocol.C2S.GROUP_ACTION, GroupAction("select", ""))
+        }
         NearbyAudioPlayer.stop()
     }
 
@@ -472,6 +493,17 @@ object NearbyClient {
                             requestTakeover()
                         } else if (now - pendingGroupSelectAt > 5_000L) {
                             pendingGroupSelect = null
+                        }
+                    }
+                    // 重进服务器：回到上次收听的房间（服务端记着），像网易云重开后回到原来的歌单一样
+                    val ui = data.groupUi
+                    if (!rejoinChecked && ui != null) {
+                        rejoinChecked = true
+                        val resume = ui.resumeGroup
+                        if (activeGroupId.isEmpty() && pendingGroupSelect == null && !userDeselected &&
+                            resume.isNotEmpty() && joined.any { it.id == resume }
+                        ) {
+                            selectGroup(resume, takeover = MusicPlayer.state != MusicPlayer.State.PLAYING)
                         }
                     }
                     data.groupUi?.invites?.firstOrNull { it.groupId + "|" + it.from !in previousInvites }?.let {

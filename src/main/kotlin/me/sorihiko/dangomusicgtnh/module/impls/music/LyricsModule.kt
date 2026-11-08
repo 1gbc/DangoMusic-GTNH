@@ -52,9 +52,9 @@ import kotlin.math.tan
 /** "Above ground"：歌词底边最低在眼睛下面多少格 */
 private const val GROUND_MARGIN = 0.5
 /** 被方块挡住时，歌词停在方块表面前面多远（格） */
-private const val BLOCK_MARGIN = 0.3
-/** 拉近的下限：设定距离的这个比例（6.5 格时约 0.8 格） */
-private const val MIN_REACH = 0.12
+private const val BLOCK_MARGIN = 0.4
+/** 拉近的下限：设定距离的这个比例。小房间里允许贴墙，不为了避让把歌词缩得太小 */
+private const val MIN_REACH = 0.35
 private const val LYRIC_ROW_HEIGHT = 11f
 private const val LYRIC_ROW_GAP = 4f
 private const val ANNOTATION_GAP = 2.5f
@@ -223,7 +223,7 @@ class LyricsModule : Module() {
     private val danceOffset = IntValue(-300, 300, 0)
 
     @ModuleValue("Lyric colors", "Where the lyric and translation colors come from")
-    private val lyricColors = IntValue(COLORS_CUSTOM, COLORS_RAINBOW, COLORS_CUSTOM)
+    internal val lyricColors = IntValue(COLORS_CUSTOM, COLORS_RAINBOW, COLORS_CUSTOM)
 
     @ModuleValue("Rainbow speed", "How fast the rainbow flows across the lyrics")
     private val rainbowSpeed = FloatValue(0.05f, 1f, 0.25f, 2)
@@ -232,7 +232,9 @@ class LyricsModule : Module() {
     private val textColor = ColorValue(0xF7E1D7)
 
     @ModuleValue("Custom translation color", "Used when Lyric colors is set to Custom color")
-    private val translationColor = ColorValue(0x803D66)
+    // 旧默认 #803D66 在游戏里几乎看不清：默认改成浅粉，仍是旧默认值的老配置第一次渲染时迁移过来
+    private val translationColor = ColorValue(0xF2C6DE)
+    private var translationColorMigrated = false
 
     // ---------------------------------------------------------------- 状态
 
@@ -493,7 +495,12 @@ class LyricsModule : Module() {
         Dance.spin = danceSpin.get()
         Dance.amount = danceAmount.value
         Dance.offsetMs = danceOffset.value
-        Dance.auto = danceAuto.get()
+        if (!translationColorMigrated) {
+            translationColorMigrated = true
+            if (translationColor.value == 0x803D66) translationColor.setValue(0xF2C6DE)
+        }
+        // 两种测 BPM 都没开时默认自动测，否则开了 Mob dance 也没有节拍可跟
+        Dance.auto = danceAuto.get() || !danceTap.get()
         Dance.tap = danceTap.get()
         val platform = DangoClient.platform
         Dance.tapTick(platform.inGame && platform.isMouseDown(0), platform.inGame)
@@ -1329,11 +1336,12 @@ class LyricsModule : Module() {
                 val hit = platform.clearFraction(cx, cy, cz, cx + tx, cy + ty, cz + tz)
                 if (hit < 1.0) t = min(t, (hit * pl - BLOCK_MARGIN) / pl)
             }
+            // 中心 + 四个角：歌词很宽，只探中线会漏掉两头插进树叶 / 墙角的情况
             probe(0.0, mid, 0.0)
-            probe(px * halfW, mid, pz * halfW)
-            probe(-px * halfW, mid, -pz * halfW)
-            probe(0.0, top, 0.0)
-            probe(0.0, bottom, 0.0)
+            probe(px * halfW, top, pz * halfW)
+            probe(-px * halfW, top, -pz * halfW)
+            probe(px * halfW, bottom, pz * halfW)
+            probe(-px * halfW, bottom, -pz * halfW)
             val target = t.coerceIn(MIN_REACH, 1.0)
             val cur = f.reach
             f.reach = if (cur.isNaN()) target else {

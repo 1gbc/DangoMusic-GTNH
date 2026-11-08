@@ -632,8 +632,12 @@ object NeteaseApi {
 
     internal const val MAX_AUDIO_BYTES = 64 * 1024 * 1024
 
-    internal fun requestAudio(url: String, active: () -> Boolean, progress: (Int) -> Unit): ByteArray? {
-        val transfer = AudioTransfer(active, progress)
+    internal fun requestAudio(url: String, active: () -> Boolean, progress: (Int) -> Unit): ByteArray? =
+        requestAudio(url, active, 75L, progress)
+
+    /** [timeoutSeconds]：整首下载的总时限（预取不赶时间，可以给得更长） */
+    internal fun requestAudio(url: String, active: () -> Boolean, timeoutSeconds: Long, progress: (Int) -> Unit): ByteArray? {
+        val transfer = AudioTransfer(active, progress, timeoutSeconds)
         return try {
             try {
                 requestOnce(url, "*/*", MAX_AUDIO_BYTES, transfer)
@@ -652,8 +656,8 @@ object NeteaseApi {
         }
     }
 
-    private class AudioTransfer(val active: () -> Boolean, val progress: (Int) -> Unit) {
-        private val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(75)
+    private class AudioTransfer(val active: () -> Boolean, val progress: (Int) -> Unit, timeoutSeconds: Long = 75L) {
+        private val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
         private var lastPercent = -1
         val buffer = ByteArrayOutputStream()
         private var total = -1L

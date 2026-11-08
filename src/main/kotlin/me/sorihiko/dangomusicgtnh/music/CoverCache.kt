@@ -142,7 +142,9 @@ object CoverCache {
 
     /** 圆角版封面（渲染线程调用）：原图下好后再生成一张四角透明的纹理。ratio = 圆角半径 / 边长 */
     fun rounded(key: String, url: String, ratio: Float = ROUND): Texture? {
-        val rk = key + ROUND_SUFFIX + (ratio * 100).toInt()
+        val continuous = me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous
+        // 两种界面风格的遮罩不一样，分开缓存
+        val rk = key + ROUND_SUFFIX + (ratio * 100).toInt() + (if (continuous) "c" else "")
         textures[rk]?.let {
             lastUsed[rk] = now
             return it
@@ -152,7 +154,7 @@ object CoverCache {
         if (roundQueued.add(rk)) {
             worker.execute {
                 try {
-                    ready.add(rk to roundCorners(src, ratio))
+                    ready.add(rk to roundCorners(src, ratio, continuous))
                 } catch (_: Exception) {
                 }
             }
@@ -165,8 +167,8 @@ object CoverCache {
     /** 已经下载好的原图（取颜色用，渲染线程调用）；还没下好是 null */
     fun image(key: String): BufferedImage? = sources[key]
 
-    /** 连续曲率圆角，与形状/玻璃着色器保持一致；半径为边长一半时保留圆形。 */
-    private fun roundCorners(src: BufferedImage, ratio: Float): BufferedImage {
+    /** 四个角挖成圆角，和形状 / 玻璃着色器一致：经典圆角，或连续曲率圆角（半径为边长一半时保留圆形） */
+    private fun roundCorners(src: BufferedImage, ratio: Float, continuous: Boolean): BufferedImage {
         val w = src.width
         val h = src.height
         val r = min(w, h) * ratio
@@ -175,9 +177,16 @@ object CoverCache {
             for (x in 0 until w) {
                 val px = x + 0.5f
                 val py = y + 0.5f
-                val d = ContinuousCorners.distance((px - w * 0.5f).toDouble(), (py - h * 0.5f).toDouble(),
-                    w * 0.5, h * 0.5, r.toDouble())
-                val cover = (0.5 - d).coerceIn(0.0, 1.0)
+                val cover = if (continuous) {
+                    val d = ContinuousCorners.distance((px - w * 0.5f).toDouble(), (py - h * 0.5f).toDouble(),
+                        w * 0.5, h * 0.5, r.toDouble())
+                    (0.5 - d).coerceIn(0.0, 1.0)
+                } else {
+                    // 到最近的圆角圆心的距离（不在角落区域时为 0）
+                    val dx = kotlin.math.max(kotlin.math.max(r - px, px - (w - r)), 0f)
+                    val dy = kotlin.math.max(kotlin.math.max(r - py, py - (h - r)), 0f)
+                    (r - kotlin.math.sqrt(dx * dx + dy * dy) + 0.5f).coerceIn(0f, 1f).toDouble()
+                }
                 val argb = src.getRGB(x, y)
                 val a = (((argb ushr 24) and 0xFF) * cover).toInt()
                 out.setRGB(x, y, (a shl 24) or (argb and 0xFFFFFF))

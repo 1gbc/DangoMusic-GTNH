@@ -8,7 +8,9 @@ internal class FadingAudioOutput(
     fadeIn: Boolean,
     private val active: () -> Boolean,
     private val paused: () -> Boolean,
-    private val enabled: () -> Boolean
+    private val enabled: () -> Boolean,
+    /** 开着淡入淡出时声卡里最多排多少毫秒（以前固定 60 ms，GTNH 一次 GC 停顿就会断音） */
+    private val leadMs: () -> Int = { 60 },
 ) : AudioOutput by output {
     private val frameBytes = channels * 2
     private val fadeFrames = (rate * 160 / 1000).coerceAtLeast(1)
@@ -79,7 +81,7 @@ internal class FadingAudioOutput(
     private fun leadIsFull(): Boolean {
         val position = positionMicros
         val now = System.nanoTime()
-        val full = submittedMicros - position >= 60_000L
+        val full = submittedMicros - position >= leadMs().coerceIn(40, 1500) * 1000L
         if (!full || position != lastPosition) {
             lastPosition = position
             positionChangedAt = now

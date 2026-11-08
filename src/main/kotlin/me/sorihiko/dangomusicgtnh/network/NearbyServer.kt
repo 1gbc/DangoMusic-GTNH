@@ -245,7 +245,7 @@ object NearbyServer {
     fun groupLeave(player: EntityPlayerMP, ref: String? = null): String? {
         val active = states[player.uniqueID]?.prefs?.activeGroup.orEmpty()
         if (ref.isNullOrBlank() && active.isEmpty() && MusicGroups.groupsOf(player.uniqueID).size > 1) {
-            return "你有多个群组，请指定群组名或 id"
+            return "你有多个听歌房，请指定听歌房名或 id"
         }
         val result = MusicGroups.leave(player.uniqueID, ref?.takeIf { it.isNotBlank() } ?: active) ?: return null
         val group = result.group
@@ -255,26 +255,26 @@ object NearbyServer {
         invalidateAll()
         val nextName = result.newHost?.let { group.names[it] ?: it.toString().take(8) }
         return when {
-            result.disbanded -> "已解散音乐群组：${group.name}"
-            nextName != null -> "已离开音乐群组：${group.name}；房主已转让给 $nextName"
-            else -> "已离开音乐群组：${group.name}"
+            result.disbanded -> "已解散听歌房：${group.name}"
+            nextName != null -> "已离开听歌房：${group.name}；房主已转让给 $nextName"
+            else -> "已离开听歌房：${group.name}"
         }
     }
 
     fun groupInfo(player: EntityPlayerMP, ref: String? = null): String {
         val all = MusicGroups.groupsOf(player.uniqueID)
-        if (all.isEmpty()) return "你不在音乐群组中"
+        if (all.isEmpty()) return "你不在听歌房中"
         val active = states[player.uniqueID]?.prefs?.activeGroup.orEmpty()
         val selected = if (ref.isNullOrBlank()) all else all.filter {
             it.id == ref || it.name.equals(ref.trim(), ignoreCase = true)
         }
-        if (selected.isEmpty()) return "找不到群组：$ref"
+        if (selected.isEmpty()) return "找不到听歌房：$ref"
         return selected.joinToString("；") { group ->
             val host = groupName(group, group.host)
             val speaker = groupSpeaker(group)?.let { groupName(group, it.uuid) } ?: "无"
             val members = group.members.joinToString(", ") { groupName(group, it) }
             val mark = if (group.id == active) " [当前]" else ""
-            "群组：${group.name}$mark · 房主：$host · 正在共享：$speaker · 成员：$members"
+            "听歌房：${group.name}$mark · 房主：$host · 正在共享：$speaker · 成员：$members"
         }
     }
 
@@ -313,6 +313,7 @@ object NearbyServer {
                 maxGroup = ServerConfig.maxGroup,
                 allowLyrics = ServerConfig.allowLyrics,
                 relay = ServerConfig.relayEnabled,
+                features = listOf("rooms"),
             )
         )
     }
@@ -439,7 +440,7 @@ object NearbyServer {
             .toList()
         val joined = MusicGroups.groupsOf(listener.uniqueID)
             .sortedByDescending { it.id == view?.id }
-            .take(4)
+            .take(16)
             .mapNotNull { groupView(it) }
         val groups = MusicGroups.all().asSequence()
             .filter { listener.uniqueID !in it.members }
@@ -447,7 +448,7 @@ object NearbyServer {
             .map { group -> GroupSummary(group.id, group.name, groupName(group, group.host), group.members.size, ServerConfig.maxGroup) }
             .toList()
         val inbox = synchronized(invites) { invites[listener.uniqueID]?.takeLast(5).orEmpty() }
-        return GroupUi(view, players, inbox, groups, joined)
+        return GroupUi(view, players, inbox, groups, joined, MusicGroups.activeOf(listener.uniqueID).orEmpty())
     }
 
     private fun handleGroupAction(player: EntityPlayerMP, action: GroupAction) {
@@ -456,13 +457,18 @@ object NearbyServer {
             return
         }
         when (action.action.lowercase()) {
-            "create" -> feedback(player, groupCreate(player, action.name) ?: "已创建音乐群组：${action.name.trim()}")
-            "join" -> feedback(player, groupJoin(player, action.name) ?: "已加入音乐群组：${action.name.trim()}")
-            "leave" -> feedback(player, groupLeave(player, action.name) ?: "你不在音乐群组中")
+            "create" -> feedback(player, groupCreate(player, action.name) ?: "已创建听歌房：${action.name.trim()}")
+            "join" -> feedback(player, groupJoin(player, action.name) ?: "已加入听歌房：${action.name.trim()}")
+            "leave" -> feedback(player, groupLeave(player, action.name) ?: "你不在听歌房中")
             "invite" -> invite(player, action.target)
+            // 客户端显式选择 / 取消收听某个房间：记下来，重进服务器时自动回房
+            "select" -> {
+                MusicGroups.setActive(player.uniqueID, action.name.trim())
+                invalidateAll()
+            }
             "accept" -> acceptInvite(player, action.name)
             "decline" -> declineInvite(player, action.name)
-            else -> feedback(player, "未知的群组操作")
+            else -> feedback(player, "未知的听歌房操作")
         }
     }
 
@@ -472,7 +478,7 @@ object NearbyServer {
             return
         }
         val group = activeGroup(player.uniqueID, state.prefs) ?: run {
-            feedback(player, "请先在群组页面选择一个群组")
+            feedback(player, "请先在听歌房页面选择一个听歌房")
             return
         }
         val target = states.values.firstOrNull {
@@ -482,7 +488,7 @@ object NearbyServer {
             return
         }
         if (target.uniqueID in group.members) {
-            feedback(player, "对方已经在该音乐群组中")
+            feedback(player, "对方已经在该听歌房中")
             return
         }
         synchronized(invites) {
@@ -501,7 +507,7 @@ object NearbyServer {
                 it.groupId == groupRef || it.groupName.equals(groupRef.trim(), ignoreCase = true)
             }
         } ?: run {
-            feedback(player, "没有找到这个群组邀请")
+            feedback(player, "没有找到这个听歌房邀请")
             return
         }
         val error = MusicGroups.join(player.uniqueID, player.displayName, invite.groupName, ServerConfig.maxGroup)
@@ -511,7 +517,7 @@ object NearbyServer {
         }
         synchronized(invites) { invites[player.uniqueID]?.remove(invite) }
         setActiveGroup(player, invite.groupId)
-        feedback(player, "已加入音乐群组：${invite.groupName}")
+        feedback(player, "已加入听歌房：${invite.groupName}")
         invalidateAll()
     }
 

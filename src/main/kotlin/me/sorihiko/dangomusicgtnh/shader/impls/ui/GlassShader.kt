@@ -20,6 +20,7 @@ class GlassShader : GlShader(
             "u_ScreenSize",
             "u_Bounds",
             "u_Radius",
+            "u_Continuous",
             "u_Soft",
             "u_Frost",
             "u_FrostMix",
@@ -49,6 +50,7 @@ class GlassShader : GlShader(
         setUniform2f("u_ScreenSize", screenSize.width, screenSize.height)
         setUniform4f("u_Bounds", bounds.x, bounds.y, bounds.width, bounds.height)
         setUniform1f("u_Radius", style.radius)
+        setUniform1f("u_Continuous", if (me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous) 1f else 0f)
         setUniform1i("u_Soft", 0)
         setUniform1i("u_Frost", 1)
         setUniform1f("u_FrostMix", style.frost)

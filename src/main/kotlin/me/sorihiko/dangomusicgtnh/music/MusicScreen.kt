@@ -491,10 +491,11 @@ class MusicScreen(
         val side = LayoutBounds(win.x + pad, win.y + pad, sideW, win.height - pad * 2)
         val mainX = side.right + pad + 8f
         val mainW = win.right - pad - 8f - mainX
-        // 播放栏浮在内容上面：左右和底部留出间距；内容一直延伸到窗口底部，滚动时从播放栏后面经过
+        // 播放栏浮在内容上面：左右和底部留出间距；内容延伸到播放栏底边为止，滚动时从播放栏后面经过，
+        // 但不会在播放栏下面那道缝里露出来
         val barX = mainX + 2f
         val barRect = LayoutBounds(barX, win.bottom - pad - 8f - barH, win.right - pad - 12f - barX, barH)
-        val content = LayoutBounds(mainX, win.y + pad + 14f, mainW, win.bottom - pad - (win.y + pad + 14f))
+        val content = LayoutBounds(mainX, win.y + pad + 14f, mainW, barRect.bottom - (win.y + pad + 14f))
 
         sidebar.draw(side)
         ui.occluder = barRect

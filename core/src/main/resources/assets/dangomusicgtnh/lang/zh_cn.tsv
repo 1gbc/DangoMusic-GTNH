@@ -497,7 +497,7 @@ Multiplayer	多人
 Nearby music	附近音乐
 Players within the server radius	服务器半径内的玩家
 Share my music	共享我的音乐
-Let nearby players and group members hear your music	让附近玩家和群组成员听到你的音乐
+Let nearby players and group members hear your music	让附近玩家和房间成员听到你的音乐
 Hear nearby music	收听附近音乐
 Play the music of players within the server radius	播放服务器半径内玩家的音乐
 Share quality	共享音质
@@ -508,32 +508,32 @@ High (320k)	高（320k）
 Nearby lyrics	附近歌词
 Line projection over the host	在主机上方显示歌词投影
 Share my lyrics	共享我的歌词
-Let nearby players and group members see your current line	让附近玩家和群组成员看到你当前的歌词
+Let nearby players and group members see your current line	让附近玩家和房间成员看到你当前的歌词
 See nearby lyrics	查看附近歌词
 Show the current line above nearby hosts	在附近主机上方显示当前歌词
-Music group	音乐群组
+Music group	听歌房
 Distance-free listening	不受距离限制
-Hear group	收听群组
-Follow the group host regardless of distance	跟随群组房主，不受距离限制
-Share to group	共享到群组
-Let group members hear your music	让群组成员听到你的音乐
+Hear group	收听房间
+Follow the group host regardless of distance	跟随听歌房房主，不受距离限制
+Share to group	共享到听歌房
+Let group members hear your music	让房间成员听到你的音乐
 Local	本地
 Nearby	附近
-Group	群组
+Group	听歌房
 Listen with friends, no distance limit	和朋友一起听，不受距离限制
 The server does not have DangoMusic sharing enabled	服务器未启用 DangoMusic 共享
-Install the same mod on the server to use groups	在服务端安装同一个模组后即可使用群组
+Install the same mod on the server to use groups	在服务端安装同一个模组后即可使用听歌房
 Host: %s	房主：%s
 %d / %d members	%d / %d 名成员
 Only the host can invite players	只有房主可以邀请玩家
 Invite players	邀请玩家
 No online players to invite	没有可邀请的在线玩家
 Invite	邀请
-Create a group	创建群组
-Group name	群组名称
-Only the host needs to create a group	只需房主创建群组
-Open groups	公开群组
-No open groups	暂无公开群组
+Create a group	创建听歌房
+Group name	听歌房名称
+Only the host needs to create a group	只需房主创建听歌房
+Open groups	公开听歌房
+No open groups	暂无公开听歌房
 Invitations	邀请
 From %s	来自 %s
 Accept	接受
@@ -541,24 +541,24 @@ Decline	拒绝
 %s · %d/%d	%s · %d/%d
 Leave	离开
 Create	创建
-Group invite from %s	来自 %s 的群组邀请
+Group invite from %s	来自 %s 的听歌房邀请
 Full	已满
 Confirm leave	确认离开
 Confirm disband	确认解散
 Host is sharing music	房主正在共享音乐
 Host is not playing	房主暂未播放
-Create a group and invite friends	创建群组，邀请朋友一起听
+Create a group and invite friends	创建听歌房，邀请朋友一起听
 No invitations	暂无邀请
-Groups need the optional server component	群组需要服务端安装可选组件
-Leave the group or start your own; your local music always has priority	退出群组或自己创建；本地音乐始终优先
+Groups need the optional server component	听歌房需要服务端安装可选组件
+Leave the group or start your own; your local music always has priority	退出听歌房或自己创建；本地音乐始终优先
 No one is sharing music	暂无人共享音乐
 You are sharing music	你正在共享音乐
 Sharing: %s	正在共享：%s
 Any member can share music; the latest started track wins	任何成员都可以共享音乐；最新开始播放的曲目优先
 Your local music always has priority	本地音乐始终优先
-Follow the group speaker regardless of distance	跟随当前群组共享者，不受距离限制
-My groups	我的群组
-You have not joined a group	你还没有加入群组
+Follow the group speaker regardless of distance	跟随当前听歌房共享者，不受距离限制
+My groups	我的听歌房
+You have not joined a group	你还没有加入听歌房
 Listen	收听
 Current	当前
 
@@ -618,6 +618,17 @@ Search songs, open charts or browse your library	搜索歌曲、查看热门歌�
 Refresh library	刷新媒体库
 Restoring login or checking library access	正在恢复登录或检查媒体库权限
 Group takes over	进群自动切换
-Joining or listening to a group pauses your own music and plays the group's song	加入或收听群组时，暂停自己的音乐，改放群组正在放的歌
-Resume after group	离开群组后继续播放
-Your own music continues when you leave the group or stop listening to it	离开群组或关闭收听群组后，接着播放之前暂停的音乐
+Joining or listening to a group pauses your own music and plays the group's song	加入或收听房间时，暂停自己的音乐，改放听歌房正在放的歌
+Resume after group	离开听歌房后继续播放
+Your own music continues when you leave the group or stop listening to it	离开听歌房或关闭收听房间后，接着播放之前暂停的音乐
+Audio buffer	音频缓冲（毫秒）
+Milliseconds of audio queued ahead; raise it if playback stutters under load, lower it for snappier fades	提前排队的音频长度。播放卡顿就调大，想让暂停和切歌更跟手就调小
+Resume last session	记住上次播放
+Restore the last queue and song position (paused) when you start the game	进游戏时恢复上次的播放列表和进度（暂停在原处）
+Everyone can open one room; friends join it from the list below	每人可以建一个听歌房，朋友从下方列表加入
+Stop	停止收听
+Confirm	确认
+Interface style	界面风格
+Classic: rounded corners, capsule switches with round knobs. Continuous corners: smoother squircle corners everywhere	经典：普通圆角，开关是胶囊加圆形圆钮；连续圆角：所有圆角改用更顺滑的连续曲率
+Classic	经典
+Continuous corners	连续圆角

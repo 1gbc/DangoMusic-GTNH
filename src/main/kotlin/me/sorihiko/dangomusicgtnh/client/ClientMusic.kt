@@ -57,6 +57,8 @@ internal object ClientMusic {
         LegacyKeyBindings.register()
         FMLCommonHandler.instance().bus().register(ClientRenderBridge)
         MinecraftForge.EVENT_BUS.register(ClientRenderBridge)
+        MinecraftForge.EVENT_BUS.register(DanceRenderHook)
+        // 续播在 NeteaseMusicModule.onEnable 里触发：模块到第 3 个 tick 才启用，这里还太早
         Runtime.getRuntime().addShutdownHook(Thread({
             controls.shutdownNow()
             NeteaseLogin.cancel()

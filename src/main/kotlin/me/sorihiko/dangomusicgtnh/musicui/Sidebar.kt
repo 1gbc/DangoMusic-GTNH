@@ -168,7 +168,9 @@ internal class Sidebar(private val screen: MusicScreen) {
             } else if (ui.hover(row)) {
                 ui.card(row, Theme.CARD_HOVER, 9f)
             }
-            ui.icon(glyph, row.x + 18f, row.y + 15f, 12f, if (active || redIcon) RED else Theme.TEXT_SECONDARY)
+            val iconColor = if (active || redIcon) RED else Theme.TEXT_SECONDARY
+            // ⌂ / ☁ 在系统中文字体里字形很小或缺失（显示成红点、白椭圆），改用图形画
+            if (!drawShapeIcon(glyph, row.x + 18f, row.y + 15f, iconColor)) ui.icon(glyph, row.x + 18f, row.y + 15f, 12f, iconColor)
             ui.text(label, row.x + 34f, row.y + 10f, 12f, if (active) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
             ui.hits += row to action
             y += 32f
@@ -176,6 +178,7 @@ internal class Sidebar(private val screen: MusicScreen) {
 
         section("DANGO MUSIC")
         nav("⌂", I18n.text("Home"), page == Page.HOME, true) { screen.go(Page.HOME) }
+        y += 4f  // 和下面“发现音乐”的间距与其他分组一致
         section(I18n.text("DISCOVER"))
         nav("▤", I18n.text("Charts"), page == Page.CHARTS, false) { screen.go(Page.CHARTS) }
         nav("♫", I18n.text("Now Playing"), page == Page.QUEUE, false) { screen.go(Page.QUEUE) }
@@ -511,6 +514,28 @@ internal class Sidebar(private val screen: MusicScreen) {
             }
             DangoClient.platform.ctrlDown && keyCode == Keys.A -> searchText = ""
             Keys.isAllowedChar(typedChar) -> searchText = (searchText + typedChar).take(80)
+        }
+        return true
+    }
+
+    /** 侧边栏里系统字体画不好的图标：房子（菱形屋顶 + 墙身）和云（三个圆 + 圆角底座）。画了返回 true */
+    private fun drawShapeIcon(glyph: String, cx: Float, cy: Float, color: Color): Boolean {
+        val ctx = ui.ctx
+        when (glyph) {
+            "⌂" -> {
+                ctx.drawShape(LayoutBounds(cx - 4.5f, cy - 1f, 9f, 6.5f), ShapeStyle(color, 1.5f))
+                ctx.pushTranslate(cx, cy - 1.5f, 0f)
+                ctx.pushRotate(45f, 0f, 0f, 1f)
+                ctx.drawShape(LayoutBounds(-4.4f, -4.4f, 8.8f, 8.8f), ShapeStyle(color, 1.6f))
+                ctx.popTransform()
+                ctx.popTransform()
+            }
+            "☁" -> {
+                ctx.drawShape(LayoutBounds(cx - 6.5f, cy - 0.5f, 13f, 5.5f), ShapeStyle(color, 2.75f))
+                ctx.drawShape(LayoutBounds(cx - 5.5f, cy - 2.5f, 6f, 6f), ShapeStyle(color, 3f))
+                ctx.drawShape(LayoutBounds(cx - 2f, cy - 5f, 8f, 8f), ShapeStyle(color, 4f))
+            }
+            else -> return false
         }
         return true
     }

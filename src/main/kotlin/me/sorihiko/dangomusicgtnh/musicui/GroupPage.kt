@@ -157,6 +157,9 @@ internal class GroupPage(private val screen: MusicScreen) {
         scroll = scroll.coerceIn(0f, maxScroll)
     }
 
+    /** “我的听歌房”里非当前房间的离开按钮：点一次变成确认，3 秒内再点才离开 */
+    private val rowLeaveArmed = HashMap<String, Long>()
+
     fun scrollBy(wheel: Int) {
         if (wheel == 0 || maxScroll <= 0f) return
         scroll = (scroll - wheel * 28f).coerceIn(0f, maxScroll)
@@ -170,14 +173,28 @@ internal class GroupPage(private val screen: MusicScreen) {
         top: Float,
         page: LayoutBounds,
     ): Float {
-        var listTop = if (active != null) {
-            drawCurrentGroup(data, top, page) + 12f
-        } else {
-            drawCreate(top, page.x, page.width) + 12f
+        var listTop = enter(0) {
+            if (active != null) drawCurrentGroup(data, top, page) + 12f
+            else drawCreate(top, page.x, page.width) + 12f
         }
         if (joined.isNotEmpty()) {
-            listTop = drawMyGroups(data, listTop, page.x, page.width, activeId) + 12f
+            listTop = enter(1) { drawMyGroups(data, listTop, page.x, page.width, activeId) + 12f }
         }
+        return enter(2) { drawLists(data, active, joined, listTop, page) }
+    }
+
+    /** 打开页面时各块依次淡入、从下面升起（和其他页面同一套动画：每块晚 70ms） */
+    private fun <T> enter(index: Int, block: () -> T): T {
+        val p = ui.pageProgress(80f + index * 70f, 380f).coerceIn(0f, 1f)
+        if (p >= 1f) return block()
+        // 用 Ui.shifted：它同时移动中文文字层，文字不会和卡片错开
+        var result: T? = null
+        ui.shifted(0f, (1f - p) * 18f, p) { result = block() }
+        @Suppress("UNCHECKED_CAST")
+        return result as T
+    }
+
+    private fun drawLists(data: GroupUi, active: GroupView?, joined: List<GroupView>, listTop: Float, page: LayoutBounds): Float {
 
         if (active == null && joined.isEmpty()) {
             return if (data.invites.isNotEmpty()) {
@@ -240,7 +257,7 @@ internal class GroupPage(private val screen: MusicScreen) {
         button(create, I18n.text("Create"), if (nameText.isBlank()) ButtonKind.Disabled else ButtonKind.Primary) {
             createGroup()
         }
-        ui.text(I18n.text("Only the host needs to create a group"), card.x + 20f, card.y + 100f, 9.5f, Theme.TEXT_TERTIARY)
+        ui.text(I18n.text("Everyone can open one room; friends join it from the list below"), card.x + 20f, card.y + 100f, 9.5f, Theme.TEXT_TERTIARY)
         return card.bottom
     }
 
@@ -328,7 +345,7 @@ internal class GroupPage(private val screen: MusicScreen) {
             rowX += w + 6f
         }
 
-        val cardH = 144f + chipRows * 24f
+        val cardH = 92f + chipRows * 24f
         val card = LayoutBounds(page.x, top, page.width, cardH)
         cardBox(card)
         val maxMembers = data.groups.firstOrNull { it.id == group.id }?.max ?: group.members.size
@@ -392,29 +409,11 @@ internal class GroupPage(private val screen: MusicScreen) {
         ui.text(ui.trim(statusText, card.width - 60f, 9.5f), card.x + 31f, statusY, 9.5f,
             if (speakerActive) Theme.TEXT_SECONDARY else Theme.TEXT_TERTIARY)
 
-        val nearby = nearbyModule()
-        val shareY = card.y + 84f + chipRows * 24f
-        ui.text(I18n.text("Share to group"), card.x + 20f, shareY + 3f, 10f, Theme.TEXT_SECONDARY)
-        val shareToggle = LayoutBounds(card.right - 58f, shareY, 36f, 20f)
-        if (nearby != null) {
-            ui.toggleSwitch(shareToggle, nearby.shareGroup.get(), card, key = nearby.shareGroup) {
-                nearby.shareGroup.toggle()
-            }
-        }
-        val hearY = shareY + 26f
-        ui.text(I18n.text("Hear group"), card.x + 20f, hearY + 3f, 10f, Theme.TEXT_SECONDARY)
-        val hearToggle = LayoutBounds(card.right - 58f, hearY, 36f, 20f)
-        if (nearby != null) {
-            ui.toggleSwitch(hearToggle, nearby.hearGroup.get(), card, key = nearby.hearGroup) {
-                nearby.hearGroup.toggle()
-            }
-        }
-
         return card.bottom
     }
 
     private fun drawMyGroups(data: GroupUi, top: Float, x: Float, width: Float, activeId: String): Float {
-        val groups = data.groupsJoined.take(4)
+        val groups = data.groupsJoined.take(16)
         val card = LayoutBounds(x, top, width, 38f + groups.size.coerceAtLeast(1) * 30f)
         cardBox(card)
         sectionTitle(I18n.text("My groups"), card.x + 20f, card.y + 15f, card.width - 40f)
@@ -437,16 +436,25 @@ internal class GroupPage(private val screen: MusicScreen) {
                     ui.trim(I18n.format("Host: %s", group.host), row.width - 180f, 9f),
                     row.x + 20f, row.y + 17f, 9f, Theme.TEXT_TERTIARY,
                 )
-                val leave = LayoutBounds(row.right - 54f, row.y + 4f, 48f, 22f)
-                button(leave, I18n.text("Leave"), ButtonKind.Ghost) {
-                    NearbyClient.groupAction("leave", group.id)
-                }
                 val select = LayoutBounds(row.right - 116f, row.y + 4f, 58f, 22f)
+                val side = LayoutBounds(row.right - 54f, row.y + 4f, 48f, 22f)
                 if (isActive) {
+                    // 正在收听的房间：离开按钮只在上面的房间卡片里出现一次；这里给“停止收听”
                     button(select, I18n.text("Current"), ButtonKind.Disabled) {}
+                    button(side, I18n.text("Stop"), ButtonKind.Ghost) { NearbyClient.selectGroup("") }
                 } else {
                     button(select, I18n.text("Listen"), ButtonKind.Primary) {
                         NearbyClient.selectGroup(group.id)
+                    }
+                    val armed = rowLeaveArmed[group.id]?.let { System.currentTimeMillis() < it } == true
+                    button(side, if (armed) I18n.text("Confirm") else I18n.text("Leave"),
+                        if (armed) ButtonKind.Danger else ButtonKind.Ghost) {
+                        if (armed) {
+                            rowLeaveArmed.remove(group.id)
+                            NearbyClient.groupAction("leave", group.id)
+                        } else {
+                            rowLeaveArmed[group.id] = System.currentTimeMillis() + 3_000L
+                        }
                     }
                 }
             }
