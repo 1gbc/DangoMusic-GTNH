@@ -1,3 +1,5 @@
+> **历史阶段记录**：本文保留当时实现和测试边界，不是当前安装/能力承诺。5.38 当前安装以 [INSTALL](INSTALL.md) 为准，完整能力与限制见 [README](../README.md#apple-music实验性单独说明)。
+
 # 无外部浏览器的 Apple Music 接入验证
 
 ## 用户要求

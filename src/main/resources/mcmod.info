@@ -2,11 +2,13 @@
   {
     "modid": "${modId}",
     "name": "${modName}",
-    "description": "Client-side DangoMusic port for GT New Horizons.",
+    "description": "Unofficial DangoMusic port for GT New Horizons / Minecraft 1.7.10, based on Sorihiko/DangoMusic. GPL-3.0; see bundled META-INF license and notice files.",
     "version": "${modVersion}",
     "mcversion": "${minecraftVersion}",
-    "url": "https://github.com/Sorihiko/DangoMusic",
-    "authorList": ["Sorihiko (upstream DangoMusic)"]
+    "url": "https://github.com/1gbc/DangoMusic-GTNH",
+    "authorList": [
+      "Sorihiko (upstream DangoMusic)",
+      "1gbc and contributors (unofficial GTNH port)"
+    ]
   }
 ]
-

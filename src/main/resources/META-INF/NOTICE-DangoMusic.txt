@@ -1,0 +1,38 @@
+DangoMusic GTNH Edition - unofficial GTNH / Minecraft 1.7.10 port
+Based on DangoMusic by Sorihiko: https://github.com/Sorihiko/DangoMusic
+Port source: https://github.com/1gbc/DangoMusic-GTNH
+Port baseline: upstream 1e82730e6cbf19301e33cc6901f210bcffe9ea2c (v1.7.3).
+Port maintained by 1gbc and contributors; authorship is recorded in Git history.
+Project license: GNU GPL version 3; see LICENSE-DangoMusic-GPL-3.0.txt.
+No warranty. This port is not an official Sorihiko, GTNH or music-platform product.
+
+Publication notices updated 2026-11-08. Modified port and feature history:
+https://github.com/1gbc/DangoMusic-GTNH/blob/port/gtnh-1.7.10/CHANGELOG.md
+
+Bundled third-party works retain their own licenses and copyrights:
+- Inter fonts (upstream subsets), Copyright (c) 2016 The Inter Project Authors.
+  SIL OFL 1.1: assets/dangomusicgtnh/fonts/Inter-LICENSE.txt.
+- JOrbis/Jogg 0.0.17, Copyright (C) 2000 ymnk, JCraft, Inc. and source authors.
+  Source headers: GNU Library GPL v2 or later. LGPL 2.1 copy:
+  licenses/JOrbis-LGPL-2.1.txt. Upstream: https://github.com/ymnk/jorbis
+- JLayer 1.0.1, JavaZOOM and respective source authors.
+  Source headers include GNU Library GPL v2 or later; retained LGPL 2.1 copy:
+  licenses/JLayer-LGPL-2.1.txt.
+- ZXing core 3.3.3, Copyright ZXing authors; Apache License 2.0:
+  licenses/ZXing-Apache-2.0.txt. https://github.com/zxing/zxing
+- Kotlin stdlib 2.2.21, JetBrains and respective authors; Apache License 2.0:
+  licenses/Kotlin-Apache-2.0.txt and licenses/Kotlin-NOTICE.txt (upstream notice).
+- JetBrains annotations 13.0, JetBrains Team; Apache License 2.0:
+  licenses/Annotations-Apache-2.0.txt.
+- Build template MIT notice: licenses/Build-template-MIT.txt.
+
+JLayer, JOrbis/Jogg, ZXing, Kotlin and annotations bytecode packages are
+relocated under me.sorihiko.dangomusicgtnh.shadow.* by build.gradle.kts.
+DangoVorbis is a project adaptation subclass; corresponding source and build
+scripts must accompany a compliant binary distribution. See the repository's
+THIRD_PARTY_NOTICES.md and docs/RELEASE_AUDIT.md for exact source locations
+and the remaining publication checks. These notices do not certify that any
+previous binary release included complete source or replacement materials.
+
+Music, lyrics, cover art, trademarks and platform services retain their own
+rights and terms. The project license does not grant music distribution rights.
