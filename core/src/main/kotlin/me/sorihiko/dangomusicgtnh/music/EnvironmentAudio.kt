@@ -127,8 +127,11 @@ object EnvironmentAudio {
         coefCutoff = -1f
     }
 
-    /** 处理一帧（交错存放的 16 位样本，[length] 是样本总数），原地修改 */
-    fun process(pcm: ShortArray, length: Int, channels: Int, sampleRate: Int, frameMs: Float) {
+    /**
+     * 处理一帧（交错存放的浮点样本，16 位刻度，[length] 是样本总数），原地修改。
+     * 不在这里截断：超过上限的部分由之后的 [SoftLimiter] 平滑压下去
+     */
+    fun process(pcm: FloatArray, length: Int, channels: Int, sampleRate: Int, frameMs: Float) {
         val k = 1f - exp(-frameMs / SMOOTH_MS)
         cutoff = exp(ln(cutoff) + (ln(targetCutoff) - ln(cutoff)) * k)
         wet += (targetWet - wet) * k
@@ -161,26 +164,28 @@ object EnvironmentAudio {
         while (i + ch - 1 < length) {
             var mono = 0f
             for (c in 0 until ch) {
-                var v = pcm[i + c].toFloat()
+                var v = pcm[i + c]
                 if (filtering) {
                     val y = b0 * v + b1 * x1[c] + b2 * x2[c] - a1 * y1[c] - a2 * y2[c]
                     x2[c] = x1[c]; x1[c] = v
                     y2[c] = y1[c]; y1[c] = y
                     v = y
                 }
-                pcm[i + c] = v.toInt().coerceIn(-32768, 32767).toShort()
+                pcm[i + c] = v
                 mono += v
             }
             if (reverb) {
                 reverbSample(mono / ch, baseDelay, tapLeft, tapRight, lateDelay, out)
+                // 混响是叠加上去的：干声相应收一点，总响度大致不变，不会因为进了山洞就整体变响、更容易顶到上限
+                val dry = 1f - 0.35f * wet
                 if (ch == 2) {
-                    pcm[i] = ((pcm[i] + out[0] * wet) * gain).toInt().coerceIn(-32768, 32767).toShort()
-                    pcm[i + 1] = ((pcm[i + 1] + out[1] * wet) * gain).toInt().coerceIn(-32768, 32767).toShort()
+                    pcm[i] = (pcm[i] * dry + out[0] * wet) * gain
+                    pcm[i + 1] = (pcm[i + 1] * dry + out[1] * wet) * gain
                 } else {
-                    pcm[i] = ((pcm[i] + (out[0] + out[1]) * 0.5f * wet) * gain).toInt().coerceIn(-32768, 32767).toShort()
+                    pcm[i] = (pcm[i] * dry + (out[0] + out[1]) * 0.5f * wet) * gain
                 }
             } else if (gain < 0.999f) {
-                for (c in 0 until ch) pcm[i + c] = (pcm[i + c] * gain).toInt().coerceIn(-32768, 32767).toShort()
+                for (c in 0 until ch) pcm[i + c] *= gain
             }
             i += ch
         }

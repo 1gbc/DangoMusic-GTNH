@@ -71,16 +71,23 @@ internal object AudioAnalysis {
         return if (offset == bytes.size && last > 0 && last <= Long.MAX_VALUE / 1000) last * 1000 / rate else 0L
     }
 
-    /** Fixed gain from at most the first 15 seconds. Called on the loader, never on the render/audio thread. */
+    private const val ANALYSIS_MS = 30_000f
+    private const val MAX_BOOST = 1.4
+
+    /**
+     * Fixed gain from at most the first 30 seconds (long enough to reach the first chorus in most songs).
+     * Later, louder parts are handled by the source peak cap and the output limiter. Called on the loader,
+     * never on the render/audio thread.
+     */
     fun gain(bytes: ByteArray, active: () -> Boolean): Float? = try {
         checkActive(active)
         AudioDecoder.open(bytes).use { decoder ->
             val meter = Meter()
             var elapsed = 0f
-            while (elapsed < 15_000f) {
+            while (elapsed < ANALYSIS_MS) {
                 checkActive(active)
                 val frame = decoder.read() ?: break
-                val remaining = ((15_000f - elapsed) * frame.rate / 1000f).toInt().coerceAtLeast(0)
+                val remaining = ((ANALYSIS_MS - elapsed) * frame.rate / 1000f).toInt().coerceAtLeast(0)
                 val length = minOf(frame.length, remaining * frame.channels)
                 if (length == 0) break
                 val sample = AudioDecoder.Frame(frame.samples, length, frame.rate, frame.channels)
@@ -133,7 +140,8 @@ internal object AudioAnalysis {
             val gated = audible.filter { it >= relativeGate }
             val rms = sqrt(gated.average())
             val gain = minOf(0.125 / rms, if (peak > 0) 0.98 / peak else 1.0)
-            return gain.coerceIn(0.05, 2.0).toFloat()
+            // 最多放大 1.4 倍（约 +3 dB）：只看了开头，放得太大的话后面更响的段落容易超过上限
+            return gain.coerceIn(0.05, MAX_BOOST).toFloat()
         }
     }
 }
