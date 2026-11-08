@@ -41,6 +41,7 @@ import kotlin.math.asin
 import kotlin.math.atan
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -50,6 +51,10 @@ import kotlin.math.tan
 
 /** "Above ground"：歌词底边最低在眼睛下面多少格 */
 private const val GROUND_MARGIN = 0.5
+/** 被方块挡住时，歌词停在方块表面前面多远（格） */
+private const val BLOCK_MARGIN = 0.3
+/** 拉近的下限：设定距离的这个比例（6.5 格时约 0.8 格） */
+private const val MIN_REACH = 0.12
 private const val LYRIC_ROW_HEIGHT = 11f
 private const val LYRIC_ROW_GAP = 4f
 private const val ANNOTATION_GAP = 2.5f
@@ -178,6 +183,9 @@ class LyricsModule : Module() {
     @ModuleValue("Above ground", "Lyrics never appear below your eyes, so they don't sink into the ground")
     private val aboveGround = BooleanValue(false)
 
+    @ModuleValue("Avoid blocks", "Lyrics move in front of walls, leaves and the ground instead of going through them")
+    private val avoidBlocks = BooleanValue(true)
+
     @ModuleValue("Spread", "How far left or right each line can appear (degrees)")
     private val spread = FloatValue(0f, 60f, 30f, 0)
 
@@ -278,6 +286,8 @@ class LyricsModule : Module() {
         var vPitch = 0.0
         /** 暂停后恢复播放时重新出现的这句：用一个短淡入代替逐字出现 */
         var resumedAt = 0L
+        /** Avoid blocks：沿视线拉近到方块前面的比例（1 = 原位），NaN = 还没测过 */
+        var reach = Double.NaN
     }
 
     /** 恢复播放后重新出现的那句歌词，0.3 秒淡入 */
@@ -549,6 +559,8 @@ class LyricsModule : Module() {
                                 nextLine.scrollStartNanos = frameNanos
                                 nextLine.x = anchor.x; nextLine.y = anchor.y; nextLine.z = anchor.z
                                 nextLine.yaw = anchor.yaw; nextLine.pitch = anchor.pitch
+                                // 接着上一句已经避让好的距离，滚动换行时不在墙边跳一下
+                                nextLine.reach = anchor.reach
                             }
                         }
                     }
@@ -579,7 +591,10 @@ class LyricsModule : Module() {
         val view = if (worldMode.get() && !useFlash && (active != null || fading.isNotEmpty())) {
             gfx.world.cameraAngles().takeIf { it.yaw.isFinite() && it.pitch.isFinite() }
         } else null
-        if (view != null) keepOnScreen(stack, view)
+        if (view != null) {
+            keepOnScreen(stack, view)
+            avoidBlocks(stack)
+        }
 
 
         val deepGlow = gfx.glow
@@ -1257,6 +1272,77 @@ class LyricsModule : Module() {
         fading.forEach { if (it.scrollOut == 0f) follow(it) }
     }
 
+    private var avoidNanos = 0L
+
+    /**
+     * Avoid blocks：从镜头往歌词的中心、左右两端、顶部、底部各打一条射线；被方块挡住，
+     * 就算出整组歌词要沿视线拉近多少才能停在方块前面（拉近时按比例缩小，屏幕上看起来一样大）。
+     * 往近处拉得快，往回退得慢，免得在方块边上来回跳
+     */
+    private fun avoidBlocks(stack: List<StackRow>) {
+        val now = System.nanoTime()
+        val dt = if (avoidNanos == 0L) 0.016 else ((now - avoidNanos) / 1e9).coerceIn(0.0, 0.1)
+        avoidNanos = now
+        val targets = buildList {
+            active?.let(::add)
+            fading.forEach { if (it.scrollOut == 0f) add(it) }
+        }
+        if (!avoidBlocks.get()) {
+            targets.forEach { it.reach = 1.0 }
+            return
+        }
+        if (DangoClient.platform.player == null) return
+        val platform = DangoClient.platform
+        val world = DangoClient.gfx.world
+        val cx = world.cameraX
+        val cy = world.cameraY
+        val cz = world.cameraZ
+        val s = 0.03 * scale.value * (distance.value / 6.5)
+        val minD = distance.value * 0.6
+        for (f in targets) {
+            var rx = f.x - cx
+            var ry = f.y - cy
+            var rz = f.z - cz
+            val len = sqrt(rx * rx + ry * ry + rz * rz)
+            if (len < 1e-4) continue
+            // 和 drawWorld 里一样先做 Keep away，射线打到真正要画的位置
+            if (keepAway.get() && len < minD) {
+                val k = minD / len
+                rx *= k; ry *= k; rz *= k
+            }
+            val visible = if (f === active) stack.map { it.lyric } else listOf(f)
+            val halfW = (visible.maxOfOrNull(::rowWidth) ?: 0f) / 2.0 * s
+            val extra = if (f === active) stack.lastOrNull()?.let { it.center + rowBottom(it.lyric) - rowBottom(f) } ?: 0f else 0f
+            val top = (extra + halfMain(f)) * s
+            val bottom = -rowBottom(f) * s
+            val mid = (top + bottom) / 2.0
+            val h = sqrt(rx * rx + rz * rz)
+            val px = if (h > 1e-4) -rz / h else 1.0
+            val pz = if (h > 1e-4) rx / h else 0.0
+            var t = 1.0
+            fun probe(ox: Double, oy: Double, oz: Double) {
+                val tx = rx + ox
+                val ty = ry + oy
+                val tz = rz + oz
+                val pl = sqrt(tx * tx + ty * ty + tz * tz)
+                if (pl < 1e-4) return
+                val hit = platform.clearFraction(cx, cy, cz, cx + tx, cy + ty, cz + tz)
+                if (hit < 1.0) t = min(t, (hit * pl - BLOCK_MARGIN) / pl)
+            }
+            probe(0.0, mid, 0.0)
+            probe(px * halfW, mid, pz * halfW)
+            probe(-px * halfW, mid, -pz * halfW)
+            probe(0.0, top, 0.0)
+            probe(0.0, bottom, 0.0)
+            val target = t.coerceIn(MIN_REACH, 1.0)
+            val cur = f.reach
+            f.reach = if (cur.isNaN()) target else {
+                val rate = if (target < cur) 18.0 else 3.0
+                cur + (target - cur) * (1.0 - exp(-rate * dt))
+            }
+        }
+    }
+
     private fun rowWidth(f: Floating): Float = max(
         f.lines.maxOfOrNull(::strW) ?: 0f,
         (phoneticRows(f) + translationRows(f)).maxOfOrNull { strW(it) * TRANSLATION_SCALE } ?: 0f,
@@ -1302,7 +1388,10 @@ class LyricsModule : Module() {
                 rx *= k; ry *= k; rz *= k
             }
 
-            val s = 0.03f * scale.value * (distance.value / 6.5f)
+            // Avoid blocks：整组歌词沿视线拉近、同时等比缩小，屏幕上大小不变，只是停在方块前面
+            val reach = f.reach.takeUnless { it.isNaN() } ?: 1.0
+            rx *= reach; ry *= reach; rz *= reach
+            val s = 0.03f * scale.value * (distance.value / 6.5f) * reach.toFloat()
             val bottom = if (f === active) stack.last().let { it.center + rowBottom(it.lyric) } else rowBottom(f)
             val lift = worldStackLift(stackLift, bottom, slide, s, world.cameraY + ry, floor)
             val horizontal = sqrt(rx * rx + rz * rz)
@@ -1316,15 +1405,17 @@ class LyricsModule : Module() {
             val pitch = if (facePlayer.get() && len > 1e-4) {
                 Math.toDegrees(atan2(-(ry + facingLift), horizontal)).toFloat()
             } else f.pitch
-            val safe = if (multiline && view != null) protectSteepView(view, rx, ry + lift, rz, yaw, pitch) else null
+            val safe = if (multiline && view != null) protectSteepView(view, rx, ry + lift, rz, yaw, pitch, reach) else null
             if (f === active) {
+                // 共享给别人的仍是避让前的位置和大小（避让是按本机镜头算的，换到别人视角没有意义）
+                val inv = 1.0 / reach
                 sharedPose = LyricsAnchor(
-                    world.cameraX + (safe?.x ?: rx),
-                    world.cameraY + (safe?.y ?: (ry + lift)),
-                    world.cameraZ + (safe?.z ?: rz),
+                    world.cameraX + (safe?.x ?: rx) * inv,
+                    world.cameraY + (safe?.y ?: (ry + lift)) * inv,
+                    world.cameraZ + (safe?.z ?: rz) * inv,
                     safe?.yaw ?: yaw,
                     safe?.pitch ?: pitch,
-                    s,
+                    (s / reach).toFloat(),
                     f.lastWiggleFrame ?: -1L,
                 )
             }
@@ -1385,7 +1476,7 @@ class LyricsModule : Module() {
 
     private data class RenderPose(val x: Double, val y: Double, val z: Double, val yaw: Float, val pitch: Float)
 
-    private fun protectSteepView(view: ViewAngles, x: Double, y: Double, z: Double, yaw: Float, pitch: Float): RenderPose? {
+    private fun protectSteepView(view: ViewAngles, x: Double, y: Double, z: Double, yaw: Float, pitch: Float, reach: Double): RenderPose? {
         val t = ((abs(view.pitch) - 60f) / 20f).coerceIn(0f, 1f)
         if (t == 0f) return null
         val align = t * t * (3f - 2f * t)
@@ -1397,7 +1488,8 @@ class LyricsModule : Module() {
         // Raising a tall stack can put it right against the camera when looking down.
         // Check the depth after applying that lift, and blend to a readable camera-facing plane at the poles.
         val depth = x * dx + y * dy + z * dz
-        val push = (distance.value * 0.8 - depth).coerceAtLeast(0.0) * align
+        // 被方块拉近过的歌词不再往远处推，否则低头看地时又会推回地里
+        val push = (distance.value * 0.8 * reach - depth).coerceAtLeast(0.0) * align
         return RenderPose(
             x + dx * push, y + dy * push, z + dz * push,
             (yaw + wrapDegrees((view.yaw - yaw).toDouble()) * align).toFloat(),

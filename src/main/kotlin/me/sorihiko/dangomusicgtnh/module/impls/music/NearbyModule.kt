@@ -53,6 +53,12 @@ class NearbyModule : Module() {
     @ModuleValue("Share to group", "Let group members hear your music")
     internal val shareGroup = BooleanValue(true)
 
+    @ModuleValue("Group takes over", "Joining or listening to a group pauses your own music and plays the group's song")
+    internal val groupTakeover = BooleanValue(true)
+
+    @ModuleValue("Resume after group", "Your own music continues when you leave the group or stop listening to it")
+    internal val resumeAfterGroup = BooleanValue(true)
+
     override fun onEnable() {
         NearbyAudioPlayer.volume = MusicPlayer.volume
     }
@@ -82,6 +88,7 @@ class NearbyModule : Module() {
         if (PlaybackView.localPresent()) return
         val host = NearbyClient.activeHost() ?: return
         if (!host.shareLyrics) return
+        if (NearbyClient.shouldUseLocalLyrics()) return
         val track = host.track ?: return
         if (host.dimension != DangoClient.platform.dimension) return
         val payload = NearbyClient.lyricsData(track.key) ?: return

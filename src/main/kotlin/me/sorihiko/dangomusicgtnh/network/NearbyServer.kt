@@ -43,6 +43,19 @@ object NearbyServer {
         @Volatile var nowAt = 0L
         /** When this player last started a new track; used to pick the group speaker. */
         @Volatile var playbackStartedAt = 0L
+        /**
+         * Track key this member was already playing when it joined / selected its
+         * group. While set, the member ranks below every other sharer, so a joiner
+         * follows the group instead of taking it over. Cleared on a new track or
+         * when group sharing is switched on again.
+         */
+        @Volatile var followGroupKey: String? = null
+        /**
+         * Until this time a member that just joined still reports its old track for
+         * the first time (clients only share with a group once membership arrives),
+         * so that first track is also followed rather than treated as a new one.
+         */
+        @Volatile var followPendingUntil = 0L
         @Volatile var lyricsTrack = ""
         @Volatile var lyrics: List<SharedLyricLine>? = null
         @Volatile var lyricsStyle: LyricsStyle? = null
@@ -82,10 +95,19 @@ object NearbyServer {
                 NearbyProtocol.C2S.PREFS -> {
                     val prefs = NetworkBootstrap.gson.fromJson(json, Prefs::class.java) ?: return
                     val wasSharingGroup = state.prefs.shareGroup
+                    val previousGroup = state.prefs.activeGroup
                     state.prefs = prefs
-                    // Turning group sharing on while already playing should make this
-                    // member the current speaker, not wait for the next track change.
-                    if (!wasSharingGroup && prefs.shareGroup && state.now.track != null) {
+                    if (prefs.activeGroup != previousGroup && prefs.activeGroup.isNotEmpty()) {
+                        // Joining / selecting a group follows its current speaker: the
+                        // joiner's already-running track must not take the group over.
+                        // Starting a new track afterwards still makes them the speaker.
+                        state.followGroupKey = state.now.track?.key
+                        state.followPendingUntil = System.currentTimeMillis() + 5_000L
+                    } else if (!wasSharingGroup && prefs.shareGroup && state.now.track != null) {
+                        // Turning group sharing on while already playing should make this
+                        // member the current speaker, not wait for the next track change.
+                        state.followGroupKey = null
+                        state.followPendingUntil = 0L
                         state.playbackStartedAt = System.currentTimeMillis()
                     }
                     if (!prefs.shareLyrics) {
@@ -101,6 +123,14 @@ object NearbyServer {
                     state.now = sanitize(now)
                     state.nowAt = System.currentTimeMillis()
                     val newKey = state.now.track?.key
+                    if (newKey != previousKey) {
+                        // The joiner's first report after joining is the track it was
+                        // already playing: keep following. Any later change is a new track.
+                        val firstReport = previousKey == null && newKey != null &&
+                            state.nowAt < state.followPendingUntil
+                        state.followGroupKey = if (firstReport) newKey else null
+                        state.followPendingUntil = 0L
+                    }
                     state.playbackStartedAt = when {
                         newKey == null -> 0L
                         newKey != previousKey || state.playbackStartedAt == 0L -> state.nowAt
@@ -347,12 +377,27 @@ object NearbyServer {
     }
 
     private fun groupSpeaker(group: MusicGroup): PlayerState? =
+        pickGroupSpeaker(group)?.also { speaker ->
+            // A follower chosen because nobody else shares is now the group's real
+            // speaker: later joiners must follow it instead of out-ranking it.
+            if (speaker.followGroupKey != null) {
+                speaker.followGroupKey = null
+                speaker.followPendingUntil = 0L
+            }
+        }
+
+    private fun pickGroupSpeaker(group: MusicGroup): PlayerState? =
         group.members.asSequence()
             .mapNotNull { states[it] }
             .filter { it.capable && it.prefs.shareGroup && it.prefs.activeGroup == group.id && it.now.track != null }
             // A playing member outranks a paused one; among playing members the
             // most recently started track wins.
-            .maxWithOrNull(compareBy<PlayerState> { it.now.playing }.thenBy { it.playbackStartedAt })
+            // A member that joined while playing ranks last until it starts a new track.
+            .maxWithOrNull(
+                compareBy<PlayerState> { it.followGroupKey == null || it.followGroupKey != it.now.track?.key }
+                    .thenBy { it.now.playing }
+                    .thenBy { it.playbackStartedAt }
+            )
 
     private fun remoteHost(state: PlayerState, inGroup: Boolean): RemoteHost? {
         val player = state.player ?: return null

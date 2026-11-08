@@ -25,7 +25,9 @@ object PlaybackView {
     )
 
     fun localPresent(): Boolean =
-        MusicPlayer.current != null && MusicPlayer.state != MusicPlayer.State.STOPPED
+        MusicPlayer.current != null && MusicPlayer.state != MusicPlayer.State.STOPPED &&
+            // 因为群组接管而暂停的本地音乐让位给群组，不再压住远端
+            !(NearbyClient.localYielded && MusicPlayer.state == MusicPlayer.State.PAUSED && NearbyClient.activeHost() != null)
 
     fun remoteActive(): Boolean =
         !localPresent() &&

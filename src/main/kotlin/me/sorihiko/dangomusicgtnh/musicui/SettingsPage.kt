@@ -243,7 +243,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val ly = Src(
             mm.get(LyricsModule::class.java),
             deps = mapOf(
-                "distance" to "worldMode", "facePlayer" to "worldMode", "keepAway" to "worldMode", "stayOnScreen" to "worldMode", "aboveGround" to "worldMode", "spread" to "worldMode",
+                "distance" to "worldMode", "facePlayer" to "worldMode", "keepAway" to "worldMode", "stayOnScreen" to "worldMode", "aboveGround" to "worldMode", "avoidBlocks" to "worldMode", "spread" to "worldMode",
                 "glowNightOnly" to "glow", "glowStrength" to "glow", "glowRadius" to "glow",
                 "wiggleFps" to "wiggle", "wiggleAmount" to "wiggle",
                 "flashSize" to "textFlash",
@@ -263,7 +263,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val lyrics = mutableListOf(
             Group("Appearance", "Font and colors", ly.m, false, ly.take(listOf("worldMode", "maxLyricLines", "scale", "lyricFont", "lyricColors", "textColor", "rainbowSpeed", "splitLines"))),
             Group("KTV mode", "Font and colors", ly.m, false, ly.take(listOf("ktvMode", "ktvInstrumental", "ktvLyricColors", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow"))),
-            Group("Position", "Where the lyrics float", ly.m, false, ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "spread"))),
+            Group("Position", "Where the lyrics float", ly.m, false, ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "avoidBlocks", "spread"))),
             Group("Translation", "Under each line", ly.m, false, ly.take(listOf("translation", "romanization", "translationColor", "translationAnimation", "translationWiggle"))),
             Group("Glow", "Deep Glow", ly.m, false, ly.take(listOf("glow", "glowNightOnly", "glowStrength", "glowRadius"))),
             Group("Motion", "Animation", ly.m, false, ly.take(listOf("wiggle", "wiggleFps", "wiggleAmount", "textFlash", "wordPop", "flashSize"))),
@@ -307,7 +307,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             Group("Nearby lyrics", "Line projection over the host", nearby.m, false,
                 nearby.take(listOf("shareLyrics", "seeLyrics"))),
             Group("Music group", "Distance-free listening", nearby.m, false,
-                nearby.take(listOf("hearGroup", "shareGroup"))),
+                nearby.take(listOf("hearGroup", "shareGroup", "groupTakeover", "resumeAfterGroup"))),
         )
         nearby.take().let { if (it.isNotEmpty()) nearbyGroups += Group("Other", "More", nearby.m, false, it) }
         return listOf(lyrics, music, nearbyGroups)
