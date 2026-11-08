@@ -1,8 +1,13 @@
 # Continuous UI corners
 
-The shape and glass shaders use a quartic corner whose curvature approaches zero
-at the straight edge. Cached cover masks use the same contour. Square controls
-with a radius equal to half their size remain circular. This is an approximation
+The shape and glass shaders use a softer superellipse corner with a wider shoulder
+(1.5 times the nominal radius), whose curvature approaches zero at the straight
+edge. The exponent eases from 2.5 toward a near-circular value above 2 as the radius
+fills the short side. Capsule ends still meet their straight sides with zero
+curvature, rather than using ordinary semicircular caps. A square full-radius
+control stays a true circle, which already has continuous curvature; stretching
+it smoothly introduces the continuous capsule profile. Cached cover masks use
+the same contour. This is an approximation
 of the continuous-corner appearance, not Apple's proprietary geometry.
 
 The shared shaders cover the music window, sidebar, selected rows, buttons,
@@ -18,3 +23,34 @@ java -cp build/ui-check ContinuousCornersCheck
 
 Also run the normal Gradle build. Geometry checks do not replace an in-game
 check of antialiasing, glass highlights and shadow rendering.
+
+## Continuous-mode playback icons and popovers
+
+Playback icons use original paths on a 24-unit canvas with a shared 1.75-unit
+round stroke. `VectorIcon` flattens Beziers once; `icon.frag` unions all path
+segments into one distance/coverage mask before antialiasing. Joins therefore
+cannot accumulate opacity or turn into separate translucent short strokes.
+Filled transport icons use the same canvas and shader with an even-odd fill.
+
+Iconly Regular/Light and Apple's iOS/iPadOS 26 community kit were consulted as
+visual references; no Apple symbol font or third-party icon assets are bundled.
+
+Popovers share the player bar's material and use `PopupMotion` for reversible
+spring expansion, content reveal and closing. Input follows the visible bounds;
+the trigger remains usable during animation. Classic-mode rendering is unchanged.
+
+Local validation for dev.4: normal Gradle build; actual GPU path rendering at
+16x scale (straight/curved stroke widths 28.0/28.25px, no curve gaps); popup
+open/close/reversal at 30/60/144 FPS; horizontal and classic vertical volume
+click/drag/release checks. These are isolated rendering/input checks, not a new
+real-account playback or game-session test.
+
+Dev.5 extends the same vector path renderer to all continuous-mode sidebar
+controls. Complex closed paths adapt their flattening tolerance to the shader's
+segment capacity; they are never truncated or drawn as overlapping short strokes.
+Island covers use the original image and the GPU image mask, with the outer
+panel's current radius. The image shader deliberately matches the glass shader's
+corner function and coverage rule; ordinary images keep radius zero and their
+original alpha. Local GPU comparisons at four radii differed by at most one
+8-bit alpha level. Volume checks cover the classic anchor, percentage-left
+layout, whole-group hover, clicking the number, and horizontal dragging.

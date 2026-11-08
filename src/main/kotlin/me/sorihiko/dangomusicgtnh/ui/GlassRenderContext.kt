@@ -9,6 +9,7 @@ import me.sorihiko.dangomusicgtnh.shader.impls.ui.FontShader
 import me.sorihiko.dangomusicgtnh.shader.impls.ui.GlassShader
 import me.sorihiko.dangomusicgtnh.shader.impls.ui.ImageShader
 import me.sorihiko.dangomusicgtnh.shader.impls.ui.ShapeShader
+import me.sorihiko.dangomusicgtnh.shader.impls.ui.IconShader
 import me.sorihiko.dangomusicgtnh.ui.glass.GlassBackdrop
 import me.sorihiko.dangomusicgtnh.utils.Color
 import me.sorihiko.dangomusicgtnh.utils.render.GlStateSnapshot
@@ -28,6 +29,7 @@ class GlassRenderContext : GuiCanvas {
     private val fontShader = LegacyGl.shaderManager.get<FontShader>()
     private val imageShader = LegacyGl.shaderManager.get<ImageShader>()
     private val glassShader = LegacyGl.shaderManager.get<GlassShader>()
+    private val iconShader = LegacyGl.shaderManager.get<IconShader>()
 
     /** 每帧在 [begin] 里抓取；没抓到时 drawGlass 退化为普通圆角矩形 */
     private var backdrop: GlassBackdrop? = null
@@ -165,6 +167,14 @@ class GlassRenderContext : GuiCanvas {
     }
 
     override fun drawImage(bounds: LayoutBounds, image: Texture) {
+        drawTexturedImage(bounds,image,0f)
+    }
+
+    override fun drawRoundedImage(bounds: LayoutBounds,image: Texture,radius: Float) {
+        drawTexturedImage(bounds,image,radius)
+    }
+
+    private fun drawTexturedImage(bounds: LayoutBounds,image: Texture,radius: Float) {
         imageShader.bind()
         imageShader.setup(
             getTransform(),
@@ -172,7 +182,7 @@ class GlassRenderContext : GuiCanvas {
                 mc.displayWidth.toFloat(),
                 mc.displayHeight.toFloat()
             ),
-            getOpacity()
+            getOpacity(),bounds,radius
         )
         GL13.glActiveTexture(GL13.GL_TEXTURE0)
         (image as LegacyTexture).bind()
@@ -189,6 +199,19 @@ class GlassRenderContext : GuiCanvas {
         GL11.glEnd()
 
         imageShader.unbind()
+    }
+
+    override fun drawIcon(bounds: LayoutBounds, icon: VectorIcon, color: Color) {
+        if (bounds.width<=0f || bounds.height<=0f) return
+        iconShader.bind()
+        iconShader.setup(getTransform(),Size(mc.displayWidth.toFloat(),mc.displayHeight.toFloat()),bounds,icon,color,getOpacity())
+        GL11.glBegin(GL11.GL_QUADS)
+        GL11.glVertex2f(bounds.x-1f,bounds.y-1f)
+        GL11.glVertex2f(bounds.x-1f,bounds.bottom+1f)
+        GL11.glVertex2f(bounds.right+1f,bounds.bottom+1f)
+        GL11.glVertex2f(bounds.right+1f,bounds.y-1f)
+        GL11.glEnd()
+        iconShader.unbind()
     }
 
     override fun drawGlass(bounds: LayoutBounds, style: GlassStyle) {
