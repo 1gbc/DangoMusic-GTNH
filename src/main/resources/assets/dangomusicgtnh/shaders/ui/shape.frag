@@ -27,21 +27,29 @@ float sdRoundBox(vec2 p, vec2 b, float r) {
         return length(max(c, 0.0)) + min(max(c.x, c.y), 0.0) - r;
     }
     r = clamp(r, 0.0, min(b.x, b.y));
-    // Keep genuinely circular controls and avatar masks circular.
-    if (abs(b.x - b.y) < 0.001 && r >= min(b.x, b.y) - 0.001) return length(p) - r;
-    vec2 q = abs(p) - b + r;
+    float limit = min(b.x, b.y);
+    if (r <= 0.001) {
+        vec2 c = abs(p) - b + r;
+        return length(max(c, 0.0)) + min(max(c.x, c.y), 0.0) - r;
+    }
+    // A circle is already curvature-continuous; elongated capsules need smooth shoulders.
+    if (abs(b.x - b.y) < 0.001 && r >= limit - 0.001) return length(p) - r;
+    // A wider shoulder and gentler exponent avoid the boxy quartic contour.
+    float capsulePower = 2.0 + 0.25 * min((max(b.x, b.y) - limit) / limit, 1.0);
+    float power = mix(2.5, capsulePower, smoothstep(0.5, 1.0, r / limit));
+    float extent = min(1.5 * r, limit);
+    vec2 q = abs(p) - b + extent;
     float inside = min(max(q.x, q.y), 0.0);
     q = max(q, 0.0);
-    vec2 square = q * q;
-    float norm = sqrt(sqrt(dot(square, square)));
-    if (r == 0.0) return length(q) + inside;
+    vec2 powered = pow(q, vec2(power));
+    float norm = pow(powered.x + powered.y, 1.0 / power);
     vec2 unit = q / max(norm, 0.0001);
-    float gradient = length(unit * unit * unit);
+    float gradient = length(pow(unit, vec2(power - 1.0)));
     // Normalize near the contour; smoothly use the unnormalized distance inside.
     // A vanishing interior gradient must not amplify glass bevel/refraction depth.
-    float blend = smoothstep(0.25, 0.75, norm / r);
+    float blend = smoothstep(0.25, 0.75, norm / extent);
     float scale = mix(1.0, 1.0 / max(gradient, 0.70710678), blend);
-    return (norm - r) * scale + inside;
+    return (norm - extent) * scale + inside;
 }
 
 void main() {

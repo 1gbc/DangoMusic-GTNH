@@ -626,7 +626,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         ui.text(I18n.text(g.sub), x + ui.width(title, 13f, Theme.FONT_SEMIBOLD) + 8f, b.y + 14.5f, 10f, Theme.TEXT_TERTIARY)
         if (g.toggle) {
             val m = g.owner
-            ui.toggleSwitch(LayoutBounds(b.right - 14f - 34f, b.y + 9f, 34f, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
+            ui.toggleSwitch(LayoutBounds(b.right - 14f - ui.switchWidth, b.y + 9f, ui.switchWidth, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
         }
         var y = b.y + headH
         val moduleOff = !g.owner.enabled
@@ -646,7 +646,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     private fun drawRow(b: LayoutBounds, r: Row, clip: LayoutBounds) {
         val ctlW = when (r.ctl) {
-            Ctl.TOGGLE -> 34f
+            Ctl.TOGGLE -> ui.switchWidth
             Ctl.SLIDER -> 166f
             Ctl.KEY -> 130f
             Ctl.LANGUAGE -> 142f
@@ -662,7 +662,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         when (r.ctl) {
             Ctl.TOGGLE -> {
                 val v = r.value as BooleanValue
-                ui.toggleSwitch(LayoutBounds(cx, cy - 10f, 34f, 20f), v.get(), clip, key = v) { v.toggle() }
+                ui.toggleSwitch(LayoutBounds(cx, cy - 10f, ui.switchWidth, 20f), v.get(), clip, key = v) { v.toggle() }
             }
             Ctl.SLIDER -> if (r.key == "maxLyricLines") {
                 val v = r.value as IntValue

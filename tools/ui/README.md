@@ -1,8 +1,13 @@
 # Continuous UI corners
 
-The shape and glass shaders use a quartic corner whose curvature approaches zero
-at the straight edge. Cached cover masks use the same contour. Square controls
-with a radius equal to half their size remain circular. This is an approximation
+The shape and glass shaders use a softer superellipse corner with a wider shoulder
+(1.5 times the nominal radius), whose curvature approaches zero at the straight
+edge. The exponent eases from 2.5 toward a near-circular value above 2 as the radius
+fills the short side. Capsule ends still meet their straight sides with zero
+curvature, rather than using ordinary semicircular caps. A square full-radius
+control stays a true circle, which already has continuous curvature; stretching
+it smoothly introduces the continuous capsule profile. Cached cover masks use
+the same contour. This is an approximation
 of the continuous-corner appearance, not Apple's proprietary geometry.
 
 The shared shaders cover the music window, sidebar, selected rows, buttons,
