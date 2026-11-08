@@ -36,24 +36,29 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     private enum class Ctl { TOGGLE, SLIDER, KEY, LANGUAGE, COLOR, FONT, CHOICE }
 
-    /** scale：显示值 = 实际值 × scale（百分比的选项是 100），手动输入时按显示值换算回去 */
-    /** 彩虹速度只在“彩虹”配色下有用，文字颜色只在“自定义颜色”下有用；其他配色时这两行变暗 */
-    private fun lyricColorConds(m: LyricsModule): Map<String, () -> Boolean> {
-        val colors = m.lyricColors
-        return mapOf(
-            "rainbowSpeed" to { colors.value == 3 },
-            "textColor" to { colors.value == 0 },
-        )
-    }
-
+    /**
+     * 一行设置。两种“暂时用不上”：
+     *  - [show]：不满足时整行收起（子选项跟着上面的开关 / 选项走，比如发光关了就不显示发光强度）
+     *  - [dep]：不满足时变暗但还在（受别的分组、别的标签页影响的，比如原声模式下的环境音效）
+     * scale：显示值 = 实际值 × scale（百分比的选项是 100），手动输入时按显示值换算回去
+     */
     private class Row(
         val label: String, val desc: String, val value: Any, val ctl: Ctl,
-        /** 这一行什么时候有意义；不满足时整行变暗（比如彩虹速度只在彩虹配色下有用） */
         val dep: (() -> Boolean)?, val fmt: (Any) -> String, val scale: Float = 1f, val key: String = "",
+        val show: (() -> Boolean)? = null,
     )
 
-    /** owner：所属模块（模块关掉时整组变暗）；toggle：组标题右边显示模块总开关 */
-    private class Group(val title: String, val sub: String, val owner: Module, val toggle: Boolean, val rows: List<Row>)
+    /**
+     * owner：所属模块（模块关掉时整组变暗）；toggle：组标题右边显示模块总开关。
+     * [show]：不满足时整组收起（比如只用驾驶舱歌词时 3D 歌词的几组）；
+     * [dim]：不满足时整组变暗，标题旁边换成 [note] 说明原因
+     */
+    private class Group(
+        val title: String, val sub: String, val owner: Module, val toggle: Boolean, val rows: List<Row>,
+        val show: (() -> Boolean)? = null,
+        val dim: (() -> Boolean)? = null,
+        val note: (() -> String?)? = null,
+    )
 
     /** 用 ◀ ▶ 切换的选项：设置名 → 每个值的显示名（从最小值开始） */
     private val choiceLabels = mapOf(
@@ -61,6 +66,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         "ktvLyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "audioOutput" to listOf("Auto", "Java Sound", "Game audio (OpenAL)"),
         "uiStyle" to listOf("Classic", "Continuous corners"),
+        "lyricStyle" to listOf("3D world lyrics", "Cockpit lyrics", "Both", "Hidden"),
+        "sidePosition" to listOf("Left middle", "Left bottom", "Right middle"),
         "shareQuality" to listOf("Standard (128k)", "Higher (192k)", "High (320k)"),
     )
 
@@ -230,8 +237,13 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
         /** 一个模块的设置；take(...) 按名字取出若干行，剩下的最后放进 "Other" */
         class Src(
-            val m: Module, val deps: Map<String, String> = emptyMap(), val fmts: Map<String, (Any) -> String> = emptyMap(),
-            /** 依赖不是某个开关、而是某个选项取值的行：设置名 → 什么时候有意义 */
+            val m: Module,
+            /** 子选项 → 它上面的开关：开关关着时这一行收起 */
+            val deps: Map<String, String> = emptyMap(),
+            val fmts: Map<String, (Any) -> String> = emptyMap(),
+            /** 收起的条件不是某个开关、而是某个选项的取值：设置名 → 什么时候显示 */
+            val shows: Map<String, () -> Boolean> = emptyMap(),
+            /** 受别的分组 / 标签页影响、用不上时变暗的行：设置名 → 什么时候有意义 */
             val conds: Map<String, () -> Boolean> = emptyMap(),
         ) {
             val all = fieldsOf(m)
@@ -248,50 +260,98 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                     v is IntValue || v is FloatValue -> Ctl.SLIDER
                     else -> return@mapNotNull null
                 }
-                val dep: (() -> Boolean)? = conds[k] ?: deps[k]?.let { all[it]?.second as? BooleanValue }?.let { b -> { b.get() } }
+                val parent = deps[k]?.let { all[it]?.second as? BooleanValue }
+                val custom = shows[k]
+                val show: (() -> Boolean)? = when {
+                    parent != null && custom != null -> ({ parent.get() && custom() })
+                    parent != null -> ({ parent.get() })
+                    else -> custom
+                }
                 // 歌词字体这一行同时管"平滑字体"开关（像素字体 = 关）
                 val value = if (ctl == Ctl.FONT) FontChoice(v as TextValue, all.getValue("smoothFont").second as BooleanValue) else v
-                Row(ann.name.ifEmpty { k }, ann.desc, value, ctl, dep, fmts[k] ?: ::fmtValue, if (k in percentKeys) 100f else 1f, k)
+                Row(ann.name.ifEmpty { k }, ann.desc, value, ctl, conds[k], fmts[k] ?: ::fmtValue, if (k in percentKeys) 100f else 1f, k, show)
             }
         }
 
+        fun bool(m: Module, name: String) = fieldsOf(m).getValue(name).second as BooleanValue
+        val degrees = { v: Any -> "${(v as FloatValue).value.roundToInt()}°" }
+        val signed = { v: Any -> (v as FloatValue).value.roundToInt().let { if (it > 0) "+$it" else "$it" } }
+
+        // ---------------------------------------------------------------- 歌词
+        // “歌词样式”是唯一的总开关：3D 世界 / 驾驶舱 / 两者 / 不显示；用不上的那几组整组收起
+        val lm = mm.get(LyricsModule::class.java)
+        val style = lm.lyricStyle
+        val world = { style.value == 0 || style.value == 2 }
+        val side = { style.value == 1 || style.value == 2 }
+        val anyLyrics = { style.value != 3 }
+        val colors = lm.lyricColors
         val ly = Src(
-            mm.get(LyricsModule::class.java),
+            lm,
             deps = mapOf(
-                "distance" to "worldMode", "facePlayer" to "worldMode", "keepAway" to "worldMode", "stayOnScreen" to "worldMode", "aboveGround" to "worldMode", "avoidBlocks" to "worldMode", "spread" to "worldMode",
                 "glowNightOnly" to "glow", "glowStrength" to "glow", "glowRadius" to "glow",
                 "wiggleFps" to "wiggle", "wiggleAmount" to "wiggle",
                 "flashSize" to "textFlash",
-                "ktvLyricColors" to "ktvMode", "ktvInstrumental" to "ktvMode",
-                "ktvBaseColor" to "ktvMode", "ktvSungColor" to "ktvMode",
+                "ktvLyricColors" to "ktvMode", "ktvInstrumental" to "ktvMode", "ktvBaseColor" to "ktvMode",
                 "ktvBaseShadow" to "ktvMode", "ktvSungShadow" to "ktvMode",
                 "danceAuto" to "dance", "danceTap" to "dance", "danceSpin" to "dance", "danceAmount" to "dance", "danceOffset" to "dance",
-                "translationColor" to "translation", "translationAnimation" to "translation", "translationWiggle" to "translation",
+                "translationAnimation" to "translation", "translationWiggle" to "translation", "translationColor" to "translation",
+                "showCover" to "nowPlaying",
+                "sideRefraction" to "sideGlass",
             ),
             fmts = mapOf(
-                "spread" to { v: Any -> "${(v as FloatValue).value.roundToInt()}°" },
+                "spread" to degrees,
                 "glowRadius" to ::percent,
                 "danceOffset" to { v: Any -> "${(v as IntValue).value} ms" },
+                "sideTilt" to degrees, "sidePitch" to degrees, "sideItalic" to degrees,
+                "sideOffsetX" to signed, "sideOffsetY" to signed,
             ),
-            conds = lyricColorConds(mm.get(LyricsModule::class.java)),
+            shows = mapOf(
+                // 拆分歌词改的是歌词数据本身（歌词页也受影响），不随样式收起
+                "translation" to anyLyrics,
+                // 注音和翻译的动画只有 3D 歌词有
+                "romanization" to world, "translationAnimation" to world, "translationWiggle" to world,
+                "textColor" to { colors.value == 0 },
+                "translationColor" to { colors.value == 0 },
+                "rainbowSpeed" to { colors.value == 3 },
+                "ktvSungColor" to { lm.ktvMode.get() && lm.ktvLyricColors.value == 0 },
+                "sideGlowStrength" to { lm.sideGlow.get() || lm.sideTextGlow.get() },
+            ),
         )
         ly.left.remove("smoothFont")   // 合进了"歌词字体"那一行
+        ly.left.remove("worldMode")    // 由“歌词样式”统一管（旧存档里关着的话，启动时换算成“不显示”）
+        ly.left.remove("styleBeforeOff") // 快捷键内部记的值
         val lyrics = mutableListOf(
-            Group("Appearance", "Font and colors", ly.m, false, ly.take(listOf("worldMode", "maxLyricLines", "scale", "lyricFont", "lyricColors", "textColor", "rainbowSpeed", "splitLines"))),
-            Group("KTV mode", "Font and colors", ly.m, false, ly.take(listOf("ktvMode", "ktvInstrumental", "ktvLyricColors", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow"))),
-            Group("Position", "Where the lyrics float", ly.m, false, ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "avoidBlocks", "spread"))),
-            Group("Translation", "Under each line", ly.m, false, ly.take(listOf("translation", "romanization", "translationColor", "translationAnimation", "translationWiggle"))),
-            Group("Glow", "Deep Glow", ly.m, false, ly.take(listOf("glow", "glowNightOnly", "glowStrength", "glowRadius"))),
-            Group("Motion", "Animation", ly.m, false, ly.take(listOf("wiggle", "wiggleFps", "wiggleAmount", "textFlash", "wordPop", "flashSize"))),
-            Group("Dance", "Mobs on the beat", ly.m, false, ly.take(listOf("dance", "danceAuto", "danceTap", "danceSpin", "danceAmount", "danceOffset"))),
+            Group("Lyrics", "Style and translation", lm, false,
+                ly.take(listOf("lyricStyle", "translation", "romanization", "translationAnimation", "translationWiggle", "splitLines"))),
+            Group("Cockpit lyrics", "Position and tilt", lm, false, ly.take(listOf(
+                "sidePosition", "sideOffsetX", "sideOffsetY", "sideWidth", "sideLines", "sideTextSize",
+                "sideTilt", "sidePitch", "sideItalic", "sideGuide",
+            )), show = side),
+            Group("Cockpit look", "Glow and glass", lm, false, ly.take(listOf(
+                "sideGlow", "sideTextGlow", "sideGlowStrength", "sideOpacity", "sideGlass", "sideRefraction",
+            )), show = side),
+            Group("3D lyrics", "Font and colors", lm, false,
+                ly.take(listOf("scale", "maxLyricLines", "lyricFont", "lyricColors", "textColor", "translationColor", "rainbowSpeed")), show = world),
+            Group("3D position", "Where the lyrics float", lm, false,
+                ly.take(listOf("distance", "facePlayer", "keepAway", "stayOnScreen", "aboveGround", "avoidBlocks", "spread")), show = world),
+            Group("Glow", "Deep Glow", lm, false, ly.take(listOf("glow", "glowNightOnly", "glowStrength", "glowRadius")), show = world),
+            Group("Motion", "Animation", lm, false, ly.take(listOf("wiggle", "wiggleFps", "wiggleAmount", "wordPop", "textFlash", "flashSize")), show = world),
+            Group("KTV mode", "Line-by-line highlight", lm, false, ly.take(listOf(
+                "ktvMode", "ktvInstrumental", "ktvLyricColors", "ktvBaseColor", "ktvSungColor", "ktvBaseShadow", "ktvSungShadow",
+            )), show = world),
+            Group("Dance", "Mobs on the beat", lm, false, ly.take(listOf("dance", "danceAuto", "danceTap", "danceSpin", "danceAmount", "danceOffset"))),
         )
         // 左上角的原版风格"正在播放"和 Song card 是同一类东西，放到 Music & HUD 里
-        val nowPlaying = Group("Song info", "Top left, classic style", ly.m, false, ly.take(listOf("nowPlaying", "showCover")))
-        ly.take().let { if (it.isNotEmpty()) lyrics += Group("Other", "More", ly.m, false, it) }
+        val nowPlaying = Group("Song info", "Top left, classic style", lm, false, ly.take(listOf("nowPlaying", "showCover")))
+        ly.take().let { if (it.isNotEmpty()) lyrics += Group("Other", "More", lm, false, it) }
 
+        // ---------------------------------------------------------------- 音乐与 HUD
+        val original = bool(module, "originalAudio")
         val player = Src(module,
             deps = mapOf("envRain" to "envAudio", "envStrength" to "envAudio", "envRays" to "envAudio"),
-            fmts = mapOf("volume" to ::percent, "envStrength" to ::percent))
+            fmts = mapOf("volume" to ::percent, "envStrength" to ::percent),
+            // 原声模式绕过音量均衡，开着时均衡这一行收起
+            shows = mapOf("normalize" to { !original.get() }))
         player.left.remove("shuffle")   // 随机播放用播放栏上的按钮就够了，设置页不再显示（状态照样保存）
         player.left.remove("repeatOne") // 单曲循环同样通过播放栏控制
         player.left.remove("musicSource") // 音源通过侧栏切换。
@@ -300,34 +360,65 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             player.left.remove(k) // 在窗口或歌词页内调整。
         }
         if (!DangoMusic.instance.platform.hasGameAudio) player.left.remove("audioOutput") // 1.8.9 只有 Java Sound
-        val card = Src(mm.get(SongCardModule::class.java), fmts = mapOf("posX" to ::percent, "posY" to ::percent))
-        val island = Src(mm.get(DynamicIslandModule::class.java), fmts = mapOf(
+        val islandModule = mm.get(DynamicIslandModule::class.java)
+        val island = Src(islandModule, deps = mapOf("notifyTime" to "songNotify"), fmts = mapOf(
             "posX" to ::percent, "posY" to ::percent,
             "notifyTime" to { v: Any -> "%.1f s".format((v as FloatValue).value) },
         ))
-        val nearby = Src(mm.get(NearbyModule::class.java))
+        val mergeCard = bool(islandModule, "mergeCoverProgress")
+        val showMusic = bool(islandModule, "showMusic")
+        // 和 DynamicIslandModule.showingMergedCard 一致：岛开着、显示正在播放、并且合并了，卡片才不单独显示
+        val merged = { islandModule.enabled && showMusic.get() && mergeCard.get() }
+        val card = Src(mm.get(SongCardModule::class.java), fmts = mapOf("posX" to ::percent, "posY" to ::percent))
+        val playback = player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "resumeSession"))
         val environment = player.take(listOf("envAudio", "envRain", "envStrength", "envRays"))
+        val looks = player.take(listOf("uiStyle", "language"))
+        val advanced = player.take(listOf("audioOutput", "audioBuffer"))
         val music = listOf(
-            Group("Dynamic Island", "Overlay", island.m, true,
-                island.take(listOf("mergeCoverProgress", "posX", "posY")) + island.take()),
+            Group("Player", "Playback", module, false, playback),
+            Group("Environment audio", "Sound around you", module, false, environment,
+                dim = { original.get() }, note = { if (original.get()) "Off while Original audio is on" else null }),
+            Group("Dynamic Island", "Overlay", islandModule, true, island.take(listOf(
+                "glass", "showMusic", "mergeCoverProgress", "songNotify", "notifyTime", "scale", "posX", "posY",
+            )) + island.take()),
             Group("Cover progress HUD", "Separate position when not merged", card.m, true,
-                card.take(listOf("posX", "posY")) + card.take()),
-            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "audioBuffer", "resumeSession", "audioOutput", "uiStyle", "language"))),
-            Group("Environment audio", "Sound around you", player.m, false, environment),
-            Group("Hotkeys", "Click, then press a key · Backspace clears", player.m, false, player.take()),
+                card.take(listOf("scale", "showPaused", "posX", "posY")) + card.take(),
+                dim = merged, note = { if (merged()) "Merged into the Dynamic Island" else null }),
             nowPlaying,
+            Group("Interface", "Look and language", module, false, looks),
+            Group("Advanced", "Output and buffering", module, false, advanced),
+            Group("Hotkeys", "Click, then press a key · Backspace clears", module, false, player.take()),
         )
+
+        // ---------------------------------------------------------------- 多人
+        val nearbyModule = mm.get(NearbyModule::class.java)
+        val shareMusic = bool(nearbyModule, "shareMusic")
+        val shareGroup = bool(nearbyModule, "shareGroup")
+        val nearby = Src(nearbyModule,
+            deps = mapOf("resumeAfterGroup" to "groupTakeover"),
+            // 音质对附近共享和听歌房共享都有效，两个都关着时收起
+            shows = mapOf("shareQuality" to { shareMusic.get() || shareGroup.get() }),
+            // 驾驶舱歌词和 3D 投影互斥：只用驾驶舱时不投影自己的歌词；用驾驶舱时别人的歌词显示在自己的列表里
+            conds = mapOf("shareLyrics" to { style.value != 1 }, "seeLyrics" to { !side() && style.value != 3 }))
         val nearbyGroups = mutableListOf(
-            Group("Nearby music", "Players within the server radius", nearby.m, false,
-                nearby.take(listOf("shareMusic", "hearNearby", "shareQuality"))),
-            Group("Nearby lyrics", "Line projection over the host", nearby.m, false,
-                nearby.take(listOf("shareLyrics", "seeLyrics"))),
-            Group("Music group", "Distance-free listening", nearby.m, false,
+            Group("Nearby music", "Players within the server radius", nearbyModule, false,
+                nearby.take(listOf("shareMusic", "shareQuality", "hearNearby"))),
+            Group("Nearby lyrics", "Line projection over the host", nearbyModule, false,
+                nearby.take(listOf("shareLyrics", "seeLyrics")),
+                note = {
+                    when (style.value) {
+                        1 -> "Cockpit lyrics: yours aren't projected, others' show in your list"
+                        2 -> "Others' lyrics show in your cockpit list"
+                        3 -> "Lyric style is set to Hidden"
+                        else -> null
+                    }
+                }),
+            Group("Music group", "Distance-free listening", nearbyModule, false,
                 nearby.take(listOf("shareGroup", "groupTakeover", "resumeAfterGroup"))),
         )
         // 收听听歌房由进出房间决定，不再单独给开关；“在房间里放歌时共享”只在这里保留一份（听歌房页面不再重复）
         nearby.left.remove("hearGroup")
-        nearby.take().let { if (it.isNotEmpty()) nearbyGroups += Group("Other", "More", nearby.m, false, it) }
+        nearby.take().let { if (it.isNotEmpty()) nearbyGroups += Group("Other", "More", nearbyModule, false, it) }
         return listOf(lyrics, music, nearbyGroups)
     }
 
@@ -546,38 +637,67 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         ui.hits.addAll(0, hits)
     }
 
-    // 两列瀑布流：每组放进当前较矮的一列
+    // 两列瀑布流：每组放进当前较矮的一列。组 / 行收起、展开，以及因此换列、上下挪动，都用弹簧过渡
     private val gap = 14f
     private val rowH = 40f
     private val headH = 36f
 
-    /** 每组的位置：列号、在列里的 y、高度 */
-    private fun layout(groups: List<Group>, view: LayoutBounds): List<Triple<Int, Float, Float>> {
+    /** 一组这一帧的位置：col 是列号（过渡时是小数），y 相对内容顶部，vis 是整组的显示程度 */
+    private class Placed(val g: Group, val col: Float, val y: Float, val h: Float, val vis: Float)
+
+    private val groupVis = HashMap<Group, Spring>()
+    private val groupCol = HashMap<Group, Spring>()
+    private val groupY = HashMap<Group, Spring>()
+    private val rowVis = HashMap<Row, Spring>()
+
+    private fun place(groups: List<Group>, view: LayoutBounds): List<Placed> {
         val cols = if (view.width >= 560f) 2 else 1
         val colY = FloatArray(cols)
         return groups.map { g ->
-            val h = headH + g.rows.size * rowH + 6f
-            var c = 0
-            for (i in 1 until cols) if (colY[i] < colY[c] - 0.5f) c = i
-            val p = Triple(c, colY[c], h)
-            colY[c] += h + gap
-            p
+            val shown = g.show?.invoke() != false
+            val vis = groupVis.getOrPut(g) { Spring(240f, 28f, if (shown) 1f else 0f) }.tick(if (shown) 1f else 0f)
+            var rows = 0f
+            var targetRows = 0
+            for (r in g.rows) {
+                val on = shown && r.show?.invoke() != false
+                if (on) targetRows++
+                rows += rowVis.getOrPut(r) { Spring(260f, 30f, if (on) 1f else 0f) }.tick(if (on) 1f else 0f)
+            }
+            val h = (headH + 6f) * vis + rows * rowH
+            val colS = groupCol.getOrPut(g) { Spring(200f, 26f) }
+            val yS = groupY.getOrPut(g) { Spring(200f, 26f) }
+            if (shown) {
+                // 按收起 / 展开之后的高度排，不按过渡中的高度排：排列不会跟着动画来回跳
+                var c = 0
+                for (i in 1 until cols) if (colY[i] < colY[c] - 0.5f) c = i
+                val ty = colY[c]
+                colY[c] += headH + 6f + targetRows * rowH + gap
+                if (vis < 0.02f) {
+                    // 从完全收起的状态出现：直接在新位置出现，不从别处飞过来
+                    colS.x = c.toFloat(); colS.v = 0f
+                    yS.x = ty; yS.v = 0f
+                }
+                Placed(g, colS.tick(c.toFloat()), yS.tick(ty), h, vis)
+            } else {
+                // 收起中：原地淡出
+                Placed(g, colS.tick(colS.x), yS.tick(yS.x), h, vis)
+            }
         }
     }
 
     private fun layoutHeight(groups: List<Group>, view: LayoutBounds): Float =
-        max(0f, (layout(groups, view).maxOfOrNull { it.second + it.third + gap } ?: 0f) - gap)
+        max(0f, place(groups, view).maxOfOrNull { if (it.vis > 0.02f) it.y + it.h else 0f } ?: 0f)
 
     /** 画一个标签的全部分组；[animate] 时每组按进页面的时间依次升起 */
     private fun drawTab(groups: List<Group>, view: LayoutBounds, scroll: Float, animate: Boolean) {
         val cols = if (view.width >= 560f) 2 else 1
         val colW = (view.width - 12f - gap * (cols - 1)) / cols
-        val placed = layout(groups, view)
-        groups.forEachIndexed { gi, g ->
-            val (c, gy, gh) = placed[gi]
-            val b = LayoutBounds(view.x + c * (colW + gap), view.y + gy - scroll, colW, gh)
+        val placed = place(groups, view)
+        placed.forEachIndexed { gi, p ->
+            if (p.vis < 0.02f) return@forEachIndexed
+            val b = LayoutBounds(view.x + p.col * (colW + gap), view.y + p.y - scroll, colW, p.h)
             if (b.bottom < view.y || b.y > view.bottom) return@forEachIndexed
-            if (animate) ui.itemAnim(gi) { drawGroup(b, g, view, rowH, headH) } else drawGroup(b, g, view, rowH, headH)
+            if (animate) ui.itemAnim(gi) { drawGroup(b, p, view) } else drawGroup(b, p, view)
         }
     }
 
@@ -616,31 +736,59 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         }
     }
 
-    private fun drawGroup(b: LayoutBounds, g: Group, clip: LayoutBounds, rowH: Float, headH: Float) {
+    private fun drawGroup(b: LayoutBounds, p: Placed, clip: LayoutBounds) {
+        val g = p.g
         val ctx = ui.ctx
-        ctx.drawShape(b, ShapeStyle(Color(1f, 1f, 1f, 0.05f), 14f))
-        val x = b.x + 14f
-        val iw = b.width - 28f
-        val title = I18n.text(g.title)
-        ui.text(title, x, b.y + 13f, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-        ui.text(I18n.text(g.sub), x + ui.width(title, 13f, Theme.FONT_SEMIBOLD) + 8f, b.y + 14.5f, 10f, Theme.TEXT_TERTIARY)
-        if (g.toggle) {
-            val m = g.owner
-            ui.toggleSwitch(LayoutBounds(b.right - 14f - ui.switchWidth, b.y + 9f, ui.switchWidth, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
-        }
-        var y = b.y + headH
-        val moduleOff = !g.owner.enabled
-        for (r in g.rows) {
-            ctx.drawShape(LayoutBounds(x, y, iw, 1f), ShapeStyle(Color(1f, 1f, 1f, 0.06f)))
-            // 依赖的开关 / 整个模块关掉时变暗：渐变过去，不是一下子变
-            val dim = moduleOff || (r.dep != null && !r.dep.invoke())
-            val target = if (dim) 0.4f else 1f
-            val alpha = rowFade.getOrPut(r) { Spring(170f, 26f, target) }.tick(target).coerceIn(0.4f, 1f)
-            val faded = alpha < 0.999f
-            if (faded) ctx.pushOpacity(alpha)
-            drawRow(LayoutBounds(x, y, iw, rowH), r, clip)
-            if (faded) ctx.popOpacity()
-            y += rowH
+        // 整组出现 / 收起时一起淡入淡出（平方：收起时先淡掉，再让出位置）
+        val groupAlpha = p.vis * p.vis
+        val fadedGroup = groupAlpha < 0.999f
+        if (fadedGroup) ctx.pushOpacity(groupAlpha)
+        try {
+            ctx.drawShape(b, ShapeStyle(Color(1f, 1f, 1f, 0.05f), 14f))
+            val x = b.x + 14f
+            val iw = b.width - 28f
+            val title = I18n.text(g.title)
+            val titleW = ui.width(title, 13f, Theme.FONT_SEMIBOLD)
+            ui.text(title, x, b.y + 13f, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+            // 有说明（比如“已合并进灵动岛”）时代替副标题，说明这组为什么用不上
+            val note = g.note?.invoke()
+            val subW = iw - titleW - 8f - (if (g.toggle) ui.switchWidth + 10f else 0f)
+            if (subW > 20f) {
+                ui.text(ui.trim(I18n.text(note ?: g.sub), subW, 10f), x + titleW + 8f, b.y + 14.5f, 10f,
+                    if (note != null) Theme.TEXT_SECONDARY else Theme.TEXT_TERTIARY)
+            }
+            if (g.toggle) {
+                val m = g.owner
+                ui.toggleSwitch(LayoutBounds(b.right - 14f - ui.switchWidth, b.y + 9f, ui.switchWidth, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
+            }
+            var y = b.y + headH
+            val groupDim = !g.owner.enabled || g.dim?.invoke() == true
+            for (r in g.rows) {
+                val rv = rowVis[r]?.x ?: 1f
+                if (rv < 0.02f) continue
+                // 依赖的开关 / 整个模块关掉时变暗：渐变过去，不是一下子变
+                val dim = groupDim || (r.dep != null && !r.dep.invoke())
+                val target = if (dim) 0.4f else 1f
+                val alpha = rowFade.getOrPut(r) { Spring(170f, 26f, target) }.tick(target).coerceIn(0.4f, 1f)
+                // 展开 / 收起：位置先让出来，字再淡入；还没完全展开的行不接受点击
+                val appear = ((rv - 0.4f) / 0.6f).coerceIn(0f, 1f)
+                val a = alpha * appear
+                if (a > 0.01f) {
+                    val faded = a < 0.999f
+                    if (faded) ctx.pushOpacity(a)
+                    val keep = ui.hits.size
+                    try {
+                        ctx.drawShape(LayoutBounds(x, y, iw, 1f), ShapeStyle(Color(1f, 1f, 1f, 0.06f)))
+                        drawRow(LayoutBounds(x, y, iw, rowH), r, clip)
+                    } finally {
+                        if (faded) ctx.popOpacity()
+                    }
+                    if (rv < 0.9f) while (ui.hits.size > keep) ui.hits.removeAt(ui.hits.size - 1)
+                }
+                y += rowH * rv
+            }
+        } finally {
+            if (fadedGroup) ctx.popOpacity()
         }
     }
 

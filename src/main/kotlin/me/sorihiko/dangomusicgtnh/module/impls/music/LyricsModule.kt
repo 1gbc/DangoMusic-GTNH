@@ -79,11 +79,116 @@ private const val TRANSLATION_WRAP = 270
 @ModuleMeta(Category.MUSIC, "Lyrics")
 class LyricsModule : Module() {
 
+    /**
+     * 旧版本的“3D 歌词”开关（快捷键也切它）。现在由 [lyricStyle] 统一管，这个值只为读出旧存档：
+     * 关着的话第一次运行时换成“不显示”（或者只留驾驶舱），之后一直是开着的，设置页里也不再显示
+     */
     @ModuleValue("3D lyrics", "Show lyrics floating in the world")
-    private val worldMode = BooleanValue(true)
+    internal val worldMode = BooleanValue(true)
 
-    /** 快捷键"开关歌词"用 */
-    fun toggleLyrics() = worldMode.toggle()
+    @ModuleValue("Lyric style", "Where lyrics appear: floating in the world, cockpit-style on the screen edge, both, or nowhere")
+    internal val lyricStyle = IntValue(STYLE_WORLD, STYLE_OFF, STYLE_WORLD)
+
+    @ModuleValue("Side position", "Where the side lyric list sits")
+    internal val sidePosition = IntValue(0, 2, 0)
+
+    @ModuleValue("Horizontal offset", "Moves the list right (positive) or left (negative) from its position")
+    internal val sideOffsetX = FloatValue(-300f, 300f, 0f, 0)
+
+    @ModuleValue("Vertical offset", "Moves the list up (positive) or down (negative) from its position")
+    internal val sideOffsetY = FloatValue(-300f, 300f, 0f, 0)
+
+    @ModuleValue("Side width", "Width of the side lyric list")
+    internal val sideWidth = FloatValue(200f, 480f, 300f, 0)
+
+    @ModuleValue("Side lines", "How many lines the side list shows")
+    internal val sideLines = IntValue(3, 11, 7)
+
+    @ModuleValue("Side text size", "Text size in the side list")
+    internal val sideTextSize = FloatValue(0.7f, 1.6f, 1f, 2)
+
+    @ModuleValue("Perspective tilt", "Turns the list toward the middle of the screen like a cockpit side display")
+    internal val sideTilt = FloatValue(-45f, 45f, 18f, 0)
+
+    @ModuleValue("Pitch", "Leans the list back (positive) or forward (negative)")
+    internal val sidePitch = FloatValue(-30f, 30f, 0f, 0)
+
+    @ModuleValue("Italic", "Slant of the letters")
+    internal val sideItalic = FloatValue(0f, 20f, 8f, 0)
+
+    @ModuleValue("Glass text", "The letters become see-through glass that bends the game behind them; off is solid glowing text")
+    internal val sideGlass = BooleanValue(false)
+
+    @ModuleValue("Text opacity", "Lower it so the lyrics cover less of the game")
+    internal val sideOpacity = FloatValue(0.1f, 1f, 0.85f, 2)
+
+    @ModuleValue("Refraction", "How strongly the glass bends the game behind it")
+    internal val sideRefraction = FloatValue(0f, 1f, 0.2f, 2)
+
+    @ModuleValue("Cover color glow", "The text glows in the cover's main color, follows each new song and brightens on the beat")
+    internal val sideGlow = BooleanValue(true)
+
+    @ModuleValue("Glow strength", "How strongly the text and halo glow")
+    internal val sideGlowStrength = FloatValue(0f, 1f, 0.5f, 2)
+
+    @ModuleValue("Halo", "A soft light spreading around the text")
+    internal val sideTextGlow = BooleanValue(true)
+
+    @ModuleValue("Guide line", "A thin glowing line beside the list with a tick at the current line")
+    internal val sideGuide = BooleanValue(true)
+
+    private val side = SideLyrics()
+    /** 快捷键关掉歌词前用的样式（再按一次恢复成它；存盘，重开游戏后也能恢复；设置页里不显示） */
+    @ModuleValue("Style before hiding", "")
+    internal val styleBeforeOff = IntValue(STYLE_WORLD, STYLE_BOTH, STYLE_WORLD)
+    private var migrated = false
+
+    /** 3D 世界歌词这一帧要不要画 */
+    internal fun worldVisible(): Boolean {
+        migrateWorldMode()
+        return lyricStyle.value == STYLE_WORLD || lyricStyle.value == STYLE_BOTH
+    }
+
+    /** 驾驶舱（侧边）歌词要不要画 */
+    internal fun sideVisible(): Boolean {
+        migrateWorldMode()
+        return lyricStyle.value == STYLE_SIDE || lyricStyle.value == STYLE_BOTH
+    }
+
+    /** 歌词样式设成了“不显示”（别人投影过来的歌词也不画） */
+    internal fun lyricsHidden(): Boolean = enabled && lyricStyle.value == STYLE_OFF
+
+    /** 自己在用侧边列表（多人时就不看别人的 3D 投影，改用自己的歌词） */
+    internal fun prefersSideLyrics(): Boolean = enabled && sideVisible()
+
+    /** 自己的歌词会以 3D 投影给别人看；只有“只用侧边列表”时不投影（其他情况保持原来的共享行为） */
+    internal fun projectsWorldLyrics(): Boolean = lyricStyle.value != STYLE_SIDE
+
+    /** 快捷键"开关歌词"：在“不显示”和关之前的样式之间切换 */
+    fun toggleLyrics() {
+        migrateWorldMode()
+        if (lyricStyle.value != STYLE_OFF) {
+            styleBeforeOff.setValue(lyricStyle.value)
+            lyricStyle.setValue(STYLE_OFF)
+        } else {
+            lyricStyle.setValue(styleBeforeOff.value)
+        }
+    }
+
+    /**
+     * 旧存档里 3D 歌词是关着的：换成新的样式（只做一次，之后 worldMode 一直开着）。
+     * 模块开起来之后存档才读完，所以没开之前不做
+     */
+    private fun migrateWorldMode() {
+        if (migrated || !enabled) return
+        migrated = true
+        if (worldMode.get()) return
+        when (lyricStyle.value) {
+            STYLE_WORLD -> lyricStyle.setValue(STYLE_OFF)
+            STYLE_BOTH -> lyricStyle.setValue(STYLE_SIDE)
+        }
+        worldMode.set(true)
+    }
 
     @ModuleValue("Top-left song info", "Show the current song in the top left")
     private val nowPlaying = BooleanValue(false)
@@ -511,7 +616,7 @@ class LyricsModule : Module() {
         updateClock()
         val s = current
         // 小柱子的颜色取自封面，所以只开 Now playing 也要加载封面
-        if (s != null && (showCover.get() || nowPlaying.get() || lyricColors.value == COLORS_COVER || lyricColors.value == COLORS_GRADIENT || (ktvMode.get() && ktvLyricColors.value in COLORS_COVER..COLORS_GRADIENT))) {
+        if (s != null && (showCover.get() || nowPlaying.get() || sideVisible() ||lyricColors.value == COLORS_COVER || lyricColors.value == COLORS_GRADIENT || (ktvMode.get() && ktvLyricColors.value in COLORS_COVER..COLORS_GRADIENT))) {
             s.track.coverUrl.takeIf { it.isNotEmpty() }?.let { cover.requestUrl(s.key, it) }
         }
         cover.upload()
@@ -595,7 +700,7 @@ class LyricsModule : Module() {
         }
         val useFlash = textFlash.get() && !ktvMode.get() && count == 1
         val gfx = DangoClient.gfx
-        val view = if (worldMode.get() && !useFlash && (active != null || fading.isNotEmpty())) {
+        val view = if (worldVisible() && !useFlash && (active != null || fading.isNotEmpty())) {
             gfx.world.cameraAngles().takeIf { it.yaw.isFinite() && it.pitch.isFinite() }
         } else null
         if (view != null) {
@@ -609,8 +714,8 @@ class LyricsModule : Module() {
         gfx.guarded {
             val songNow = songPos.toLong()
             val beat = if (s != null) playbackBeatPulse(playbackPositionMs()) else 0f
-            if (!worldMode.get()) {
-                // 3D lyrics 关掉 = 不显示歌词
+            if (!worldVisible()) {
+                // 3D lyrics 关掉或只用侧边列表 = 不画 3D 歌词
             } else if (useFlash) {
                 flash.draw(if (s != null && !paused) lyrics else null, songNow, beat, flashSize.value, 1)
             } else {
@@ -648,8 +753,49 @@ class LyricsModule : Module() {
         val s = current
         DangoClient.gfx.guarded {
             if (nowPlaying.get() && s != null && !songCardCovers()) drawNowPlaying(s, currentKey?.let { lyricsFor(it) })
+            // 不用驾驶舱样式时也调一下：刚切走时让列表淡出，而不是一下子消失（完全淡出后什么都不画）
+            if (sideVisible() || !side.idle) drawSide(e, s)
             Dance.tapStatus()?.let { drawTapStatus(it) }
         }
+    }
+
+    /** 侧边歌词列表：当前歌词、进度和设置交给 [SideLyrics] 画（玻璃字、透视倾斜、发光、逐字点亮） */
+    private fun drawSide(e: HudRenderEvent, s: NowPlaying?) {
+        val platform = DangoClient.platform
+        val frame = s?.let {
+            val lyrics = currentKey?.let { key -> lyricsFor(key) }
+            val pos = songPos.toLong()
+            SideLyrics.Frame(
+                key = it.key,
+                title = it.title,
+                artist = it.artist,
+                lines = lyrics?.lines.orEmpty(),
+                index = lyrics?.indexAt(pos) ?: -1,
+                positionMs = pos,
+                accent = if (cover.shownKey == it.key) cover.accent else CoverArt.DEFAULT_ACCENT,
+                beat = playbackBeatPulse(playbackPositionMs()),
+                visible = sideVisible() && !platform.chatOpen,
+            )
+        }
+        side.draw(e, frame, SideLyrics.Settings(
+            position = sidePosition.value,
+            offsetX = sideOffsetX.value,
+            offsetY = sideOffsetY.value,
+            width = sideWidth.value,
+            lines = sideLines.value,
+            textSize = sideTextSize.value,
+            glass = sideGlass.get(),
+            opacity = sideOpacity.value,
+            glow = sideGlow.get(),
+            glowStrength = sideGlowStrength.value,
+            halo = sideTextGlow.get(),
+            translation = translation.get(),
+            tilt = sideTilt.value,
+            pitch = sidePitch.value,
+            italic = sideItalic.value,
+            refraction = sideRefraction.value,
+            guide = sideGuide.get(),
+        ))
     }
 
     /** 对拍时准星下面显示点到第几下 / 点出来的 BPM */
@@ -1596,3 +1742,9 @@ private const val COLORS_GRADIENT = 2
 private const val COLORS_RAINBOW = 3
 /** 一句歌词从头到尾跨过多少色相（1 = 整个色环） */
 private const val RAINBOW_SPAN = 0.6f
+
+/** 歌词样式：3D 世界歌词 / 侧边列表 / 两者都显示 */
+private const val STYLE_WORLD = 0
+private const val STYLE_SIDE = 1
+private const val STYLE_BOTH = 2
+private const val STYLE_OFF = 3

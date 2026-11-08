@@ -632,5 +632,60 @@ Interface style	界面风格
 Classic: rounded corners, capsule switches with round knobs. Continuous corners: smoother squircle corners everywhere	经典：普通圆角，开关是胶囊加圆形圆钮；连续圆角：所有圆角改用更顺滑的连续曲率
 Classic	经典
 Continuous corners	连续圆角
+Lyric style	歌词样式
+3D world lyrics	3D 世界歌词
+Both	两者都显示
+Side position	位置
+Where the side lyric list sits	侧边歌词列表放在哪里
+Left middle	左侧居中
+Left bottom	左下
+Right middle	右侧居中
+Side width	宽度
+Width of the side lyric list	侧边歌词列表的宽度
+Side lines	显示行数
+How many lines the side list shows	侧边列表一次显示几行
+Side text size	字号
+Text size in the side list	侧边列表的文字大小
+Where lyrics appear: floating in the world, cockpit-style on the screen edge, both, or nowhere	歌词显示在哪：漂浮在世界里、像驾驶舱一样贴在屏幕边、两者都要，或者不显示
+Cockpit lyrics	驾驶舱歌词
+Hidden	不显示
+Style and translation	样式与翻译
+Position and tilt	位置与倾斜
+Cockpit look	驾驶舱外观
+Glow and glass	发光与玻璃
+3D position	3D 歌词位置
+Line-by-line highlight	逐字高亮
+Horizontal offset	水平偏移
+Moves the list right (positive) or left (negative) from its position	在所选位置的基础上挪动：正数往右，负数往左
+Vertical offset	垂直偏移
+Moves the list up (positive) or down (negative) from its position	在所选位置的基础上挪动：正数往上，负数往下
+Text opacity	文字不透明度
+Lower it so the lyrics cover less of the game	调低一点，歌词挡住的游戏画面更少
+The letters become see-through glass that bends the game behind them; off is solid glowing text	字变成透明的玻璃，透出并扭曲后面的游戏画面；关掉是实心的发光字
+Cover color glow	封面色发光
+The text glows in the cover's main color, follows each new song and brightens on the beat	文字发出封面主色的光，换歌时跟着变，踩到节拍时亮一下
+How strongly the text and halo glow	文字和光晕发光的强弱
+Interface	界面
+Look and language	风格与语言
+Advanced	高级
+Output and buffering	输出与缓冲
+Off while Original audio is on	原音模式下不生效
+Merged into the Dynamic Island	已合并进灵动岛
+Cockpit lyrics: yours aren't projected, others' show in your list	驾驶舱歌词：自己的歌词不投影，别人的显示在你的列表里
+Lyric style is set to Hidden	歌词样式设成了不显示
+Others' lyrics show in your cockpit list	别人的歌词显示在你的驾驶舱列表里
+Perspective tilt	透视倾斜
+Turns the list toward the middle of the screen like a cockpit side display	像座舱侧屏一样，把列表朝屏幕中间转过去
+Pitch	前后倾斜
+Leans the list back (positive) or forward (negative)	正数往后仰，负数往前倾
+Italic	斜体
+Slant of the letters	字往右倒的角度
+Glass text	玻璃字
+Refraction	折射
+How strongly the glass bends the game behind it	玻璃把后面的游戏画面扭曲得多厉害
+Halo	光晕
+A soft light spreading around the text	字周围散开的一圈柔光
+Guide line	引导线
+A thin glowing line beside the list with a tick at the current line	列表旁边一条发光的细线，当前行有个刻度
 LIBRARY	资料库
 Playback mode	播放模式
