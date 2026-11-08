@@ -146,6 +146,9 @@ internal class Ui {
     /** 每个开关自己的弹簧（按 [toggleSwitch] 的 key 记） */
     private val switchAnim = HashMap<Any, Spring>()
 
+    /** 连续风格采用更舒展的胶囊比例，保留经典风格原有布局。 */
+    val switchWidth: Float get() = if (me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous) 44f else 34f
+
     /**
      * iOS 风格开关。给了 [key]（比如这个开关对应的设置值）就带动画：圆钮用弹簧滑过去，稍微冲过一点再回来，
      * 滑动时沿运动方向拉长一点（液体感），底色在灰和红之间渐变。
@@ -162,9 +165,8 @@ internal class Ui {
         val stretch = min(6f, abs(anim?.v ?: 0f) * 0.9f)
         val travel = b.width - 4f - k
         val kx = b.x + 2f + travel * p.coerceIn(-0.08f, 1.08f) - (if ((anim?.v ?: 0f) > 0f) stretch else 0f)
-        // 经典风格：圆形圆钮。连续圆角风格：半径略小于一半边长，着色器就不按“正方形 + 满半径 = 正圆”处理，
-        // 圆钮和底座是同一套连续曲率的圆角方块
-        val knobRadius = if (me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous) k / 2f - 0.6f else k / 2f
+        // 圆钮在两种风格下都保持圆形，滑动拉伸时自然变为胶囊。
+        val knobRadius = k / 2f
         ctx.drawShape(LayoutBounds(kx, b.y + 2f, k + stretch, k), ShapeStyle(Color(1f, 1f, 1f, 1f), knobRadius))
         hits += b.expand(4f, 4f).intersect(clip) to action
     }

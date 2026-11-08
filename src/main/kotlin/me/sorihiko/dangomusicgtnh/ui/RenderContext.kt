@@ -10,6 +10,8 @@ interface RenderContext {
     fun drawShape(bounds: LayoutBounds, style: ShapeStyle = ShapeStyle())
     fun drawText(text: String, x: Float, y: Float, style: FontStyle)
     fun drawImage(bounds: LayoutBounds, image: Texture)
+    fun drawRoundedImage(bounds: LayoutBounds,image: Texture,radius: Float)
+    fun drawIcon(bounds: LayoutBounds, icon: VectorIcon, color: Color)
 
     /**
      * 液态玻璃面板：采样模糊后的背景，边缘带折射/色散/高光。

@@ -10,6 +10,7 @@ import me.sorihiko.dangomusicgtnh.shader.impls.ui.GlassBlurShader
 import me.sorihiko.dangomusicgtnh.shader.impls.ui.GlassShader
 import me.sorihiko.dangomusicgtnh.shader.impls.ui.ImageShader
 import me.sorihiko.dangomusicgtnh.shader.impls.ui.ShapeShader
+import me.sorihiko.dangomusicgtnh.shader.impls.ui.IconShader
 
 import net.minecraft.client.Minecraft
 
@@ -33,6 +34,7 @@ object LegacyGl {
 
         shaderManager.register(QuadShader())
         shaderManager.register(ShapeShader())
+        shaderManager.register(IconShader())
         shaderManager.register(FontShader())
         shaderManager.register(ImageShader())
         shaderManager.register(GlassShader())

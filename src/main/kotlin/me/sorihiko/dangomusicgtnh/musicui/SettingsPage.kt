@@ -752,14 +752,14 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             ui.text(title, x, b.y + 13f, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
             // 有说明（比如“已合并进灵动岛”）时代替副标题，说明这组为什么用不上
             val note = g.note?.invoke()
-            val subW = iw - titleW - 8f - (if (g.toggle) 44f else 0f)
+            val subW = iw - titleW - 8f - (if (g.toggle) ui.switchWidth + 10f else 0f)
             if (subW > 20f) {
                 ui.text(ui.trim(I18n.text(note ?: g.sub), subW, 10f), x + titleW + 8f, b.y + 14.5f, 10f,
                     if (note != null) Theme.TEXT_SECONDARY else Theme.TEXT_TERTIARY)
             }
             if (g.toggle) {
                 val m = g.owner
-                ui.toggleSwitch(LayoutBounds(b.right - 14f - 34f, b.y + 9f, 34f, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
+                ui.toggleSwitch(LayoutBounds(b.right - 14f - ui.switchWidth, b.y + 9f, ui.switchWidth, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
             }
             var y = b.y + headH
             val groupDim = !g.owner.enabled || g.dim?.invoke() == true
@@ -794,7 +794,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     private fun drawRow(b: LayoutBounds, r: Row, clip: LayoutBounds) {
         val ctlW = when (r.ctl) {
-            Ctl.TOGGLE -> 34f
+            Ctl.TOGGLE -> ui.switchWidth
             Ctl.SLIDER -> 166f
             Ctl.KEY -> 130f
             Ctl.LANGUAGE -> 142f
@@ -810,7 +810,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         when (r.ctl) {
             Ctl.TOGGLE -> {
                 val v = r.value as BooleanValue
-                ui.toggleSwitch(LayoutBounds(cx, cy - 10f, 34f, 20f), v.get(), clip, key = v) { v.toggle() }
+                ui.toggleSwitch(LayoutBounds(cx, cy - 10f, ui.switchWidth, 20f), v.get(), clip, key = v) { v.toggle() }
             }
             Ctl.SLIDER -> if (r.key == "maxLyricLines") {
                 val v = r.value as IntValue

@@ -25,6 +25,7 @@ import me.sorihiko.dangomusicgtnh.platform.Keys
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
 import me.sorihiko.dangomusicgtnh.ui.Theme
+import me.sorihiko.dangomusicgtnh.ui.UiStyle
 import me.sorihiko.dangomusicgtnh.utils.Color
 
 import kotlin.math.min
@@ -521,7 +522,8 @@ class MusicScreen(
 
     private fun drawContent(area: LayoutBounds) {
         // 底部小字只在有提示（读取失败等）时显示
-        val foot = I18n.message(Library.status)
+        val status = Library.status
+        val foot = if (UiStyle.continuous && status == AppleMusicSource.libraryWarning) "" else I18n.message(status)
         // 提示文字放在播放栏上面，不被它挡住
         if (foot.isNotEmpty()) ui.text(ui.trim(foot, area.width, 10f, Theme.FONT_SEMIBOLD), area.x, area.bottom - ui.bottomInset - 13f, 10f, RED, Theme.FONT_SEMIBOLD)
         val body = LayoutBounds(area.x, area.y, area.width, area.height - (if (foot.isNotEmpty()) 18f else 4f))

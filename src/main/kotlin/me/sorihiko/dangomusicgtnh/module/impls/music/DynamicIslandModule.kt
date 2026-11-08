@@ -19,6 +19,7 @@ import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
 import me.sorihiko.dangomusicgtnh.ui.Theme
+import me.sorihiko.dangomusicgtnh.ui.UiStyle
 import me.sorihiko.dangomusicgtnh.ui.Vec2
 import me.sorihiko.dangomusicgtnh.utils.Color
 
@@ -27,6 +28,7 @@ import java.util.Date
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.exp
 
 /**
  * 灵动岛（iOS 风格的胶囊）：
@@ -78,6 +80,7 @@ class DynamicIslandModule : Module() {
     private var vw = 0f
     private var vh = 0f
     private var lastNanos = 0L
+    private var cornerRadius = -1f
 
     private var lastTrackId = ""
     private var lastPlaying: Boolean? = null
@@ -92,6 +95,7 @@ class DynamicIslandModule : Module() {
         temp = null
         contentAlpha = 0f
         lastNanos = 0L
+        cornerRadius = -1f
         val snap = PlaybackView.snapshot()
         lastTrackId = snap.track?.key ?: ""
         lastPlaying = snap.playing
@@ -231,7 +235,14 @@ class DynamicIslandModule : Module() {
         val ctx = context ?: DangoClient.gfx.newCanvas().also { context = it }
         ctx.begin(glass.get(), 0, 0)
         try {
-            val r = min(h / 2f, 22f)
+            val targetRadius = if (UiStyle.continuous && want == Kind.SONG) {
+                48f * CoverCache.DEFAULT_CORNER_RATIO
+            } else if (UiStyle.continuous && musicIdle()) {
+                22f * CoverCache.DEFAULT_CORNER_RATIO
+            } else min(h / 2f, 22f)
+            cornerRadius = if (!UiStyle.continuous || cornerRadius < 0f) targetRadius
+                else cornerRadius + (targetRadius - cornerRadius) * (1f - exp(-dt / 0.12f))
+            val r = min(h / 2f, cornerRadius)
 
             ctx.pushScale(k, k, 1f)
             if (glass.get()) {
@@ -257,8 +268,8 @@ class DynamicIslandModule : Module() {
             mt.clip = pill
             ctx.pushOpacity(contentAlpha)
             when (shown) {
-                Kind.IDLE -> if (musicIdle()) drawMusicIdle(ctx, cb) else drawIdle(ctx, cb)
-                Kind.SONG -> drawSong(ctx, cb)
+                Kind.IDLE -> if (musicIdle()) drawMusicIdle(ctx, cb, r) else drawIdle(ctx, cb)
+                Kind.SONG -> drawSong(ctx, cb, r)
             }
             ctx.popOpacity()
             ctx.popTransform()
@@ -285,12 +296,13 @@ class DynamicIslandModule : Module() {
         }
     }
 
-    private fun drawMusicIdle(ctx: GuiCanvas, b: LayoutBounds) {
+    private fun drawMusicIdle(ctx: GuiCanvas, b: LayoutBounds, radius: Float) {
         val snap = PlaybackView.snapshot()
         val t = snap.track ?: return
-        // 胶囊两头是半圆：封面往里挪一点、圆角跟着胶囊的弧度走，看起来才居中
+        // 连续模式与展开状态共用封面比例，外框使用相同的实际圆角大小。
         val cover = LayoutBounds(b.x + 9f, b.y + 5f, 22f, 22f)
-        drawCover(ctx, cover, t.let { CoverCache.trackRounded(it, 0.36f) ?: CoverCache.track(it) })
+        val texture = if(UiStyle.continuous) CoverCache.track(t) else CoverCache.trackRounded(t,0.36f) ?: CoverCache.track(t)
+        drawCover(ctx,cover,texture,if(UiStyle.continuous) radius else cover.width*CoverCache.DEFAULT_CORNER_RATIO)
         val playing = snap.playing
         val tx = cover.right + 9f
         val title = trim(idleTitle(t.name, snap.sourceLabel), 240f, 12f, Theme.FONT_SEMIBOLD)
@@ -298,11 +310,12 @@ class DynamicIslandModule : Module() {
         bars(ctx, b.right - 12f - 14f, b.y + 22f, playing, 11f)
     }
 
-    private fun drawSong(ctx: GuiCanvas, b: LayoutBounds) {
+    private fun drawSong(ctx: GuiCanvas, b: LayoutBounds, radius: Float) {
         val snap = PlaybackView.snapshot()
         val t = snap.track ?: return
         val cover = LayoutBounds(b.x + 10f, b.y + 10f, 48f, 48f)
-        drawCover(ctx, cover, CoverCache.trackRounded(t) ?: CoverCache.track(t))
+        val texture=if(UiStyle.continuous) CoverCache.track(t) else CoverCache.trackRounded(t) ?: CoverCache.track(t)
+        drawCover(ctx,cover,texture,if(UiStyle.continuous) radius else cover.width*CoverCache.DEFAULT_CORNER_RATIO)
         val tx = cover.right + 10f
         val tw = b.right - 14f - tx
 
@@ -334,10 +347,11 @@ class DynamicIslandModule : Module() {
     private fun idleTitle(name: String, source: String): String =
         if (source.isBlank()) name else "$name · $source"
 
-    private fun drawCover(ctx: GuiCanvas, b: LayoutBounds, tex: Texture?) {
+    private fun drawCover(ctx: GuiCanvas, b: LayoutBounds, tex: Texture?, radius: Float) {
         CoverCache.upload()
-        if (tex != null) ctx.drawImage(b, tex)
-        else ctx.drawShape(b, ShapeStyle(Theme.TRACK, b.width * 0.2f))
+        if (tex != null) {
+            if(UiStyle.continuous) ctx.drawRoundedImage(b,tex,radius) else ctx.drawImage(b,tex)
+        } else ctx.drawShape(b,ShapeStyle(Theme.TRACK,radius))
     }
 
     /** 跳动的音浪：3 根小柱子，底部对齐 yBottom */
