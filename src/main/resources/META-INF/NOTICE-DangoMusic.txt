@@ -6,7 +6,7 @@ Port maintained by 1gbc and contributors; authorship is recorded in Git history.
 Project license: GNU GPL version 3; see LICENSE-DangoMusic-GPL-3.0.txt.
 No warranty. This port is not an official Sorihiko, GTNH or music-platform product.
 
-Publication notices updated 2026-11-08. Modified port and feature history:
+Release 0.1.0; publication notices updated 2026-11-08. Modified port and feature history:
 https://github.com/1gbc/DangoMusic-GTNH/blob/port/gtnh-1.7.10/CHANGELOG.md
 
 Bundled third-party works retain their own licenses and copyrights:

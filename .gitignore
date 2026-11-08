@@ -39,3 +39,4 @@ layout.json
 /core/build/
 /tools/apple-native-player/bin/
 /tools/apple-native-player/obj/
+/tools/release/__pycache__/

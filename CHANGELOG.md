@@ -1,15 +1,20 @@
 # 更新记录
 
-## 未发布 · 2026-11-08 · 公开发布准备
+## 0.1.0 · 2026-11-08 · 首个正式发行包
+
+- 正式版本 0.1.0，基于 dev.5.38 功能与许可证整理，保留旧测试版，不新增 Mod 播放功能。
+- 同页提供含项目及五项依赖源码的 source-bundle、框架依赖 Apple Windows x64 可选组件和 SHA-256 校验值；玩家仍安装普通 JAR。
+- 新增 LGPL 库源码编辑/重编译及 Gradle 替换仓库流程，重建重定位标记和合成 codec 检查通过。最终 JAR 使用原版依赖，不含测试标记。
+- Apple 组件重新 publish、启动/自检和十项桥接回归通过；本轮未重做真实账号、GTNH 实机或双客户端测试。详情见 docs/RELEASE_0_1_0.md。
 
 - 按上游最新 main `09c23ff` 与本仓库 5.38 / `ccec40f` 核对实际源码、GPL、依赖和资源，新增发布审查，分开标明已满足、本次修正及发布前未完成事项。
 - 重写中文 README，突出 Sorihiko 原作、非官方移植关系、贡献者和准确功能状态；区分玩家运行环境与 Java 8 编译目标，核对 Releases 实际资产。
 - 新增当前安装指南，说明普通 JAR、可选服务端、Apple 后台 WebView2 播放架构、组件缺失状态、账号保留和内存缓存；旧 Apple 文档标为历史阶段记录。
-- 新增 CREDITS、第三方说明、About/Topics 建议及 Release 草稿；未改变仓库公开状态，未发布正式版本。
+- 新增 CREDITS、第三方说明、About/Topics 建议与完整发布说明；此次按维护者指示发布正式版本，仓库可见性保持不变。
 - 为后续构建补充项目 GPL、模板 MIT、Kotlin/annotations Apache 许可与 NOTICE，保留上游版权；修正 JLayer 旧重定位包名和“未修改”措辞，加入 WebView2 SDK 原始 LICENSE/NOTICE 及 Gradle 构建材料许可。
 - 修正 mcmod.info 的项目链接和非官方移植署名，保留 Sorihiko 原作者。没有新增 Mod 功能或修改账号/配置格式。
-- 最终分发仍需公开可取得的完整对应源码、LGPL 修改重建/替换验证、Apple 最终包许可清单与敏感数据复检，以及音乐分享路线的平台条款/内容授权处理。详见 docs/RELEASE_AUDIT.md。
-- 本轮验证结果与未执行项见 docs/PUBLICATION_VALIDATION.md；历史构建/游戏记录不视为本次重新实测。
+- 正式附件提供同等可获取的项目/依赖源码、LGPL 修改重建/替换工具及验证记录、Apple 文件/许可清单与定向敏感数据复检。音乐分享的平台条款和内容权利仍独立于代码许可，使用限制见 docs/RELEASE_0_1_0.md。
+- 正式发行的验证结果与未执行项见 docs/RELEASE_0_1_0.md；此前的文档预审保留在 docs/PUBLICATION_VALIDATION.md，不视为本次游戏重新实测。
 
 ## 0.1.0-dev.5.38 · 听歌房、续播、播放流畅度与界面风格
 

@@ -1,0 +1,62 @@
+name: Stage release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing immutable release tag (this packager supports 0.1.0)'
+        required: true
+        default: '0.1.0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stage-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate tag
+        run: test "$RELEASE_TAG" = '0.1.0'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build Mod and Windows component
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon -Porg.gradle.java.installations.paths="$JAVA_HOME_8_X64"
+          dotnet publish tools/apple-native-player/AppleNativePlayer.csproj -c Release -r win-x64 --self-contained false -p:EnableWindowsTargeting=true -o staging/apple-player
+          mkdir -p staging/apple-player/licenses
+          cp LICENSE staging/apple-player/licenses/DangoMusic-GPL-3.0.txt
+          cp third-party/webview2/LICENSE.txt staging/apple-player/licenses/WebView2-SDK-LICENSE.txt
+          cp third-party/webview2/NOTICE.txt staging/apple-player/licenses/WebView2-SDK-NOTICE.txt
+          python3 tools/release/download_sources.py staging/dependency-sources
+          python3 tools/release/package_release.py --revision "$(git rev-parse HEAD)" --jar build/libs/dangomusicgtnh-0.1.0.jar --apple-player staging/apple-player --dependency-sources staging/dependency-sources --output staging/assets
+          python3 tools/release/verify_release.py staging/assets
+      - name: Stage draft with assets
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = 'true'
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title 'DangoMusic GTNH Edition 0.1.0' --notes-file docs/RELEASE_0_1_0.md
+          fi
+          gh release upload "$RELEASE_TAG" staging/assets/*

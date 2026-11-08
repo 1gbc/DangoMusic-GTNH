@@ -1,6 +1,6 @@
 # 第三方组件、资源与分发说明
 
-本项目代码沿用上游 [GPL-3.0](LICENSE)，不将第三方字体、库、微软组件、游戏或音乐内容重新声明为 GPL。下表基于 `ccec40f` 的源码、Gradle 解析结果和实际 5.38 JAR；后续依赖升级须复核。本次补充材料日期：2026-11-08。
+本项目代码沿用上游 [GPL-3.0](LICENSE)，不将第三方字体、库、微软组件、游戏或音乐内容重新声明为 GPL。下表基于 `ccec40f` 的源码、Gradle 解析结果和实际 5.38 JAR；后续依赖升级须复核。本次补充材料日期：2026-11-08。0.1.0 未改变这些依赖版本；正式发行的后续验证与源码包见 [发行说明](docs/RELEASE_0_1_0.md)。
 
 ## Mod JAR 中的内容
 
@@ -32,16 +32,16 @@
 | [jorbis-0.0.17-sources.jar](https://repo.maven.apache.org/maven2/org/jcraft/jorbis/0.0.17/jorbis-0.0.17-sources.jar) | `1643dd368b9c160276caf8d1f6a8c0aae43ca5bf49b53348a2a01623641708e5` |
 | [jlayer-1.0.1-sources.jar](https://repo.maven.apache.org/maven2/javazoom/jlayer/1.0.1/jlayer-1.0.1-sources.jar) | `ecde410fc8940ab5d8d5a1d5c585870a3a194f4001701e66a27b8dd8cb7b75ce` |
 
-本次下载并阅读了这两个源码包的 Java 头部；没有完成修改解码器后重新链接/实际播放验收。更多来源见 Kotlin 的固定标签、ZXing 固定标签和 annotations POM 的 SCM；公开二进制前仍需收集完整对应源码，GitHub 自动源码 ZIP 或单独 `-sources.jar` 不自动满足整个组合产物的要求。
+0.1.0 已从两库准确源码重新编译、加入标记后通过替换仓库构建完整 Mod，并验证重定位标记、合成 MP3 解码与 Ogg 容器回环。没有把这些检查称为实际游戏播放或完整 Vorbis 歌曲验收。步骤见 [替换工具说明](tools/release/README.md)。更多来源见 Kotlin 的固定标签、ZXing 固定标签和 annotations POM 的 SCM；公开二进制前仍需收集完整对应源码，GitHub 自动源码 ZIP 或单独 `-sources.jar` 不自动满足整个组合产物的要求。
 
 ## Apple 播放组件
 
-项目自有 C#/JS 代码随本仓库源码提供；它与 Mod 分进程运行。当前没有已审过完整文件清单的公开组件 ZIP，不将以下 SDK 条款扩展到所有微软产品。
+项目自有 C#/JS 代码随本仓库源码提供；它与 Mod 分进程运行。0.1.0 附件为已列明文件清单的 framework-dependent Windows x64 组件，不含 .NET 或完整 WebView2 Runtime；不将以下 SDK 条款扩展到所有微软产品。
 
 - **Microsoft.Web.WebView2 1.0.4314.35 SDK**：本机 NuGet 包 `LICENSE.txt` 是带 Microsoft 非背书条件的 BSD 风格许可，允许满足通知条件的源/二进制再分发；其 `NOTICE.txt` 列出其他材料。原样副本在 [third-party/webview2](third-party/webview2/)，发布组件必须同时携带两者。源码 `.csproj` 的版本与这些副本对应。
 - **WebView2 Evergreen Runtime**：与 SDK 不同，属于微软单独提供和更新的浏览器运行时，遵循自己的条款。当前文档让用户从[微软入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)安装，不把完整 Runtime 再打进 ZIP。分发方式见[微软文档](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)。
 - **.NET 8 / Windows Desktop Runtime**：框架依赖包要求用户安装；自包含包会携带实际运行库，必须基于该次 publish 的 `.deps.json`、运行库版本与文件清单收集对应 LICENSE 和 ThirdPartyNotices，不能只放 WebView2 SDK 许可。本次没有重新构建或打包组件。
-- Apple 官方网页、MusicKit 脚本与受保护内容不作为项目源码或静态资源再分发。账号资料、浏览器缓存及诊断日志不进入组件 ZIP。没有核准完整公开发行清单前，不发布组件。
+- Apple 官方网页、MusicKit 脚本与受保护内容不作为项目源码或静态资源再分发。账号资料、浏览器缓存及诊断日志不进入组件 ZIP。0.1.0 清单与文件校验位于组件 ZIP 内，未包含账号、浏览器缓存或音频。
 
 ## 构建与宿主提供的内容
 
