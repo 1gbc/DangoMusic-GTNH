@@ -272,15 +272,17 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
 
     private fun drawVolume(bar: LayoutBounds, cy: Float) {
         if (UiStyle.continuous) {
-            val inset = if (me.sorihiko.dangomusicgtnh.music.MusicSources.selected == MusicSource.NETEASE) 70f else 14f
-            volumeButton = LayoutBounds(bar.right - inset - 60f, cy - 16f, 60f, 32f)
+            val inset = if (screen.canOpenLyrics) 70f else 13f
+            val speakerBox=LayoutBounds(bar.right-inset-32f,cy-16f,32f,32f)
             val volume = MusicPlayer.volume.coerceIn(0f, 1f)
             val color = if (volume < 0.1f || volumeOpen) RED else Theme.TEXT_SECONDARY
-            val k = button(LayoutBounds(volumeButton.x,cy-16f,32f,32f),volumeA)
-            PlayerIcons.speaker(ui.ctx, volumeButton.x + 14f, cy, color, 0.75f*k,
-                if (volume > 0.5f) 2 else 1, volume <= 0f)
             val percent = "${(volume * 100f).roundToInt()}%"
-            ui.text(percent, volumeButton.right - 7f - ui.width(percent, 10f, Theme.FONT_MEDIUM), cy - 4.4f, 10f, color, Theme.FONT_MEDIUM)
+            val textX=speakerBox.x-2f-ui.width(percent,10f,Theme.FONT_MEDIUM)
+            volumeButton=LayoutBounds(textX-6f,cy-16f,speakerBox.right-textX+6f,32f)
+            val k=button(volumeButton,volumeA)
+            ui.text(percent,textX,cy-5f,10f,color,Theme.FONT_MEDIUM)
+            PlayerIcons.speaker(ui.ctx,speakerBox.x+16f,cy,color,0.75f*k,
+                if(volume>0.5f) 2 else 1,volume<=0f)
             ui.hits += volumeButton to { val opening = !volumeOpen; dismissMenu(); volumeOpen = opening }
             return
         }

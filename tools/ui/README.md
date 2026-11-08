@@ -44,3 +44,13 @@ Local validation for dev.4: normal Gradle build; actual GPU path rendering at
 open/close/reversal at 30/60/144 FPS; horizontal and classic vertical volume
 click/drag/release checks. These are isolated rendering/input checks, not a new
 real-account playback or game-session test.
+
+Dev.5 extends the same vector path renderer to all continuous-mode sidebar
+controls. Complex closed paths adapt their flattening tolerance to the shader's
+segment capacity; they are never truncated or drawn as overlapping short strokes.
+Island covers use the original image and the GPU image mask, with the outer
+panel's current radius. The image shader deliberately matches the glass shader's
+corner function and coverage rule; ordinary images keep radius zero and their
+original alpha. Local GPU comparisons at four radii differed by at most one
+8-bit alpha level. Volume checks cover the classic anchor, percentage-left
+layout, whole-group hover, clicking the number, and horizontal dragging.

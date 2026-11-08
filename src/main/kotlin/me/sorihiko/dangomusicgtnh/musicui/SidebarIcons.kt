@@ -2,83 +2,67 @@ package me.sorihiko.dangomusicgtnh.musicui
 
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.RenderContext
-import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
+import me.sorihiko.dangomusicgtnh.ui.VectorIcon
 import me.sorihiko.dangomusicgtnh.utils.Color
-import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.sin
 
-/** A consistent 16px navigation icon set, independent of installed symbol fonts. */
+/** Sidebar paths use the same 24px canvas, stroke and single-pass coverage as playback icons. */
 internal object SidebarIcons {
-    fun draw(ctx: RenderContext, glyph: String, cx: Float, cy: Float, color: Color) {
-        val stroke = 1.5f
-        fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
-            ctx.pushTranslate(cx + x1, cy + y1, 0f)
-            ctx.pushRotate(Math.toDegrees(atan2(y2 - y1, x2 - x1).toDouble()).toFloat(), 0f, 0f, 1f)
-            ctx.drawShape(LayoutBounds(-stroke / 2f, -stroke / 2f, hypot(x2 - x1, y2 - y1) + stroke, stroke), ShapeStyle(color, stroke / 2f))
-            ctx.popTransform()
-            ctx.popTransform()
+    private val home=VectorIcon.path {
+        move(3.0,10.0); line(12.0,3.0); line(21.0,10.0)
+        move(5.0,9.0); line(5.0,21.0); line(10.0,21.0); line(10.0,14.0)
+        line(14.0,14.0); line(14.0,21.0); line(19.0,21.0); line(19.0,9.0)
+    }
+    private val chart=VectorIcon.path {
+        roundRect(3.0,12.0,4.0,9.0,1.5); roundRect(10.0,3.0,4.0,18.0,1.5); roundRect(17.0,8.0,4.0,13.0,1.5)
+    }
+    private val music=VectorIcon.path {
+        move(8.0,17.0); line(8.0,6.0); line(19.0,3.0); line(19.0,14.0)
+        circle(5.5,18.0,2.5); circle(16.5,15.0,2.5)
+    }
+    private val people=VectorIcon.path {
+        circle(8.0,7.0,2.5); circle(17.0,8.0,2.2)
+        move(2.5,19.0); curve(2.5,12.0,13.5,12.0,13.5,19.0); line(13.5,21.0); line(2.5,21.0); close()
+        move(16.0,14.0); curve(19.5,13.8,22.0,15.5,22.0,19.0); line(22.0,21.0); line(17.0,21.0)
+    }
+    private val cloud=VectorIcon.path {
+        move(6.0,20.0); curve(0.0,20.0,0.0,11.0,6.0,11.0)
+        curve(5.0,3.0,18.0,2.0,18.0,10.0); curve(25.0,10.0,25.0,20.0,18.0,20.0); close()
+    }
+    private val settings=VectorIcon.path {
+        for(i in 0 until 32) {
+            val a=-Math.PI/2+i*Math.PI/16
+            val r=if(i%4==1 || i%4==2) 9.5 else 7.5
+            val x=12+cos(a)*r; val y=12+sin(a)*r
+            if(i==0) move(x,y) else line(x,y)
         }
-        fun outline(x: Float, y: Float, w: Float, h: Float, r: Float) =
-            ctx.drawShape(LayoutBounds(cx + x, cy + y, w, h), ShapeStyle(Color.TRANSPARENT, r, stroke, color))
-        fun dot(x: Float, y: Float, r: Float) =
-            ctx.drawShape(LayoutBounds(cx + x - r, cy + y - r, r * 2f, r * 2f), ShapeStyle(color, r))
-        fun arc(x: Float, y: Float, r: Float, from: Double, to: Double) {
-            for (i in 0 until 8) {
-                val a = Math.toRadians(from + (to - from) * i / 8)
-                val b = Math.toRadians(from + (to - from) * (i + 1) / 8)
-                line(x + (cos(a) * r).toFloat(), y + (sin(a) * r).toFloat(),
-                    x + (cos(b) * r).toFloat(), y + (sin(b) * r).toFloat())
-            }
+        close(); circle(12.0,12.0,3.0)
+    }
+    private val heart=VectorIcon.path {
+        move(12.0,21.0); curve(9.5,18.0,2.5,13.5,2.5,8.0)
+        curve(2.5,2.5,9.0,1.5,12.0,6.5); curve(15.0,1.5,21.5,2.5,21.5,8.0)
+        curve(21.5,13.5,14.5,18.0,12.0,21.0); close()
+    }
+    private val playlist=VectorIcon.path {
+        roundRect(4.0,3.0,16.0,18.0,3.0)
+        for(y in listOf(7.0,12.0,17.0)) { move(8.0,y); line(16.0,y) }
+    }
+    private val search=VectorIcon.path { circle(10.0,10.0,6.5); move(14.7,14.7); line(21.0,21.0) }
+    private val user=VectorIcon.path {
+        circle(12.0,7.5,3.0); move(4.0,21.0); curve(4.0,11.0,20.0,11.0,20.0,21.0)
+    }
+    private val down=VectorIcon.path { move(6.0,9.0); line(12.0,15.0); line(18.0,9.0) }
+    private val up=VectorIcon.path { move(6.0,15.0); line(12.0,9.0); line(18.0,15.0) }
+    private val swap=VectorIcon.path {
+        move(3.0,7.0); line(21.0,7.0); move(17.0,3.0); line(21.0,7.0); line(17.0,11.0)
+        move(21.0,17.0); line(3.0,17.0); move(7.0,13.0); line(3.0,17.0); line(7.0,21.0)
+    }
+    fun draw(ctx: RenderContext,glyph: String,cx: Float,cy: Float,color: Color,size: Float=20f) {
+        val path=when(glyph) {
+            "⌂"->home; "▤"->chart; "♫"->music; "♬"->people; "☁"->cloud; "⚙"->settings; "♥"->heart
+            "search"->search; "user"->user; "up"->up; "down"->down; "⇄"->swap; else->playlist
         }
-        when (glyph) {
-            "⌂" -> {
-                line(-7f, -0.5f, 0f, -6.5f); line(0f, -6.5f, 7f, -0.5f)
-                line(-5.5f, -1f, -5.5f, 6f); line(5.5f, -1f, 5.5f, 6f)
-                line(-5.5f, 6f, -1.8f, 6f); line(1.8f, 6f, 5.5f, 6f)
-                line(-1.8f, 6f, -1.8f, 1f); line(-1.8f, 1f, 1.8f, 1f); line(1.8f, 1f, 1.8f, 6f)
-            }
-            "▤" -> {
-                outline(-6.5f, 0f, 3f, 6f, 0.7f)
-                outline(-1.5f, -6f, 3f, 12f, 0.7f)
-                outline(3.5f, -3f, 3f, 9f, 0.7f)
-            }
-            "♫" -> {
-                line(-3f, -4f, -3f, 4.5f); line(4.5f, -6f, 4.5f, 2.5f)
-                line(-3f, -4f, 4.5f, -6f)
-                dot(-4.5f, 4.5f, 2.3f); dot(3f, 2.5f, 2.3f)
-            }
-            "♬" -> {
-                outline(-5.5f, -6f, 4f, 4f, 2f)
-                outline(2f, -4.5f, 3.5f, 3.5f, 1.75f)
-                outline(-7f, 1f, 7.5f, 5f, 2.5f)
-                line(3f, 1f, 5.5f, 1f); line(5.5f, 1f, 7f, 3f); line(7f, 3f, 7f, 6f); line(7f, 6f, 3f, 6f)
-            }
-            "☁" -> {
-                line(-4f, 5f, 4f, 5f)
-                arc(4f, 1.5f, 3.5f, 90.0, -90.0)
-                arc(0f, -2f, 4f, 0.0, -180.0)
-                arc(-4f, 1.5f, 3.5f, -90.0, -270.0)
-            }
-            "⚙" -> {
-                outline(-4.5f, -4.5f, 9f, 9f, 4.5f)
-                outline(-1.5f, -1.5f, 3f, 3f, 1.5f)
-                for (i in 0..7) {
-                    val angle = i * Math.PI / 4
-                    line((cos(angle) * 5).toFloat(), (sin(angle) * 5).toFloat(),
-                        (cos(angle) * 7).toFloat(), (sin(angle) * 7).toFloat())
-                }
-            }
-            "♥" -> {
-                arc(-3f, -2f, 3f, 0.0, -210.0)
-                line(-5.6f, -0.5f, 0f, 6f); line(0f, 6f, 5.6f, -0.5f)
-                arc(3f, -2f, 3f, 30.0, -180.0)
-            }
-            else -> {
-                outline(-6f, -6f, 12f, 12f, 2f)
-                for (y in listOf(-3f, 0f, 3f)) line(-3f, y, 3f, y)
-            }
-        }
+        ctx.drawIcon(LayoutBounds(cx-size/2f,cy-size/2f,size,size),path,color)
     }
 }

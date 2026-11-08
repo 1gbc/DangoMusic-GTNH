@@ -149,8 +149,11 @@ internal class Sidebar(private val screen: MusicScreen) {
         if (fc > 0.01f) ctx.drawShape(box, ShapeStyle(Color.TRANSPARENT, br, if (modern) 0.75f else 1f + 0.4f * fc, RED.copy(a = fc * if (modern) 0.55f else 1f)))
         val glass = mix(Theme.TEXT_SECONDARY, RED, fc)
         val my = y + searchH / 2f
-        ctx.drawShape(LayoutBounds(x + 11f, my - 6f, 9f, 9f), ShapeStyle(Color(0f, 0f, 0f, 0f), 4.5f, 1.4f, glass))
-        ctx.drawShape(LayoutBounds(x + 18.5f, my + 2f, 4.5f, 1.6f), ShapeStyle(glass, 0.8f))
+        if (modern) SidebarIcons.draw(ctx,"search",x+17f,my,glass,18f)
+        else {
+            ctx.drawShape(LayoutBounds(x + 11f, my - 6f, 9f, 9f), ShapeStyle(Color(0f, 0f, 0f, 0f), 4.5f, 1.4f, glass))
+            ctx.drawShape(LayoutBounds(x + 18.5f, my + 2f, 4.5f, 1.6f), ShapeStyle(glass, 0.8f))
+        }
         val caret = if (searchFocused && caretVisible()) "|" else ""
         val maxW = searchRect.right - 10f - (x + 30f)
         if (searchText.isEmpty()) {
@@ -336,7 +339,7 @@ internal class Sidebar(private val screen: MusicScreen) {
                 val chip = LayoutBounds(b.right - 28f, b.y, 28f, 40f)
                 chipRect = chip
                 menuRects += chip
-                Theme.drawChevron(ui.ctx, chip.x + 14f, chip.y + 20f, 7f, if (menuOpen) 270f else 90f, Theme.TEXT_SECONDARY)
+                SidebarIcons.draw(ui.ctx,if(menuOpen) "up" else "down",chip.x+14f,chip.y+20f,Theme.TEXT_SECONDARY,12f)
                 ui.hits += chip to { menuOpen = !menuOpen }
                 ui.hits += LayoutBounds(b.x, b.y, b.width - 28f, b.height) to { screen.login.open() }
                 return
@@ -368,7 +371,8 @@ internal class Sidebar(private val screen: MusicScreen) {
         val chip = LayoutBounds(ub.right - chipW - 6f, ub.y + 9f, chipW, 22f)
         ui.card(chip, if (menuOpen || ui.hover(chip)) Theme.CARD_HOVER else Theme.CARD, 7f)
         ui.text(chipLabel, chip.x + 8f, chip.y + 7f, 10f, if (menuOpen) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
-        ui.icon("⇄", chip.right - 10f, chip.y + 11f, 10f, Theme.TEXT_SECONDARY)
+        if(UiStyle.continuous) SidebarIcons.draw(ui.ctx,"⇄",chip.right-10f,chip.y+11f,Theme.TEXT_SECONDARY,12f)
+        else ui.icon("⇄", chip.right - 10f, chip.y + 11f, 10f, Theme.TEXT_SECONDARY)
         chipRect = chip
         menuRects += chip
         ui.hits += chip to { menuOpen = !menuOpen }
@@ -392,7 +396,8 @@ internal class Sidebar(private val screen: MusicScreen) {
             val lb = LayoutBounds(ub.x + 2f, ub.y + 3f, min(chip.x - 6f, av.right + 10f + ui.width(label, 12f, Theme.FONT_SEMIBOLD) + 10f) - (ub.x + 2f), 34f)
             if (ui.hover(lb)) ui.card(lb, Theme.CARD_HOVER, 10f)
             ui.ctx.drawShape(av, ShapeStyle(Theme.TRACK, 14f))
-            ui.icon("?", av.x + 14f, av.y + 14f, 12f, Theme.TEXT_SECONDARY)
+            if(UiStyle.continuous) SidebarIcons.draw(ui.ctx,"user",av.x+14f,av.y+14f,Theme.TEXT_SECONDARY,18f)
+            else ui.icon("?", av.x + 14f, av.y + 14f, 12f, Theme.TEXT_SECONDARY)
             ui.text(label, av.right + 10f, ub.y + 14f, 12f, RED, Theme.FONT_SEMIBOLD)
             ui.hits += lb to {
                 menuOpen = false

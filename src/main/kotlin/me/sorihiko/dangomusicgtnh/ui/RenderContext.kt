@@ -10,6 +10,7 @@ interface RenderContext {
     fun drawShape(bounds: LayoutBounds, style: ShapeStyle = ShapeStyle())
     fun drawText(text: String, x: Float, y: Float, style: FontStyle)
     fun drawImage(bounds: LayoutBounds, image: Texture)
+    fun drawRoundedImage(bounds: LayoutBounds,image: Texture,radius: Float)
     fun drawIcon(bounds: LayoutBounds, icon: VectorIcon, color: Color)
 
     /**

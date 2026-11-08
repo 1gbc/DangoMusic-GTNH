@@ -268,8 +268,8 @@ class DynamicIslandModule : Module() {
             mt.clip = pill
             ctx.pushOpacity(contentAlpha)
             when (shown) {
-                Kind.IDLE -> if (musicIdle()) drawMusicIdle(ctx, cb) else drawIdle(ctx, cb)
-                Kind.SONG -> drawSong(ctx, cb)
+                Kind.IDLE -> if (musicIdle()) drawMusicIdle(ctx, cb, r) else drawIdle(ctx, cb)
+                Kind.SONG -> drawSong(ctx, cb, r)
             }
             ctx.popOpacity()
             ctx.popTransform()
@@ -296,14 +296,13 @@ class DynamicIslandModule : Module() {
         }
     }
 
-    private fun drawMusicIdle(ctx: GuiCanvas, b: LayoutBounds) {
+    private fun drawMusicIdle(ctx: GuiCanvas, b: LayoutBounds, radius: Float) {
         val snap = PlaybackView.snapshot()
         val t = snap.track ?: return
         // 连续模式与展开状态共用封面比例，外框使用相同的实际圆角大小。
         val cover = LayoutBounds(b.x + 9f, b.y + 5f, 22f, 22f)
-        val ratio = if (UiStyle.continuous) CoverCache.DEFAULT_CORNER_RATIO else 0.36f
-        val texture = CoverCache.trackRounded(t, ratio) ?: if (UiStyle.continuous) null else CoverCache.track(t)
-        drawCover(ctx, cover, texture)
+        val texture = if(UiStyle.continuous) CoverCache.track(t) else CoverCache.trackRounded(t,0.36f) ?: CoverCache.track(t)
+        drawCover(ctx,cover,texture,if(UiStyle.continuous) radius else cover.width*CoverCache.DEFAULT_CORNER_RATIO)
         val playing = snap.playing
         val tx = cover.right + 9f
         val title = trim(idleTitle(t.name, snap.sourceLabel), 240f, 12f, Theme.FONT_SEMIBOLD)
@@ -311,11 +310,12 @@ class DynamicIslandModule : Module() {
         bars(ctx, b.right - 12f - 14f, b.y + 22f, playing, 11f)
     }
 
-    private fun drawSong(ctx: GuiCanvas, b: LayoutBounds) {
+    private fun drawSong(ctx: GuiCanvas, b: LayoutBounds, radius: Float) {
         val snap = PlaybackView.snapshot()
         val t = snap.track ?: return
         val cover = LayoutBounds(b.x + 10f, b.y + 10f, 48f, 48f)
-        drawCover(ctx, cover, CoverCache.trackRounded(t) ?: if (UiStyle.continuous) null else CoverCache.track(t))
+        val texture=if(UiStyle.continuous) CoverCache.track(t) else CoverCache.trackRounded(t) ?: CoverCache.track(t)
+        drawCover(ctx,cover,texture,if(UiStyle.continuous) radius else cover.width*CoverCache.DEFAULT_CORNER_RATIO)
         val tx = cover.right + 10f
         val tw = b.right - 14f - tx
 
@@ -347,10 +347,11 @@ class DynamicIslandModule : Module() {
     private fun idleTitle(name: String, source: String): String =
         if (source.isBlank()) name else "$name · $source"
 
-    private fun drawCover(ctx: GuiCanvas, b: LayoutBounds, tex: Texture?, ratio: Float = CoverCache.DEFAULT_CORNER_RATIO) {
+    private fun drawCover(ctx: GuiCanvas, b: LayoutBounds, tex: Texture?, radius: Float) {
         CoverCache.upload()
-        if (tex != null) ctx.drawImage(b, tex)
-        else ctx.drawShape(b, ShapeStyle(Theme.TRACK, b.width * ratio))
+        if (tex != null) {
+            if(UiStyle.continuous) ctx.drawRoundedImage(b,tex,radius) else ctx.drawImage(b,tex)
+        } else ctx.drawShape(b,ShapeStyle(Theme.TRACK,radius))
     }
 
     /** 跳动的音浪：3 根小柱子，底部对齐 yBottom */
