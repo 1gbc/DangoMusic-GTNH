@@ -290,7 +290,7 @@ object NearbyAudioPlayer {
 
                 if (out == null) {
                     val format = AudioFormat(frame.rate.toFloat(), 16, frame.channels, true, false)
-                    val opened = JavaSoundOutput(openLine(format, frame.rate * frame.channels * 2 / 4))
+                    val opened = JavaSoundOutput(openLine(format, MusicPlayer.lineBufferBytes(frame.rate, frame.channels)))  // 跟本地播放用同一个音频缓冲设置
                     synchronized(this) {
                         if (gen != generation) {
                             opened.close()

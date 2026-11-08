@@ -178,6 +178,8 @@ data class Welcome(
     val maxGroup: Int = 8,
     val allowLyrics: Boolean = true,
     val relay: Boolean = false,
+    /** Optional server capabilities, e.g. "rooms" (remembers each player's room). Missing on older servers. */
+    val features: List<String>? = null,
 )
 
 data class Prefs(
@@ -259,6 +261,8 @@ data class GroupUi(
     val groups: List<GroupSummary> = emptyList(),
     /** All groups this player is a member of, including offline members. */
     val groupsJoined: List<GroupView> = emptyList(),
+    /** Room this player was last listening to (remembered by the server); clients rejoin it after reconnecting. */
+    val resumeGroup: String = "",
 )
 
 data class GroupView(

@@ -33,6 +33,8 @@ data class GroupLeaveResult(
  */
 object MusicGroups {
     private val groups = LinkedHashMap<String, MusicGroup>()
+    /** 每个玩家最后收听的房间（显式选择 / 加入 / 创建时记下，离开或取消收听时清掉）；重进服务器自动回到这里 */
+    private val active = LinkedHashMap<UUID, String>()
     private var file: File? = null
     private val gson = GsonBuilder().setPrettyPrinting().create()
 
@@ -44,7 +46,7 @@ object MusicGroups {
         val names: Map<String, String>? = null,
     )
 
-    private data class Snapshot(val groups: List<StoredGroup>? = null)
+    private data class Snapshot(val groups: List<StoredGroup>? = null, val active: Map<String, String>? = null)
 
     @Synchronized
     fun attach(storeFile: File) {
@@ -63,8 +65,10 @@ object MusicGroups {
 
     @Synchronized
     fun create(host: UUID, hostName: String, rawName: String, maxMembers: Int): String? {
-        val name = clean(rawName) ?: return "群组名需要 1–24 个字符"
-        if (groups.values.any { it.name.equals(name, ignoreCase = true) }) return "同名群组已存在"
+        val name = clean(rawName) ?: return "听歌房名需要 1–24 个字符"
+        // 每人只能拥有一个听歌房（以前建的多个保留，但不能再新建）
+        groups.values.firstOrNull { it.host == host }?.let { return "你已经有听歌房「${it.name}」了，每人只能建一个" }
+        if (groups.values.any { it.name.equals(name, ignoreCase = true) }) return "同名听歌房已存在"
         val group = MusicGroup(
             id = UUID.randomUUID().toString(),
             name = name,
@@ -73,6 +77,7 @@ object MusicGroups {
         group.members += host
         group.names[host] = hostName
         groups[group.id] = group
+        active[host] = group.id
         persist()
         return null
     }
@@ -86,6 +91,7 @@ object MusicGroups {
         if (group.members.size >= maxMembers) return "群组已满（$maxMembers 人）"
         group.members += player
         group.names[player] = playerName
+        active[player] = group.id
         persist()
         return null
     }
@@ -100,12 +106,14 @@ object MusicGroups {
         val group = resolveGroup(player, ref) ?: return null
         group.members.remove(player)
         group.names.remove(player)
+        if (active[player] == group.id) active.remove(player)
         var newHost: UUID? = null
         var disbanded = false
         if (group.host == player) {
             val next = group.members.firstOrNull()
             if (next == null) {
                 groups.remove(group.id)
+                active.values.removeIf { it == group.id }
                 disbanded = true
             } else {
                 group.host = next
@@ -146,6 +154,23 @@ object MusicGroups {
     @Synchronized
     fun all(): List<MusicGroup> = groups.values.toList()
 
+    /** 玩家显式选择收听某个房间（[groupId] 为空 = 取消收听）；只记成员所在的房间 */
+    @Synchronized
+    fun setActive(player: UUID, groupId: String) {
+        val changed = if (groupId.isBlank()) active.remove(player) != null
+        else {
+            val group = groups[groupId] ?: return
+            if (player !in group.members || active[player] == groupId) return
+            active[player] = groupId
+            true
+        }
+        if (changed) persist()
+    }
+
+    /** 重进服务器时建议自动回到的房间（仍是成员才算） */
+    @Synchronized
+    fun activeOf(player: UUID): String? = active[player]?.takeIf { id -> groups[id]?.members?.contains(player) == true }
+
     private fun resolveGroup(player: UUID, ref: String?): MusicGroup? {
         val owned = groups.values.filter { player in it.members }
         if (ref.isNullOrBlank()) return owned.singleOrNull()
@@ -182,6 +207,11 @@ object MusicGroups {
                 for (member in members) names.putIfAbsent(member, member.toString().take(8))
                 groups[id] = MusicGroup(id, name, host, members, names)
             }
+            active.clear()
+            for ((key, value) in snapshot.active.orEmpty()) {
+                val uuid = runCatching { UUID.fromString(key) }.getOrNull() ?: continue
+                if (groups[value]?.members?.contains(uuid) == true) active[uuid] = value
+            }
             DangoLogger.info("DangoMusic groups loaded: {}", groups.size)
         } catch (e: Exception) {
             DangoLogger.warn("DangoMusic groups load failed: {}", e.toString())
@@ -200,7 +230,7 @@ object MusicGroups {
                     members = group.members.map(UUID::toString),
                     names = group.names.mapKeys { it.key.toString() },
                 )
-            })
+            }, active.mapKeys { it.key.toString() })
             val tmp = File(f.parentFile, f.name + ".tmp")
             Files.write(tmp.toPath(), gson.toJson(snapshot).toByteArray(StandardCharsets.UTF_8))
             try {

@@ -37,9 +37,19 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     private enum class Ctl { TOGGLE, SLIDER, KEY, LANGUAGE, COLOR, FONT, CHOICE }
 
     /** scale：显示值 = 实际值 × scale（百分比的选项是 100），手动输入时按显示值换算回去 */
+    /** 彩虹速度只在“彩虹”配色下有用，文字颜色只在“自定义颜色”下有用；其他配色时这两行变暗 */
+    private fun lyricColorConds(m: LyricsModule): Map<String, () -> Boolean> {
+        val colors = m.lyricColors
+        return mapOf(
+            "rainbowSpeed" to { colors.value == 3 },
+            "textColor" to { colors.value == 0 },
+        )
+    }
+
     private class Row(
         val label: String, val desc: String, val value: Any, val ctl: Ctl,
-        val dep: BooleanValue?, val fmt: (Any) -> String, val scale: Float = 1f, val key: String = "",
+        /** 这一行什么时候有意义；不满足时整行变暗（比如彩虹速度只在彩虹配色下有用） */
+        val dep: (() -> Boolean)?, val fmt: (Any) -> String, val scale: Float = 1f, val key: String = "",
     )
 
     /** owner：所属模块（模块关掉时整组变暗）；toggle：组标题右边显示模块总开关 */
@@ -50,6 +60,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         "lyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "ktvLyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "audioOutput" to listOf("Auto", "Java Sound", "Game audio (OpenAL)"),
+        "uiStyle" to listOf("Classic", "Continuous corners"),
         "shareQuality" to listOf("Standard (128k)", "Higher (192k)", "High (320k)"),
     )
 
@@ -218,7 +229,11 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val mm = DangoMusic.instance.moduleManager
 
         /** 一个模块的设置；take(...) 按名字取出若干行，剩下的最后放进 "Other" */
-        class Src(val m: Module, val deps: Map<String, String> = emptyMap(), val fmts: Map<String, (Any) -> String> = emptyMap()) {
+        class Src(
+            val m: Module, val deps: Map<String, String> = emptyMap(), val fmts: Map<String, (Any) -> String> = emptyMap(),
+            /** 依赖不是某个开关、而是某个选项取值的行：设置名 → 什么时候有意义 */
+            val conds: Map<String, () -> Boolean> = emptyMap(),
+        ) {
             val all = fieldsOf(m)
             val left = LinkedHashMap(all)
             fun take(names: List<String>? = null): List<Row> = (names ?: left.keys.toList()).mapNotNull { k ->
@@ -233,7 +248,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                     v is IntValue || v is FloatValue -> Ctl.SLIDER
                     else -> return@mapNotNull null
                 }
-                val dep = deps[k]?.let { all[it]?.second as? BooleanValue }
+                val dep: (() -> Boolean)? = conds[k] ?: deps[k]?.let { all[it]?.second as? BooleanValue }?.let { b -> { b.get() } }
                 // 歌词字体这一行同时管"平滑字体"开关（像素字体 = 关）
                 val value = if (ctl == Ctl.FONT) FontChoice(v as TextValue, all.getValue("smoothFont").second as BooleanValue) else v
                 Row(ann.name.ifEmpty { k }, ann.desc, value, ctl, dep, fmts[k] ?: ::fmtValue, if (k in percentKeys) 100f else 1f, k)
@@ -258,6 +273,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 "glowRadius" to ::percent,
                 "danceOffset" to { v: Any -> "${(v as IntValue).value} ms" },
             ),
+            conds = lyricColorConds(mm.get(LyricsModule::class.java)),
         )
         ly.left.remove("smoothFont")   // 合进了"歌词字体"那一行
         val lyrics = mutableListOf(
@@ -296,7 +312,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 island.take(listOf("mergeCoverProgress", "posX", "posY")) + island.take()),
             Group("Cover progress HUD", "Separate position when not merged", card.m, true,
                 card.take(listOf("posX", "posY")) + card.take()),
-            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "audioOutput", "language"))),
+            Group("Player", "Playback", player.m, false, player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "audioBuffer", "resumeSession", "audioOutput", "uiStyle", "language"))),
             Group("Environment audio", "Sound around you", player.m, false, environment),
             Group("Hotkeys", "Click, then press a key · Backspace clears", player.m, false, player.take()),
             nowPlaying,
@@ -307,8 +323,10 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             Group("Nearby lyrics", "Line projection over the host", nearby.m, false,
                 nearby.take(listOf("shareLyrics", "seeLyrics"))),
             Group("Music group", "Distance-free listening", nearby.m, false,
-                nearby.take(listOf("hearGroup", "shareGroup", "groupTakeover", "resumeAfterGroup"))),
+                nearby.take(listOf("shareGroup", "groupTakeover", "resumeAfterGroup"))),
         )
+        // 收听听歌房由进出房间决定，不再单独给开关；“在房间里放歌时共享”只在这里保留一份（听歌房页面不再重复）
+        nearby.left.remove("hearGroup")
         nearby.take().let { if (it.isNotEmpty()) nearbyGroups += Group("Other", "More", nearby.m, false, it) }
         return listOf(lyrics, music, nearbyGroups)
     }
@@ -615,7 +633,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         for (r in g.rows) {
             ctx.drawShape(LayoutBounds(x, y, iw, 1f), ShapeStyle(Color(1f, 1f, 1f, 0.06f)))
             // 依赖的开关 / 整个模块关掉时变暗：渐变过去，不是一下子变
-            val dim = moduleOff || (r.dep != null && !r.dep.get())
+            val dim = moduleOff || (r.dep != null && !r.dep.invoke())
             val target = if (dim) 0.4f else 1f
             val alpha = rowFade.getOrPut(r) { Spring(170f, 26f, target) }.tick(target).coerceIn(0.4f, 1f)
             val faded = alpha < 0.999f

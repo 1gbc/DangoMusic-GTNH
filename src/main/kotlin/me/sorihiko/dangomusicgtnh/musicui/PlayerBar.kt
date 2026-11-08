@@ -157,6 +157,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             modeOpen = opening
             if (opening) modeSlider = Spring(300f, 30f)
         }
+        if (mode == MusicPlayer.Mode.REPEAT_ONE) repeatOneMark(modeButton.x + 16f, cy)
         val stopScale = button(stopB, stopA)
         ui.icon("■", stopB.x + stopB.width / 2f, cy, 12f * stopScale, Theme.TEXT_PRIMARY)
         ui.hits += stopB to { stopA.press.v -= 7f; PlaybackView.stop() }
@@ -224,18 +225,27 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         if (me.sorihiko.dangomusicgtnh.music.MusicSources.selected == MusicSource.NETEASE) drawQuality(bar, ry) else if (qualityOpen) dismissMenu()
         if (volumeOpen) drawVolumeMenu(bar)
         if (modeOpen) {
-            modeMenu = LayoutBounds(modeButton.x, bar.y - 96f, modeButton.width, 92f)
+            // 图标 + 文字，一眼能看出是哪种播放模式
+            modeMenu = LayoutBounds(modeButton.x, bar.y - 96f, 112f, 92f)
             ui.ctx.drawGlass(modeMenu, BAR_GLASS.copy(radius = 11f))
             val sliderY = modeMenu.y + 4f + modeSlider.tick(mode.ordinal.toFloat()).coerceIn(0f, 2f) * 29f
             ui.card(LayoutBounds(modeMenu.x + 3f, sliderY, modeMenu.width - 6f, 26f), RED, 7f)
             for ((i, option) in MusicPlayer.Mode.values().withIndex()) {
                 val row = LayoutBounds(modeMenu.x + 3f, modeMenu.y + 4f + i * 29f, modeMenu.width - 6f, 26f)
                 if (option != mode && ui.hover(row)) ui.card(row, Theme.CARD_HOVER.copy(a = 0.35f), 7f)
-                ui.icon(option.glyph, row.x + row.width / 2f, row.y + row.height / 2f, 15f, Theme.TEXT_PRIMARY)
+                ui.icon(option.glyph, row.x + 15f, row.y + row.height / 2f, 15f, Theme.TEXT_PRIMARY)
+                if (option == MusicPlayer.Mode.REPEAT_ONE) repeatOneMark(row.x + 15f, row.y + row.height / 2f)
+                ui.text(I18n.text(option.label), row.x + 30f, row.y + row.height / 2f - 6f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
                 ui.hits += row to { module.selectPlaybackMode(option) }
             }
             ui.hits += modeMenu to {}
         }
+    }
+
+    /** 单曲循环：在循环箭头中间叠一个小“1” */
+    private fun repeatOneMark(cx: Float, cy: Float) {
+        val w = ui.width("1", 7f, Theme.FONT_SEMIBOLD)
+        ui.text("1", cx - w / 2f, cy - 4f, 7f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
     }
 
     private fun drawVolume(bar: LayoutBounds, cy: Float) {
@@ -245,6 +255,11 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             ui.card(volumeButton, if (volumeOpen) RED.copy(a = 0.3f) else Theme.CARD_HOVER, 9f)
         }
         speaker(volumeButton.x + 9.5f, cy, MusicPlayer.volume > 0f)
+        // 音量百分比：音量很低时（比如 3%）一眼就能看出来，不会以为没声音
+        val percent = "${(MusicPlayer.volume * 100f + 0.5f).toInt()}%"
+        val low = MusicPlayer.volume < 0.1f
+        ui.text(percent, volumeButton.x - 2f - ui.width(percent, 10f, Theme.FONT_MEDIUM), cy - 5f, 10f,
+            if (low) RED else Theme.TEXT_TERTIARY, Theme.FONT_MEDIUM)
         ui.hits += volumeButton to {
             val opening = !volumeOpen
             dismissMenu()
@@ -388,7 +403,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val k = 1f + a.press.tick(0f) * 0.14f + h * 0.04f
         if (h > 0.01f) {
             val d = b.scaled(k)
-            ui.ctx.drawShape(d, ShapeStyle(Theme.CARD_HOVER.copy(a = Theme.CARD_HOVER.a * h), 9f * k))
+            val hoverRadius = if (me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous) 9f * k else d.height / 2f
+            ui.ctx.drawShape(d, ShapeStyle(Theme.CARD_HOVER.copy(a = Theme.CARD_HOVER.a * h), hoverRadius))
         }
         return k
     }

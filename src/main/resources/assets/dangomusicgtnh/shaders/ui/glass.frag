@@ -24,7 +24,15 @@ uniform float u_Opacity;
 varying vec2 v_Position;
 varying vec2 v_Screen;
 
+// 1 = 连续曲率圆角（界面风格“连续圆角”），0 = 经典圆角
+uniform float u_Continuous;
+
 float sdRoundBox(vec2 p, vec2 b, float r) {
+    // 经典风格（默认）：普通圆角
+    if (u_Continuous < 0.5) {
+        vec2 c = abs(p) - b + r;
+        return length(max(c, 0.0)) + min(max(c.x, c.y), 0.0) - r;
+    }
     r = clamp(r, 0.0, min(b.x, b.y));
     // Keep genuinely circular controls and avatar masks circular.
     if (abs(b.x - b.y) < 0.001 && r >= min(b.x, b.y) - 0.001) return length(p) - r;
