@@ -23,3 +23,24 @@ java -cp build/ui-check ContinuousCornersCheck
 
 Also run the normal Gradle build. Geometry checks do not replace an in-game
 check of antialiasing, glass highlights and shadow rendering.
+
+## Continuous-mode playback icons and popovers
+
+Playback icons use original paths on a 24-unit canvas with a shared 1.75-unit
+round stroke. `VectorIcon` flattens Beziers once; `icon.frag` unions all path
+segments into one distance/coverage mask before antialiasing. Joins therefore
+cannot accumulate opacity or turn into separate translucent short strokes.
+Filled transport icons use the same canvas and shader with an even-odd fill.
+
+Iconly Regular/Light and Apple's iOS/iPadOS 26 community kit were consulted as
+visual references; no Apple symbol font or third-party icon assets are bundled.
+
+Popovers share the player bar's material and use `PopupMotion` for reversible
+spring expansion, content reveal and closing. Input follows the visible bounds;
+the trigger remains usable during animation. Classic-mode rendering is unchanged.
+
+Local validation for dev.4: normal Gradle build; actual GPU path rendering at
+16x scale (straight/curved stroke widths 28.0/28.25px, no curve gaps); popup
+open/close/reversal at 30/60/144 FPS; horizontal and classic vertical volume
+click/drag/release checks. These are isolated rendering/input checks, not a new
+real-account playback or game-session test.

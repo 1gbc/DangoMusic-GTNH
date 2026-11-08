@@ -3,66 +3,60 @@ package me.sorihiko.dangomusicgtnh.musicui
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.RenderContext
-import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
+import me.sorihiko.dangomusicgtnh.ui.VectorIcon
 import me.sorihiko.dangomusicgtnh.utils.Color
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.sin
 
-/** Playback controls with a stable optical size, independent of symbol fonts. */
+/** Original 24px paths; one consistent stroke and one coverage mask per icon. */
 internal object PlayerIcons {
-    private class Pen(val ctx: RenderContext, val color: Color) {
-        fun line(x1: Float, y1: Float, x2: Float, y2: Float, stroke: Float = 2.4f) {
-            ctx.pushTranslate(x1, y1, 0f)
-            ctx.pushRotate(Math.toDegrees(atan2(y2-y1, x2-x1).toDouble()).toFloat(), 0f, 0f, 1f)
-            ctx.drawShape(LayoutBounds(-stroke/2f, -stroke/2f, hypot(x2-x1, y2-y1)+stroke, stroke), ShapeStyle(color, stroke/2f))
-            ctx.popTransform(); ctx.popTransform()
-        }
-        fun arc(x: Float, y: Float, r: Float, from: Double, to: Double) {
-            for (i in 0 until 10) {
-                val a = Math.toRadians(from + (to-from)*i/10)
-                val b = Math.toRadians(from + (to-from)*(i+1)/10)
-                line(x+(cos(a)*r).toFloat(), y+(sin(a)*r).toFloat(), x+(cos(b)*r).toFloat(), y+(sin(b)*r).toFloat(), 2.4f)
-            }
-        }
-        fun arrow(x: Float, y: Float, direction: Float) {
-            line(x-3f*direction, y-3f, x, y)
-            line(x, y, x-3f*direction, y+3f)
-        }
+    private val repeat = VectorIcon.path {
+        move(4.0,10.0); line(4.0,9.0); curve(4.0,6.8,5.8,5.0,8.0,5.0); line(20.0,5.0)
+        move(16.5,1.5); line(20.0,5.0); line(16.5,8.5)
+        move(20.0,14.0); line(20.0,15.0); curve(20.0,17.2,18.2,19.0,16.0,19.0); line(4.0,19.0)
+        move(7.5,15.5); line(4.0,19.0); line(7.5,22.5)
     }
-
-    fun mode(ctx: RenderContext, mode: MusicPlayer.Mode, cx: Float, cy: Float, size: Float, color: Color) {
-        ctx.pushTranslate(cx, cy, 0f); ctx.pushScale(size/20f, size/20f, 1f)
-        val p = Pen(ctx, color)
-        if (mode == MusicPlayer.Mode.SHUFFLE) {
-            p.line(-8f,-5f,-5f,-5f); p.line(-5f,-5f,5f,5f); p.line(5f,5f,8f,5f); p.arrow(8f,5f,1f)
-            // Leave a small gap at the crossing so the two paths stay legible.
-            p.line(-8f,5f,-5f,5f); p.line(-5f,5f,-2f,2f)
-            p.line(2f,-2f,5f,-5f); p.line(5f,-5f,8f,-5f); p.arrow(8f,-5f,1f)
-        } else {
-            p.line(-5f,-5f,7f,-5f); p.arrow(7f,-5f,1f)
-            p.arc(-5f,-1f,4f,180.0,270.0); p.line(-9f,-1f,-9f,1f)
-            p.line(5f,5f,-7f,5f); p.arrow(-7f,5f,-1f)
-            p.arc(5f,1f,4f,0.0,90.0); p.line(9f,-1f,9f,1f)
-            if (mode == MusicPlayer.Mode.REPEAT_ONE) {
-                p.line(-1f,-1.5f,0.5f,-2.5f,1.2f); p.line(0.5f,-2.5f,0.5f,2.5f,1.2f)
-            }
-        }
-        ctx.popTransform(); ctx.popTransform()
+    private val repeatOne = VectorIcon.path {
+        move(4.0,10.0); line(4.0,9.0); curve(4.0,6.8,5.8,5.0,8.0,5.0); line(20.0,5.0)
+        move(16.5,1.5); line(20.0,5.0); line(16.5,8.5)
+        move(20.0,14.0); line(20.0,15.0); curve(20.0,17.2,18.2,19.0,16.0,19.0); line(4.0,19.0)
+        move(7.5,15.5); line(4.0,19.0); line(7.5,22.5)
+        move(10.5,10.0); line(12.5,8.5); line(12.5,15.5)
     }
-
-    fun speaker(ctx: RenderContext, cx: Float, cy: Float, color: Color, scale: Float = 1f, waves: Int = 2, muted: Boolean = false) {
-        ctx.pushTranslate(cx, cy, 0f); ctx.pushScale(scale, scale, 1f)
-        val p = Pen(ctx, color)
-        p.line(-7f,-3f,-3f,-3f); p.line(-7f,-3f,-7f,3f); p.line(-7f,3f,-3f,3f)
-        p.line(-3f,-3f,2f,-7f); p.line(2f,-7f,2f,7f); p.line(2f,7f,-3f,3f)
+    private val shuffle = VectorIcon.path {
+        move(3.0,6.0); line(5.0,6.0); curve(9.0,6.0,15.0,18.0,19.0,18.0); line(21.0,18.0)
+        move(17.5,14.5); line(21.0,18.0); line(17.5,21.5)
+        move(3.0,18.0); line(5.0,18.0); curve(6.8,18.0,8.2,15.8,9.5,14.0)
+        move(14.5,10.0); curve(16.0,7.8,17.5,6.0,19.0,6.0); line(21.0,6.0)
+        move(17.5,2.5); line(21.0,6.0); line(17.5,9.5)
+    }
+    val play = VectorIcon.path(filled = true) { move(7.0,3.5); line(21.0,12.0); line(7.0,20.5); close() }
+    val previous = VectorIcon.path(filled = true) {
+        move(12.0,4.0); line(2.0,12.0); line(12.0,20.0); close()
+        move(22.0,4.0); line(12.0,12.0); line(22.0,20.0); close()
+    }
+    val next = VectorIcon.path(filled = true) {
+        move(2.0,4.0); line(12.0,12.0); line(2.0,20.0); close()
+        move(12.0,4.0); line(22.0,12.0); line(12.0,20.0); close()
+    }
+    val stop = VectorIcon.path(filled = true) { rect(5.0,5.0,14.0,14.0) }
+    val queue = VectorIcon.path {
+        circle(3.5,5.0,0.8); move(8.0,5.0); line(21.0,5.0)
+        circle(3.5,12.0,0.8); move(8.0,12.0); line(21.0,12.0)
+        circle(3.5,19.0,0.8); move(8.0,19.0); line(21.0,19.0)
+    }
+    private fun speakerPath(waves: Int, muted: Boolean) = VectorIcon.path {
+        move(3.0,9.0); line(7.0,9.0); line(12.0,5.0); line(12.0,19.0); line(7.0,15.0); line(3.0,15.0); close()
         if (muted) {
-            p.line(6f,-3f,11f,3f); p.line(6f,3f,11f,-3f)
+            move(16.0,9.0); line(21.0,15.0); move(16.0,15.0); line(21.0,9.0)
         } else {
-            if (waves >= 1) p.arc(1f,0f,6f,-48.0,48.0)
-            if (waves >= 2) p.arc(1f,0f,10f,-48.0,48.0)
+            if (waves >= 1) { move(16.0,8.0); curve(18.5,10.0,18.5,14.0,16.0,16.0) }
+            if (waves >= 2) { move(19.0,4.5); curve(23.5,8.5,23.5,15.5,19.0,19.5) }
         }
-        ctx.popTransform(); ctx.popTransform()
     }
+    private val speakers = arrayOf(speakerPath(0,false),speakerPath(1,false),speakerPath(2,false),speakerPath(0,true))
+    fun draw(ctx: RenderContext, icon: VectorIcon, cx: Float, cy: Float, size: Float, color: Color) =
+        ctx.drawIcon(LayoutBounds(cx-size/2f,cy-size/2f,size,size),icon,color)
+    fun mode(ctx: RenderContext, mode: MusicPlayer.Mode, cx: Float, cy: Float, size: Float, color: Color) =
+        draw(ctx,when(mode) { MusicPlayer.Mode.SEQUENTIAL -> repeat; MusicPlayer.Mode.SHUFFLE -> shuffle; MusicPlayer.Mode.REPEAT_ONE -> repeatOne },cx,cy,size,color)
+    fun speaker(ctx: RenderContext, cx: Float, cy: Float, color: Color, scale: Float = 1f, waves: Int = 2, muted: Boolean = false) =
+        draw(ctx,speakers[if(muted) 3 else waves.coerceIn(0,2)],cx,cy,24f*scale,color)
 }

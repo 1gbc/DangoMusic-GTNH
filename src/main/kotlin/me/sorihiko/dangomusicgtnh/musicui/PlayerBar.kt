@@ -60,6 +60,10 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private val nextA = Anim()
     private val queueA = Anim()
     private val likeA = Anim()
+    private val volumeA = Anim()
+    private val modeMotion = PopupMotion()
+    private val volumeMotion = PopupMotion()
+    private var hitStart = 0
     /** 播放 ↔ 暂停图标的过渡 */
     private val playMorph = Spring(320f, 26f)
     /** 进度条上的圆钮：鼠标移上去时渐显 */
@@ -67,6 +71,13 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
 
     fun draw(bar: LayoutBounds) {
         val ctx = ui.ctx
+        hitStart = ui.hits.size
+        if (UiStyle.continuous) {
+            modeMotion.step(modeOpen,ui.frameDt/1000f)
+            volumeMotion.step(volumeOpen,ui.frameDt/1000f)
+        } else {
+            modeMotion.snap(modeOpen); volumeMotion.snap(volumeOpen)
+        }
         drawPanel(bar)
         val snap = PlaybackView.snapshot()
         val t = snap.track
@@ -76,7 +87,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         // 左：封面 + 歌名 / 歌手
         val cs = 48f
         // Center the complete control group, including mode and stop buttons.
-        val modeOffset = if (UiStyle.continuous) 136f else MODE_BUTTON_OFFSET
+        val modeOffset = MODE_BUTTON_OFFSET
         val cx = bar.x + bar.width / 2f - (154f - modeOffset) / 2f
         val canLike = t != null && t.source == MusicSource.NETEASE && NeteaseApi.loggedIn
         val leftLimit = cx - modeOffset - 4f
@@ -150,8 +161,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val nextB = LayoutBounds(cx + 62f - 16f, cy - 16f, 32f, 32f)
         val queueB = LayoutBounds(cx + 88f, cy - 16f, 32f, 32f)
         val stopB = LayoutBounds(queueB.right + 2f, cy - 16f, 32f, 32f)
-        modeButton = if (UiStyle.continuous) LayoutBounds(cx - modeOffset, cy - 15f, 52f, 30f)
-            else LayoutBounds(cx - modeOffset, cy - 16f, 32f, 32f)
+        modeButton = LayoutBounds(cx - modeOffset, cy - 16f, 32f, 32f)
         val mode = if (snap.remote) MusicPlayer.Mode.SEQUENTIAL else MusicPlayer.mode
         toggleButton(modeButton, cy, modeOpen, modeA, mode) {
             if (snap.remote) return@toggleButton
@@ -162,7 +172,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         }
         if (!UiStyle.continuous && mode == MusicPlayer.Mode.REPEAT_ONE) repeatOneMark(modeButton.x + 16f, cy)
         val stopScale = button(stopB, stopA)
-        ui.icon("■", stopB.x + stopB.width / 2f, cy, 12f * stopScale, Theme.TEXT_PRIMARY)
+        if (UiStyle.continuous) PlayerIcons.draw(ctx,PlayerIcons.stop,stopB.x+16f,cy,18f*stopScale,Theme.TEXT_PRIMARY)
+        else ui.icon("■", stopB.x + stopB.width / 2f, cy, 12f * stopScale, Theme.TEXT_PRIMARY)
         ui.hits += stopB to { stopA.press.v -= 7f; PlaybackView.stop() }
         val kPrev = button(prevB, prevA)
         val kPlay = drawPlayDisc(playB)
@@ -172,25 +183,32 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val p = playMorph.tick(if (snap.playing) 1f else 0f).coerceIn(0f, 1f)
         if (p > 0.01f) {
             ctx.pushOpacity(p)
-            val bh = 16f * kPlay * (0.55f + 0.45f * p)
+            val bh = (if (UiStyle.continuous) 18f else 16f) * kPlay * (0.55f + 0.45f * p)
             ui.card(LayoutBounds(cx - 6f * kPlay, cy - bh / 2f, 4f * kPlay, bh), Theme.TEXT_PRIMARY, 1.5f)
             ui.card(LayoutBounds(cx + 2f * kPlay, cy - bh / 2f, 4f * kPlay, bh), Theme.TEXT_PRIMARY, 1.5f)
             ctx.popOpacity()
         }
         if (p < 0.99f) {
             ctx.pushOpacity(1f - p)
-            ui.icon("▶", cx + 1.5f * kPlay, cy, 18f * kPlay * (1f - 0.35f * p), Theme.TEXT_PRIMARY)
+            if (UiStyle.continuous) PlayerIcons.draw(ctx,PlayerIcons.play,cx,cy,26f*kPlay*(1f-0.35f*p),Theme.TEXT_PRIMARY)
+            else ui.icon("▶", cx + 1.5f * kPlay, cy, 18f * kPlay * (1f - 0.35f * p), Theme.TEXT_PRIMARY)
             ctx.popOpacity()
         }
         // ⏮ = 竖条 + ◀，⏭ = ▶ + 竖条（围绕按钮中心缩放）
         val pc = prevB.x + prevB.width / 2f
-        ui.card(LayoutBounds(pc - 6f * kPrev, cy - 5.5f * kPrev, 2.2f * kPrev, 11f * kPrev), Theme.TEXT_PRIMARY, 1f)
-        ui.icon("◀", pc + 2.5f * kPrev, cy, 12f * kPrev, Theme.TEXT_PRIMARY)
         val nc = nextB.x + nextB.width / 2f
-        ui.icon("▶", nc - 2.5f * kNext, cy, 12f * kNext, Theme.TEXT_PRIMARY)
-        ui.card(LayoutBounds(nc + 3.8f * kNext, cy - 5.5f * kNext, 2.2f * kNext, 11f * kNext), Theme.TEXT_PRIMARY, 1f)
+        if (UiStyle.continuous) {
+            PlayerIcons.draw(ctx,PlayerIcons.previous,pc,cy,24f*kPrev,Theme.TEXT_PRIMARY)
+            PlayerIcons.draw(ctx,PlayerIcons.next,nc,cy,24f*kNext,Theme.TEXT_PRIMARY)
+        } else {
+            ui.card(LayoutBounds(pc - 6f * kPrev, cy - 5.5f * kPrev, 2.2f * kPrev, 11f * kPrev), Theme.TEXT_PRIMARY, 1f)
+            ui.icon("◀", pc + 2.5f * kPrev, cy, 12f * kPrev, Theme.TEXT_PRIMARY)
+            ui.icon("▶", nc - 2.5f * kNext, cy, 12f * kNext, Theme.TEXT_PRIMARY)
+            ui.card(LayoutBounds(nc + 3.8f * kNext, cy - 5.5f * kNext, 2.2f * kNext, 11f * kNext), Theme.TEXT_PRIMARY, 1f)
+        }
         val q = queueA.on.tick(if (ScreenState.page == Page.QUEUE) 1f else 0f)
-        ui.icon("≡", queueB.x + queueB.width / 2f, cy, 14f * kQueue, mixColor(Theme.TEXT_PRIMARY, RED, q))
+        if (UiStyle.continuous) PlayerIcons.draw(ctx,PlayerIcons.queue,queueB.x+16f,cy,20f*kQueue,mixColor(Theme.TEXT_PRIMARY,RED,q))
+        else ui.icon("≡", queueB.x + queueB.width / 2f, cy, 14f * kQueue, mixColor(Theme.TEXT_PRIMARY, RED, q))
         ui.hits += prevB to { prevA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.prev() } }
         ui.hits += playB to { playA.press.v -= 7f; PlaybackView.togglePause() }
         ui.hits += nextB to { nextA.press.v -= 7f; if (!snap.remote) ClientMusic.control { MusicPlayer.next() } }
@@ -226,8 +244,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
 
         drawVolume(bar, ry)
         if (me.sorihiko.dangomusicgtnh.music.MusicSources.selected == MusicSource.NETEASE) drawQuality(bar, ry) else if (qualityOpen) dismissMenu()
-        if (volumeOpen) drawVolumeMenu(bar)
-        if (modeOpen && UiStyle.continuous) drawContinuousModeMenu(bar, mode)
+        if (volumeOpen || (UiStyle.continuous && volumeMotion.visible)) drawVolumeMenu(bar)
+        if (UiStyle.continuous && (modeOpen || modeMotion.visible)) drawContinuousModeMenu(bar, mode)
         else if (modeOpen) {
             // 图标 + 文字，一眼能看出是哪种播放模式
             modeMenu = LayoutBounds(modeButton.x, bar.y - 96f, 112f, 92f)
@@ -256,10 +274,10 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         if (UiStyle.continuous) {
             val inset = if (me.sorihiko.dangomusicgtnh.music.MusicSources.selected == MusicSource.NETEASE) 70f else 14f
             volumeButton = LayoutBounds(bar.right - inset - 60f, cy - 16f, 60f, 32f)
-            ui.card(volumeButton, if (volumeOpen) Color(1f, 1f, 1f, 0.16f) else if (ui.hover(volumeButton)) Theme.CARD_HOVER else Theme.CARD, 16f)
             val volume = MusicPlayer.volume.coerceIn(0f, 1f)
-            val color = if (volume < 0.1f) RED else Theme.TEXT_SECONDARY
-            PlayerIcons.speaker(ui.ctx, volumeButton.x + 14f, cy, color, 0.8f,
+            val color = if (volume < 0.1f || volumeOpen) RED else Theme.TEXT_SECONDARY
+            val k = button(LayoutBounds(volumeButton.x,cy-16f,32f,32f),volumeA)
+            PlayerIcons.speaker(ui.ctx, volumeButton.x + 14f, cy, color, 0.75f*k,
                 if (volume > 0.5f) 2 else 1, volume <= 0f)
             val percent = "${(volume * 100f).roundToInt()}%"
             ui.text(percent, volumeButton.right - 7f - ui.width(percent, 10f, Theme.FONT_MEDIUM), cy - 4.4f, 10f, color, Theme.FONT_MEDIUM)
@@ -311,40 +329,63 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
 
     private fun drawContinuousModeMenu(bar: LayoutBounds, mode: MusicPlayer.Mode) {
         val width = 212f
-        modeMenu = LayoutBounds((modeButton.x - 10f).coerceIn(bar.x + 8f, bar.right - width - 8f), max(8f, bar.y - 104f), width, 96f)
-        ui.ctx.drawGlass(modeMenu, CONTROL_GLASS)
-        ui.text(I18n.text("Playback mode"), modeMenu.x + 14f, modeMenu.y + 12f, 11f, Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
-        for ((i, option) in MusicPlayer.Mode.values().withIndex()) {
-            val pill = LayoutBounds(modeMenu.x + 12f + i * 66f, modeMenu.y + 32f, 56f, 32f)
-            val selected = option == mode
-            ui.card(pill, if (selected) Color(1f, 1f, 1f, 0.18f) else if (ui.hover(pill)) Theme.CARD_HOVER else Theme.CARD, 16f)
-            PlayerIcons.mode(ui.ctx, option, pill.x + 28f, pill.y + 16f, 22f, if (selected) RED else Theme.TEXT_PRIMARY)
-            val label = I18n.text(option.label)
-            val text = ui.trim(label, 60f, 9.5f)
-            ui.text(text, pill.x + (pill.width - ui.width(text, 9.5f)) / 2f, pill.bottom + 8f, 9.5f, if (selected) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY)
-            ui.hits += LayoutBounds(pill.x - 3f, pill.y, 62f, 53f) to { module.selectPlaybackMode(option) }
+        val target = LayoutBounds((modeButton.x - 10f).coerceIn(bar.x + 8f, bar.right - width - 8f), max(8f, bar.y - 104f), width, 96f)
+        modeMenu = drawPopup(modeButton,target,modeMotion,modeOpen) { content, interactive, clip ->
+            ui.text(I18n.text("Playback mode"),content.x+14f,content.y+12f,11f,Theme.TEXT_SECONDARY,Theme.FONT_MEDIUM)
+            for ((i,option) in MusicPlayer.Mode.values().withIndex()) {
+                val pill=LayoutBounds(content.x+12f+i*66f,content.y+32f,56f,32f)
+                val selected=option==mode
+                ui.card(pill,if(selected) Color(1f,1f,1f,0.16f) else if(interactive && ui.hover(pill)) Theme.CARD_HOVER else Theme.CARD,16f)
+                PlayerIcons.mode(ui.ctx,option,pill.x+28f,pill.y+16f,20f,if(selected) RED else Theme.TEXT_PRIMARY)
+                val text=ui.trim(I18n.text(option.label),60f,9.5f)
+                ui.text(text,pill.x+(pill.width-ui.width(text,9.5f))/2f,pill.bottom+8f,9.5f,if(selected) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY)
+                if(interactive) ui.hits += LayoutBounds(pill.x-3f,pill.y,62f,53f).intersect(clip) to { module.selectPlaybackMode(option) }
+            }
         }
-        ui.hits += modeMenu to {}
     }
 
     private fun drawContinuousVolumeMenu(bar: LayoutBounds) {
         val width = 228f
-        volumeMenu = LayoutBounds((volumeButton.right - width).coerceIn(bar.x + 8f, bar.right - width - 8f), max(8f, bar.y - 100f), width, 92f)
-        ui.ctx.drawGlass(volumeMenu, CONTROL_GLASS)
-        val volume = MusicPlayer.volume.coerceIn(0f, 1f)
-        val percent = "${(volume * 100f).roundToInt()}%"
-        ui.text(I18n.text("Volume"), volumeMenu.x + 14f, volumeMenu.y + 13f, 12f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
-        ui.text(percent, volumeMenu.right - 14f - ui.width(percent, 11f), volumeMenu.y + 14f, 11f, Theme.TEXT_SECONDARY)
-        val cy = volumeMenu.y + 57f
-        PlayerIcons.speaker(ui.ctx, volumeMenu.x + 20f, cy, Theme.TEXT_SECONDARY, 0.8f, 0)
-        PlayerIcons.speaker(ui.ctx, volumeMenu.right - 21f, cy, Theme.TEXT_SECONDARY, 0.8f, 2)
-        volRect = LayoutBounds(volumeMenu.x + 42f, cy - 2f, volumeMenu.width - 84f, 4f)
-        ui.card(volRect, Color(1f, 1f, 1f, 0.18f), 2f)
-        val fill = volRect.width * volume
-        if (fill > 0f) ui.card(LayoutBounds(volRect.x, volRect.y, max(4f, fill), volRect.height), Theme.TEXT_PRIMARY.copy(a = 0.85f), 2f)
-        ui.card(LayoutBounds(volRect.x + fill - 5f, cy - 5f, 10f, 10f), Theme.TEXT_PRIMARY, 5f)
-        ui.hits += volRect.expand(8f, 12f) to { volumeDragging = true; setVolumeAt(ui.mx, ui.my) }
-        ui.hits += volumeMenu to {}
+        val target=LayoutBounds((volumeButton.right-width).coerceIn(bar.x+8f,bar.right-width-8f),max(8f,bar.y-100f),width,92f)
+        volumeMenu=drawPopup(volumeButton,target,volumeMotion,volumeOpen) { content,interactive,clip ->
+            val volume=MusicPlayer.volume.coerceIn(0f,1f)
+            val percent="${(volume*100f).roundToInt()}%"
+            ui.text(I18n.text("Volume"),content.x+14f,content.y+13f,12f,Theme.TEXT_PRIMARY,Theme.FONT_MEDIUM)
+            ui.text(percent,content.right-14f-ui.width(percent,11f),content.y+14f,11f,Theme.TEXT_SECONDARY)
+            val cy=content.y+57f
+            PlayerIcons.speaker(ui.ctx,content.x+20f,cy,Theme.TEXT_SECONDARY,0.75f,0)
+            PlayerIcons.speaker(ui.ctx,content.right-21f,cy,Theme.TEXT_SECONDARY,0.75f,2)
+            volRect=LayoutBounds(content.x+42f,cy-2f,content.width-84f,4f)
+            ui.card(volRect,Color(1f,1f,1f,0.18f),2f)
+            val fill=volRect.width*volume
+            if(fill>0f) ui.card(LayoutBounds(volRect.x,volRect.y,max(4f,fill),volRect.height),Theme.TEXT_PRIMARY.copy(a=0.85f),2f)
+            ui.card(LayoutBounds(volRect.x+fill-5f,cy-5f,10f,10f),Theme.TEXT_PRIMARY,5f)
+            if(interactive) ui.hits += volRect.expand(8f,12f).intersect(clip) to { volumeDragging=true; setVolumeAt(ui.mx,ui.my) }
+        }
+    }
+
+    private fun drawPopup(anchor: LayoutBounds,target: LayoutBounds,motion: PopupMotion,open: Boolean,
+        content: (LayoutBounds,Boolean,LayoutBounds)->Unit): LayoutBounds {
+        val b=motion.bounds(anchor,target)
+        val p=motion.progress.coerceIn(0f,1f)
+        if(p<=0.002f) return b
+        val before=ui.hits.size
+        val trigger=ui.hits.subList(hitStart.coerceAtMost(before),before).firstOrNull { it.first === anchor }
+        ui.ctx.pushOpacity(p)
+        ui.ctx.drawGlass(b,CONTROL_GLASS.copy(radius=kotlin.math.min(CONTROL_GLASS.radius,b.height/2f)))
+        ui.ctx.popOpacity()
+        ui.beginClip(b)
+        ui.ctx.pushOpacity(motion.contentOpacity)
+        try {
+            content(target.copy(y=target.y+10f*(1f-p)),open && p>0.6f,b)
+        } finally { ui.ctx.popOpacity(); ui.endClip() }
+        ui.hits += b to {}
+        // Animated glass can overlap transport controls. Keep popup hits above them,
+        // while its own trigger remains clickable for a quick close/reopen.
+        val popupHits=ui.hits.subList(before,ui.hits.size).toList()
+        repeat(popupHits.size) { ui.hits.removeAt(before) }
+        ui.hits.addAll(hitStart.coerceAtMost(ui.hits.size),if(trigger!=null) listOf(trigger)+popupHits else popupHits)
+        return b
     }
 
     private fun drawQuality(bar: LayoutBounds, y: Float) {
@@ -409,7 +450,7 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     }
 
     fun dismissMenu(): Boolean {
-        if (!qualityOpen && !modeOpen && !volumeOpen) return false
+        if (!qualityOpen && !modeOpen && !volumeOpen && !(UiStyle.continuous && (modeMotion.visible || volumeMotion.visible))) return false
         volumeOpen = false
         volumeDragging = false
         modeOpen = false
@@ -418,8 +459,9 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         return true
     }
 
-    fun menuContains(x: Int, y: Int) = (qualityOpen && qualityMenu.contains(x, y)) || (modeOpen && modeMenu.contains(x, y)) ||
-        (volumeOpen && volumeMenu.contains(x, y))
+    fun menuContains(x: Int, y: Int) = (qualityOpen && qualityMenu.contains(x, y)) ||
+        ((modeOpen || (UiStyle.continuous && modeMotion.visible)) && modeMenu.contains(x,y)) ||
+        ((volumeOpen || (UiStyle.continuous && volumeMotion.visible)) && volumeMenu.contains(x,y))
 
     fun closeMenuOutside(x: Int, y: Int) {
         if (!menuContains(x, y) && !(qualityOpen && qualityButton.contains(x, y)) &&
@@ -475,8 +517,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
         val k = 1f + a.press.tick(0f) * 0.14f
         val base = mixColor(Color(1f, 1f, 1f, 0.07f), Theme.CARD_HOVER, h)
         if (UiStyle.continuous) {
-            ui.card(b.scaled(k), mixColor(base, Color(1f, 1f, 1f, 0.18f), o), b.height * k / 2f)
-            PlayerIcons.mode(ui.ctx, mode, b.x + b.width / 2f, vy, 20f * k, mixColor(Theme.TEXT_PRIMARY, RED, o))
+            if(h>0.01f) ui.card(b.scaled(k),Theme.CARD_HOVER.copy(a=Theme.CARD_HOVER.a*h),9f*k)
+            PlayerIcons.mode(ui.ctx, mode, b.x + b.width / 2f, vy, 18f * k, mixColor(Theme.TEXT_PRIMARY, RED, o))
         } else {
             ui.card(b.scaled(k), mixColor(base, RED.copy(a = 0.85f), o), 9f * k)
             ui.icon(mode.glyph, b.x + 16f, vy, 14f * k, Theme.TEXT_PRIMARY)
@@ -545,9 +587,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
 
 /** 播放栏的玻璃：用侧栏那一套，圆角放大、阴影比侧栏淡一点 */
 private val BAR_GLASS = Theme.GLASS_SIDEBAR.copy(radius = 28f, shadow = ShadowStyle(Color(0f, 0f, 0f, 0.10f), 14f, Vec2(0f, -3f)))
-/** Quieter material for controls: readable above both album art and a bright game world. */
-private val CONTROL_GLASS = BAR_GLASS.copy(radius = 18f, tint = Color(0.07f, 0.07f, 0.09f, 0.80f),
-    maxLuma = 0.22f, saturation = 1.1f, frost = 0.95f, refraction = 3f, bevel = 10f, dispersion = 0.06f, highlight = 0.25f)
+/** Same tint, blur, refraction and highlights as the bar beneath the popover. */
+private val CONTROL_GLASS = BAR_GLASS.copy(radius = 24f)
 /** 进度条离播放栏左右两边的距离 */
 private const val PROGRESS_INSET = 72f
 private const val MODE_BUTTON_OFFSET = 116f
