@@ -1,13 +1,13 @@
 # 安装、更新与本地资料
 
-当前适用 `0.1.0-dev.5.38`。这是测试版，公开分发的剩余条件见 [RELEASE_AUDIT](RELEASE_AUDIT.md)。
+当前适用正式发行包 `0.1.0`，功能沿用 dev.5.38。测试边界和本次资产清单见 [发行说明](RELEASE_0_1_0.md)，历史许可证审查见 [RELEASE_AUDIT](RELEASE_AUDIT.md)。
 
 ## 玩家安装
 
 GTNH 2.9.0 / Minecraft 1.7.10 / Forge 10.13.4.1614。沿用整合包 Java、lwjgl3ify、LWJGL 与启动参数。已有 Windows 基线是 Java 25.0.3、lwjgl3ify 3.0.42、LWJGL 3.4.3；其他组合不视为已通过兼容认证。
 
 1. 退出游戏，备份实例和配置。
-2. 打开 [Releases](https://github.com/1gbc/DangoMusic-GTNH/releases)。截至本次核对，[5.38](https://github.com/1gbc/DangoMusic-GTNH/releases/tag/0.1.0-dev.5.38) 提供 `dangomusicgtnh-0.1.0-dev.5.38.jar`（4,237,897 字节），是预发布测试资产。
+2. 打开 [Releases](https://github.com/1gbc/DangoMusic-GTNH/releases)。下载 [0.1.0](https://github.com/1gbc/DangoMusic-GTNH/releases/tag/0.1.0) 的 `dangomusicgtnh-0.1.0.jar`，用同页 SHA256SUMS.txt 核对文件。
 3. 放入实际启动实例的 `.minecraft/mods/`，移走旧版同 Mod JAR，只保留一份。不要安装开发包、源码包或 GitHub 自动源码 ZIP。
 4. 保留 `config/dangomusicgtnh/`，不覆盖账号资料。进入世界默认按 M。
 
@@ -25,7 +25,7 @@ L1 使用听众自己账号；L2 转交主机短期 URL；L3 可选服务端下�
 
 ### 当前分发状态
 
-5.38 Release 只有 JAR，**没有经过本次许可清单核对的 Apple 组件下载包**。普通玩家可使用其他音源，不从历史空资产条目或未知网盘拼装组件。下文用于已有测试组件和开发构建；正式提供组件时须附准确版本、校验值和完整许可材料。
+0.1.0 同页提供 `dangomusicgtnh-apple-player-0.1.0-windows-x64.zip`，与该版 JAR 配套。此附件为框架依赖发布，**不捆绑 .NET 或完整 WebView2 Runtime**，需要另装以下微软运行时。旧 5.38 只有 JAR，不能用旧条目拼装本次组件。
 
 ### 组件工作方式
 
@@ -33,7 +33,7 @@ L1 使用听众自己账号；L2 转交主机短期 URL；L3 可选服务端下�
 
 已有真实账号验证包含实际出声、跳至 90 秒后继续出声、正常退出重启后恢复授权；没有完整覆盖全曲、所有地区、长期后台和全部异常恢复。证据见 [5.36](APPLE_5_36_LOCAL.md) 和 [5.37](APPLE_5_37_LOCAL.md)。
 
-### 安装已有配套测试组件
+### 安装配套组件
 
 1. 当前仅 Windows x64，需要 [WebView2 Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)，由微软单独安装更新。
 2. 确认组件包类型：自包含包附带 .NET；框架依赖包（项目默认 `SelfContained=false`）另需 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。以包内运行配置和发布说明为准，不将本地自包含测试包的结论套用于所有构建。

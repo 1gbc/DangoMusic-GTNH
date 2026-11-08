@@ -1,0 +1,14 @@
+// Optional, local-only replacement repository for the bundled LGPL codecs.
+// Usage: -I tools/release/codec-rebuild.init.gradle -Ddango.codecRepo=/absolute/path
+def codecRepo = System.getProperty('dango.codecRepo')
+if (!codecRepo) throw new GradleException('Set -Ddango.codecRepo to the rebuilt Maven repository')
+gradle.beforeProject { project ->
+    project.repositories.maven {
+        name = 'dangoReplacementCodecs'
+        url = new File(codecRepo).toURI()
+        content {
+            includeModule('org.jcraft', 'jorbis')
+            includeModule('javazoom', 'jlayer')
+        }
+    }
+}

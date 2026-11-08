@@ -2,7 +2,7 @@
 <p align="center">在 GT New Horizons 里，听音乐、看歌词、和朋友分享正在播放的歌。</p>
 
 <p align="center">
-<a href="https://github.com/1gbc/DangoMusic-GTNH/releases"><img alt="Development version" src="https://img.shields.io/badge/version-0.1.0--dev.5.38-orange"></a>
+<a href="https://github.com/1gbc/DangoMusic-GTNH/releases"><img alt="Development version" src="https://img.shields.io/badge/version-0.1.0-blue"></a>
 <a href="https://www.gtnewhorizons.com/version-history/"><img alt="Target GTNH" src="https://img.shields.io/badge/target-GTNH%202.9.0-blue"></a>
 <a href="LICENSE"><img alt="Project license GPL v3" src="https://img.shields.io/badge/license-GPL--3.0-green"></a>
 </p>
@@ -19,11 +19,11 @@
 
 感谢 Sorihiko 和本项目实际贡献者。完整来源与第三方说明见 [CREDITS](CREDITS.md) 和 [第三方许可](THIRD_PARTY_NOTICES.md)。
 
-> 当前仍为开发测试版。`5.38` 已有测试 JAR，尚未完成全部公开分发准备；对应源码公开可获取、LGPL 依赖源码与替换验证、配套组件许可清单等剩余条件见[审查报告](docs/RELEASE_AUDIT.md)。本页面不代表正式发布公告。
+> **0.1.0 正式发行包**：提供普通 JAR、对应源码及可选 Apple Windows 组件。Apple 与多人共享仍有实验性范围；本轮构建/许可检查通过，但没有重新进行 GTNH 游戏内测试。详见[本次发行说明](docs/RELEASE_0_1_0.md)。仓库若为私有，下载仍需仓库访问权限。
 
 ## 功能概览
 
-以下状态以 `0.1.0-dev.5.38` 源码及已有记录为准。**已实现**表示存在实际逻辑；**已实测**只指所链接记录中的具体场景，不能推及全部歌曲、平台或环境。本次文档整理没有新增游戏实测。
+以下状态以 `0.1.0`（沿用 dev.5.38 功能）源码及已有记录为准。**已实现**表示存在实际逻辑；**已实测**只指所链接记录中的具体场景，不能推及全部歌曲、平台或环境。本次文档整理没有新增游戏实测。
 
 | 功能 | 当前范围 | 状态与依据 |
 |---|---|---|
@@ -48,7 +48,7 @@
 | 音质与音效 | 以官方网页实际能力为准 | 不保证无损、Hi-Res、空间音频、Java 均衡器或全部淡入淡出效果 |
 | 一起听 | 未完成独立账号的 Apple 同步播放路线 | 开发中；不提供 Apple 音频 URL 转发或 DRM 音频下载 |
 
-证据：[5.36 真实播放记录](docs/APPLE_5_36_LOCAL.md)、[5.37 时钟与最近播放记录](docs/APPLE_5_37_LOCAL.md)、[当前安装指南](docs/INSTALL.md)。现有 `5.38` Release 只有 Mod JAR，**没有可供普通玩家下载的配套 Apple 组件**；仅装 JAR 不会启用 Apple 完整播放。
+证据：[5.36 真实播放记录](docs/APPLE_5_36_LOCAL.md)、[5.37 时钟与最近播放记录](docs/APPLE_5_37_LOCAL.md)、[当前安装指南](docs/INSTALL.md)。`0.1.0` Release 提供单独的 **Apple Windows x64 可选组件 ZIP**，需安装 .NET 8 Desktop Runtime 和 WebView2；仅装 JAR 不会启用 Apple 完整播放。
 
 ## 运行环境
 
@@ -71,13 +71,13 @@ GTNH 官方提供不同 Java 发行包，见[官方下载历史](https://www.gtn
 
 ## 下载与安装
 
-1. 前往 [Releases](https://github.com/1gbc/DangoMusic-GTNH/releases)。核对测试版说明及未完成的分发条件。当前有资产的版本为 [0.1.0-dev.5.38](https://github.com/1gbc/DangoMusic-GTNH/releases/tag/0.1.0-dev.5.38)。仓库未公开时需要访问权限。
-2. 玩家安装包为 **`dangomusicgtnh-0.1.0-dev.5.38.jar`**。不要安装 `-dev.jar`、`-dev-preshadow.jar`、`-sources.jar`，不要把 Source code ZIP 当作 Mod。
+1. 前往 [Releases](https://github.com/1gbc/DangoMusic-GTNH/releases)。当前正式发行包为 [0.1.0](https://github.com/1gbc/DangoMusic-GTNH/releases/tag/0.1.0)，先阅读本次测试范围和已知限制。仓库未公开时需要访问权限。
+2. 玩家安装包为 **`dangomusicgtnh-0.1.0.jar`**。不要安装 `-dev.jar`、`-dev-preshadow.jar`、`-sources.jar`，不要把 Source code ZIP 当作 Mod。
 3. 退出游戏并备份实例，把 JAR 放进该实例 **`.minecraft/mods/`**，移走旧版同 Mod JAR，只保留一份。
 4. **保留 `.minecraft/config/dangomusicgtnh/`**，尤其 `accounts/`、个人设置、续播与本地歌词。升级不需要删除账号。
 5. 进入世界按 **M**。Apple 及服务端安装见[完整指南](docs/INSTALL.md)，附近共享与听歌房见[联机说明](docs/NEARBY_SHARING.md)。
 
-目前没有稳定发行版；缺少 JAR 资产的历史条目不可安装。公开发布前须完成[分发检查](docs/RELEASE_AUDIT.md)，CI 成功不等于游戏兼容性保证。
+源码及依赖源码请下载同页 `source-bundle.zip`，校验值在 `SHA256SUMS.txt`。缺少 JAR 的历史条目不可安装；CI 成功不等于全部游戏场景已实测。
 
 ## 快速上手
 
