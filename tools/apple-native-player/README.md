@@ -1,3 +1,9 @@
+# Apple Music Windows 组件
+
+当前安装与组件分发状态见 [INSTALL](../../docs/INSTALL.md#apple-music-可选组件)，依赖许可见 [THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES.md#apple-播放组件)。5.38 Release 尚无配套组件 ZIP。
+
+下文保留各阶段历史记录；其中“当前”“待验证”等字样仅描述该阶段。现状以以上指南和 5.36/5.37 验证记录为准，不按旧版安装文件名操作。
+
 # 5.33 更新：关闭窗口保留登录，首页和媒体库状态修复
 
 右上角 × 和 Alt+F4 改为隐藏组件，不再结束会话。游戏退出时组件才正常回收；重新打开游戏播放器会尝试复用固定 Default 配置中的有效登录资料。请保留 accounts/apple-webview，不要删除或迁移登录资料。Apple 撤销或过期的会话仍需重新授权，不能承诺永久免登录。

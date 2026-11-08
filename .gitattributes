@@ -54,3 +54,6 @@
 
 core/src/main/resources/assets/dangomusicgtnh/lang/zh_cn.tsv whitespace=-blank-at-eol
 core/src/main/resources/META-INF/licenses/JOrbis-LGPL-2.1.txt whitespace=-blank-at-eof
+
+# Preserve the vendor license verbatim, including its original trailing space.
+third-party/webview2/LICENSE.txt whitespace=-blank-at-eol

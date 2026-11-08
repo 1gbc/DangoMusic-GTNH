@@ -1,3 +1,5 @@
+> **历史阶段记录**：本文保留当时实现和测试边界，不是当前安装/能力承诺。5.38 当前安装以 [INSTALL](INSTALL.md) 为准，完整能力与限制见 [README](../README.md#apple-music实验性单独说明)。
+
 # Apple Music 接入评估
 
 基线为 `0.1.0-dev.5.19`（`6e60c2e`），目标为 Windows 上的 GTNH 2.9.0 / Forge 1.7.10。以下结论来自源码和官方接口核对。尚未使用真实 Apple Music 账户执行授权和播放。

@@ -1,8 +1,9 @@
 JLayer - MP3 decoder for Java (javazoom:jlayer:1.0.1)
 Copyright (C) 1999-2008 JavaZOOM and the JLayer authors
 
-Dango Music bundles JLayer (relocated to me.sorihiko.dango.shadow.javazoom), unmodified, to decode MP3 audio.
-It is licensed under the GNU Lesser General Public License, version 2.1:
+DangoMusic GTNH Edition bundles JLayer to decode MP3 audio. Its bytecode packages are relocated to me.sorihiko.dangomusicgtnh.shadow.javazoom; this is a packaging modification.
+JLayer source-file headers include GNU Library GPL version 2 or later declarations; the upstream project supplied the LGPL 2.1 text reproduced below.
+The following LGPL 2.1 text is retained without changes:
 
                   GNU LESSER GENERAL PUBLIC LICENSE
                        Version 2.1, February 1999
