@@ -1,6 +1,7 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
 import me.sorihiko.dangomusicgtnh.DangoClient
+import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
 import me.sorihiko.dangomusicgtnh.events.TickEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
@@ -85,6 +86,8 @@ class NearbyModule : Module() {
     @EventHandler
     fun render(event: WorldRenderEndEvent) {
         if (!enabled || !seeLyrics.get()) return
+        // 歌词样式设成“不显示”时，别人投影过来的歌词也不画
+        if (DangoMusic.instance.moduleManager.get(LyricsModule::class.java).lyricsHidden()) return
         if (PlaybackView.localPresent()) return
         val host = NearbyClient.activeHost() ?: return
         if (!host.shareLyrics) return

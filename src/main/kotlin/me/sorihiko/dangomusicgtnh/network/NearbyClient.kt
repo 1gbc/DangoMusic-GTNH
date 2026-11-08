@@ -361,6 +361,8 @@ object NearbyClient {
         val welcome = welcome
         if (welcome != null && !welcome.allowLyrics) return true
         if (!module.seeLyrics.get() || !host.shareLyrics) return true
+        // 自己用侧边歌词列表：不看主机头顶的 3D 投影，按同步的曲目在自己的列表里显示
+        if (lyricsModule()?.prefersSideLyrics() == true) return true
         // 主机头顶的投影在这里看不到（别的维度、离得太远、一直没收到主机的歌词）：
         // 按同步过来的曲目自己拉歌词，用同步进度对齐，画在自己面前
         return !hostProjectionVisible(host)
@@ -554,6 +556,12 @@ object NearbyClient {
         }
     }
 
+    private fun lyricsModule(): LyricsModule? = try {
+        DangoMusic.instance.moduleManager.get(LyricsModule::class.java)
+    } catch (_: Exception) {
+        null
+    }
+
     private fun module(): NearbyModule? = try {
         DangoMusic.instance.moduleManager.get(NearbyModule::class.java)
     } catch (_: Exception) {
@@ -566,7 +574,8 @@ object NearbyClient {
         val prefs = Prefs(
             shareMusic = on && module.shareMusic.get(),
             hearNearby = on && module.hearNearby.get(),
-            shareLyrics = on && module.shareLyrics.get(),
+            // 自己只用侧边列表时没有 3D 歌词可投影：不共享歌词，听众改用各自的歌词和样式
+            shareLyrics = on && module.shareLyrics.get() && lyricsModule()?.projectsWorldLyrics() != false,
             seeLyrics = on && module.seeLyrics.get(),
             hearGroup = on && module.hearGroup.get(),
             shareGroup = on && module.shareGroup.get(),
@@ -655,7 +664,7 @@ object NearbyClient {
 
     private fun sendLyrics(module: NearbyModule) {
         val track = MusicPlayer.current?.takeUnless { it.source == me.sorihiko.dangomusicgtnh.music.MusicSource.APPLE }
-        if (!module.shareLyrics.get() || !module.enabled || track == null) {
+        if (!module.shareLyrics.get() || !module.enabled || track == null || lyricsModule()?.projectsWorldLyrics() == false) {
             if (lastLyricsKey != null) {
                 NetworkBootstrap.sendToServer(NearbyProtocol.C2S.LYRICS, LyricsData())
                 lastLyricsKey = null
