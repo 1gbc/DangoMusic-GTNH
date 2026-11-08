@@ -17,6 +17,7 @@ import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.GlassStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
 import me.sorihiko.dangomusicgtnh.ui.Theme
+import me.sorihiko.dangomusicgtnh.ui.UiStyle
 import me.sorihiko.dangomusicgtnh.utils.Color
 
 import kotlin.math.max
@@ -24,7 +25,7 @@ import kotlin.math.min
 
 /**
  * 左侧玻璃侧栏：搜索框 / 主页 · 排行榜 · 正在播放 · 一起听 / 我的歌单 / 设置 / 账号。
- * 选中项下面有一块"果冻"选中块：上下两条边分开动，前面那条边 220ms、后面那条 380ms，拉伸着滑过去。
+ * 选中项使用柔和的连续曲率底色，保留上下边错开的滑动动画。
  */
 internal class Sidebar(private val screen: MusicScreen) {
     private val ui = screen.ui
@@ -54,6 +55,19 @@ internal class Sidebar(private val screen: MusicScreen) {
     private var pillDown = false
 
     private val MENU_ITEM_H = 30f
+
+    /** Keep the sidebar quiet: navigation gets the contrast, not the glass rim. */
+    private val SIDEBAR_GLASS = Theme.GLASS_SIDEBAR.copy(
+        tint = Color(0.10f, 0.09f, 0.11f, 0.30f),
+        maxLuma = 0.27f, saturation = 1.10f, frost = 0.85f,
+        refraction = 4f, bevel = 14f, dispersion = 0.06f, highlight = 0.18f,
+        shadow = ShadowStyle(Color(0f, 0f, 0f, 0.12f), 14f, Vec2(0f, -3f)),
+    )
+    private val ROW_H = 34f
+    private val ROW_STEP = 38f
+    private val ROW_INSET = 10f
+    private val ROW_TEXT = Theme.TEXT_PRIMARY.copy(a = 0.86f)
+    private val ROW_SELECTION = Color(1f, 1f, 1f, 0.105f)
 
     /** 音源菜单的液态玻璃：比侧栏更暗、更磨砂，保证上面的字看得清 */
     private val MENU_GLASS = GlassStyle(
@@ -102,13 +116,14 @@ internal class Sidebar(private val screen: MusicScreen) {
     fun draw(side: LayoutBounds) {
         val ctx = ui.ctx
         val page = ScreenState.page
-        ctx.drawGlass(side, Theme.GLASS_SIDEBAR)
+        val modern = UiStyle.continuous
+        ctx.drawGlass(side, if (modern) SIDEBAR_GLASS else Theme.GLASS_SIDEBAR)
         drawSelectionPill(side)
         var newKey = ""
         var newTarget: LayoutBounds? = null
         val x = side.x + 12f
         val iw = side.width - 24f
-        var y = side.y + 12f
+        var y = side.y + if (modern) 14f else 12f
 
         menuRects.clear()
         val now = System.nanoTime()
@@ -122,17 +137,18 @@ internal class Sidebar(private val screen: MusicScreen) {
         val menuNow = if (menuVisible) menuRect(side) else null
         // 搜索框：放大镜 + 输入。点击区域固定，动画只改画出来的样子：
         // 聚焦时框微微鼓起、外面一圈淡红光晕、描边和放大镜渐变成红色，提示文字往右滑走淡出
-        searchRect = LayoutBounds(x, y, iw, 32f)
+        val searchH = if (modern) 34f else 32f
+        searchRect = LayoutBounds(x, y, iw, searchH)
         val f = searchFocus.x
         val fc = f.coerceIn(0f, 1f)
-        val grow = f * 2f + searchPress.x * 3f
-        val box = LayoutBounds(x - grow, y - grow * 0.5f, iw + grow * 2f, 32f + grow)
-        val br = 10f + grow * 0.5f
-        if (fc > 0.01f) ctx.drawShape(box.expand(3f * fc, 3f * fc), ShapeStyle(RED.copy(a = 0.12f * fc), br + 3f * fc))
-        ui.card(box, mix(Theme.CARD, Theme.CARD_HOVER, fc), br)
-        if (fc > 0.01f) ctx.drawShape(box, ShapeStyle(Color(0f, 0f, 0f, 0f), br, 1f + 0.4f * fc, RED.copy(a = RED.a * fc)))
+        val grow = if (modern) f * 0.75f + searchPress.x * 1.5f else f * 2f + searchPress.x * 3f
+        val box = LayoutBounds(x - grow, y - grow * 0.5f, iw + grow * 2f, searchH + grow)
+        val br = if (modern) box.height / 2f else 10f + grow * 0.5f
+        if (!modern && fc > 0.01f) ctx.drawShape(box.expand(3f * fc, 3f * fc), ShapeStyle(RED.copy(a = 0.12f * fc), br + 3f * fc))
+        ui.card(box, if (modern) mix(Color(1f, 1f, 1f, 0.075f), Color(1f, 1f, 1f, 0.12f), fc) else mix(Theme.CARD, Theme.CARD_HOVER, fc), br)
+        if (fc > 0.01f) ctx.drawShape(box, ShapeStyle(Color.TRANSPARENT, br, if (modern) 0.75f else 1f + 0.4f * fc, RED.copy(a = fc * if (modern) 0.55f else 1f)))
         val glass = mix(Theme.TEXT_SECONDARY, RED, fc)
-        val my = y - grow * 0.5f + (32f + grow) / 2f
+        val my = y + searchH / 2f
         ctx.drawShape(LayoutBounds(x + 11f, my - 6f, 9f, 9f), ShapeStyle(Color(0f, 0f, 0f, 0f), 4.5f, 1.4f, glass))
         ctx.drawShape(LayoutBounds(x + 18.5f, my + 2f, 4.5f, 1.6f), ShapeStyle(glass, 0.8f))
         val caret = if (searchFocused && caretVisible()) "|" else ""
@@ -153,51 +169,56 @@ internal class Sidebar(private val screen: MusicScreen) {
             if (!searchFocused) searchPress.v -= 6f
             searchFocused = true
         }
-        y += 42f
+        y += if (modern) 48f else 42f
 
         fun section(label: String) {
-            ui.text(label, x + 2f, y, 10f, Theme.TEXT_TERTIARY, Theme.FONT_SEMIBOLD)
-            y += 16f
+            ui.text(label, if (modern) side.x + ROW_INSET + 9f else x + 2f, y, 10f, Theme.TEXT_TERTIARY, Theme.FONT_SEMIBOLD)
+            y += if (modern) 22f else 16f
         }
 
-        fun nav(glyph: String, label: String, active: Boolean, redIcon: Boolean, action: () -> Unit) {
-            val row = LayoutBounds(side.x + 6f, y, side.width - 12f, 30f)
+        fun nav(glyph: String, label: String, active: Boolean, redIcon: Boolean = false, action: () -> Unit) {
+            val inset = if (modern) ROW_INSET else 6f
+            val row = LayoutBounds(side.x + inset, y, side.width - inset * 2f, if (modern) ROW_H else 30f)
             if (active) {
                 newKey = "nav:$glyph"
                 newTarget = row
             } else if (ui.hover(row)) {
-                ui.card(row, Theme.CARD_HOVER, 9f)
+                ui.card(row, if (modern) Theme.CARD else Theme.CARD_HOVER, if (modern) row.height / 2f else 9f)
             }
-            val iconColor = if (active || redIcon) RED else Theme.TEXT_SECONDARY
-            // ⌂ / ☁ 在系统中文字体里字形很小或缺失（显示成红点、白椭圆），改用图形画
-            if (!drawShapeIcon(glyph, row.x + 18f, row.y + 15f, iconColor)) ui.icon(glyph, row.x + 18f, row.y + 15f, 12f, iconColor)
-            ui.text(label, row.x + 34f, row.y + 10f, 12f, if (active) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
+            if (modern) {
+                SidebarIcons.draw(ctx, glyph, row.x + 19f, row.y + ROW_H / 2f, RED.copy(a = if (active) 1f else 0.9f))
+                ui.text(label, row.x + 40f, row.y + 11.5f, 12.5f, if (active) Theme.TEXT_PRIMARY else ROW_TEXT, Theme.FONT_MEDIUM)
+            } else {
+                val iconColor = if (active || redIcon) RED else Theme.TEXT_SECONDARY
+                if (!drawShapeIcon(glyph, row.x + 18f, row.y + 15f, iconColor)) ui.icon(glyph, row.x + 18f, row.y + 15f, 12f, iconColor)
+                ui.text(label, row.x + 34f, row.y + 10f, 12f, if (active) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
+            }
             ui.hits += row to action
-            y += 32f
+            y += if (modern) ROW_STEP else 32f
         }
 
-        section("DANGO MUSIC")
+        if (!modern) section("DANGO MUSIC")
         nav("⌂", I18n.text("Home"), page == Page.HOME, true) { screen.go(Page.HOME) }
-        y += 4f  // 和下面“发现音乐”的间距与其他分组一致
-        section(I18n.text("DISCOVER"))
-        nav("▤", I18n.text("Charts"), page == Page.CHARTS, false) { screen.go(Page.CHARTS) }
-        nav("♫", I18n.text("Now Playing"), page == Page.QUEUE, false) { screen.go(Page.QUEUE) }
-        nav("♬", I18n.text("Music group"), page == Page.GROUP, false) { screen.go(Page.GROUP) }
+        if (!modern) { y += 4f; section(I18n.text("DISCOVER")) }
+        nav("▤", I18n.text("Charts"), page == Page.CHARTS) { screen.go(Page.CHARTS) }
+        nav("♫", I18n.text("Now Playing"), page == Page.QUEUE) { screen.go(Page.QUEUE) }
+        nav("♬", I18n.text("Music group"), page == Page.GROUP) { screen.go(Page.GROUP) }
         val netease = MusicSources.selected == MusicSource.NETEASE
         val playlists = Library.playlists
         // 云盘是固定入口，不跟着歌单滚动；列表未加载完时也允许直接打开。
         CloudDrives.entry(MusicSources.selected)?.let { cloud ->
-            nav("☁", I18n.text("Cloud drive"), page == Page.PLAYLIST && ScreenState.opened?.id == cloud.id, false) {
+            nav("☁", I18n.text("Cloud drive"), page == Page.PLAYLIST && ScreenState.opened?.id == cloud.id) {
                 screen.openPlaylist(cloud, null)
             }
         }
-        y += 4f
-        section(I18n.text("MY PLAYLISTS"))
+        y += if (modern) 14f else 4f
+        section(I18n.text(if (modern && MusicSources.selected == MusicSource.APPLE) "LIBRARY" else "MY PLAYLISTS"))
 
         // 歌单列表（底部留出按钮和账号的位置）
-        val rowH = 30f
+        val rowH = if (modern) ROW_STEP else 30f
         val footerH = 92f
-        listArea = LayoutBounds(side.x + 6f, y, side.width - 12f, side.bottom - footerH - y)
+        val listInset = if (modern) ROW_INSET else 6f
+        listArea = LayoutBounds(side.x + listInset, y, side.width - listInset * 2f, max(0f, side.bottom - footerH - y))
         val rows = max(1, (listArea.height / rowH).toInt())
         val list = playlists.filterNot { it.id == CloudDrives.id(MusicSources.selected) }
         scroll = scroll.coerceIn(0, max(0, list.size - rows))
@@ -215,21 +236,27 @@ internal class Sidebar(private val screen: MusicScreen) {
             if (i < 0) continue
             if (i >= list.size) break
             val p = list[i]
-            val row = LayoutBounds(listArea.x, listArea.y + (r - frac) * rowH, listArea.width, rowH - 2f)
+            val row = LayoutBounds(listArea.x, listArea.y + (r - frac) * rowH, listArea.width, if (modern) ROW_H else rowH - 2f)
             val active = page == Page.PLAYLIST && ScreenState.opened?.id == p.id
             if (active) {
                 newKey = "pl:${p.id}"
-                newTarget = row
+                newTarget = if (modern) row.intersect(listShown) else row
             } else if (ui.hover(row)) {
-                ui.card(row, Theme.CARD_HOVER, 9f)
+                ui.card(row, if (modern) Theme.CARD else Theme.CARD_HOVER, if (modern) row.height / 2f else 9f)
             }
             val liked = netease && i == firstOwned   // 第一个自己的歌单就是"我喜欢的音乐"
             // 歌单封面的小缩略图；"我喜欢的音乐"和还没加载出封面的照旧画图标
-            val thumb = if (liked || p.coverUrl.isEmpty()) null else CoverCache.playlistRounded(p, 0.25f)
-            if (thumb != null) ui.drawCover(LayoutBounds(row.x + 9f, row.y + 5f, 18f, 18f), thumb)
-            else ui.icon(if (liked) "♥" else "≡", row.x + 18f, row.y + 14f, 12f, if (liked || active) RED else Theme.TEXT_SECONDARY)
-            val c = if (active) Theme.TEXT_PRIMARY else if (p.owned) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY
-            ui.text(ui.trim(p.name, row.right - 8f - (row.x + 34f), 12f), row.x + 34f, row.y + 9f, 12f, c)
+            val thumb = if (liked || p.coverUrl.isEmpty()) null else CoverCache.playlistRounded(p, if (modern) 0.22f else 0.25f)
+            if (modern) {
+                if (thumb != null) ui.drawCover(LayoutBounds(row.x + 7f, row.y + 5f, 24f, 24f), thumb)
+                else SidebarIcons.draw(ctx, if (liked) "♥" else "≡", row.x + 19f, row.y + ROW_H / 2f, RED.copy(a = 0.9f))
+                ui.text(ui.trim(p.name, row.right - 10f - (row.x + 40f), 12.5f), row.x + 40f, row.y + 11.5f, 12.5f, if (active) Theme.TEXT_PRIMARY else ROW_TEXT)
+            } else {
+                if (thumb != null) ui.drawCover(LayoutBounds(row.x + 9f, row.y + 5f, 18f, 18f), thumb)
+                else ui.icon(if (liked) "♥" else "≡", row.x + 18f, row.y + 14f, 12f, if (liked || active) RED else Theme.TEXT_SECONDARY)
+                val c = if (active) Theme.TEXT_PRIMARY else if (p.owned) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY
+                ui.text(ui.trim(p.name, row.right - 8f - (row.x + 34f), 12f), row.x + 34f, row.y + 9f, 12f, c)
+            }
             ui.hits += row.intersect(listShown) to { screen.openPlaylist(p, null) }
         }
         ui.endClip()
@@ -255,6 +282,18 @@ internal class Sidebar(private val screen: MusicScreen) {
     /** 设置按钮：点一下先缩一下再弹回来，选中的红色渐入渐出（点击区域固定，动画只改画出来的样子） */
     private fun drawSettingsButton(x: Float, iw: Float, by: Float, page: Page) {
         val ctx = ui.ctx
+        if (UiStyle.continuous) {
+            val row = LayoutBounds(x - 2f, by, iw + 4f, ROW_H)
+            val on = settingsOn.x.coerceIn(0f, 1f)
+            val k = 1f + settingsPress.x * 0.05f
+            val b = LayoutBounds(row.x + row.width * (1f - k) / 2f, row.y + row.height * (1f - k) / 2f, row.width * k, row.height * k)
+            val base = if (ui.hover(row)) Theme.CARD else Color.TRANSPARENT
+            ui.card(b, mix(base, ROW_SELECTION, on), b.height / 2f)
+            SidebarIcons.draw(ctx, "⚙", row.x + 19f, row.y + ROW_H / 2f, RED.copy(a = 0.9f))
+            ui.text(I18n.text("Settings"), row.x + 40f, row.y + 11.5f, 12.5f, ROW_TEXT, Theme.FONT_MEDIUM)
+            ui.hits += row to { settingsPress.v -= 7f; screen.toggleSettings() }
+            return
+        }
         val sb = LayoutBounds(x, by, iw, 32f)
         val o = settingsOn.x.coerceIn(0f, 1f)
         val k = 1f + settingsPress.x * 0.12f
@@ -284,6 +323,25 @@ internal class Sidebar(private val screen: MusicScreen) {
 
     /** 账号栏：头像 + 昵称（没登录时是"登录 xx"），右边是当前音源，点开菜单切换音源 / 退出登录 */
     private fun drawAccount(side: LayoutBounds) {
+        if (UiStyle.continuous) {
+            ui.ctx.drawShape(LayoutBounds(side.x + 19f, side.bottom - 53f, side.width - 38f, 0.7f), ShapeStyle(Theme.SEPARATOR))
+            if (MusicSources.selected == MusicSource.APPLE) {
+                val b = LayoutBounds(side.x + ROW_INSET, side.bottom - 46f, side.width - ROW_INSET * 2f, 40f)
+                if (ui.hover(b)) ui.card(b, Theme.CARD, 14f)
+                val av = LayoutBounds(b.x + 5f, b.y + 6f, 28f, 28f)
+                ui.card(av, Color(1f, 1f, 1f, 0.09f), 14f)
+                SidebarIcons.draw(ui.ctx, "♫", av.x + 14f, av.y + 14f, RED)
+                ui.text("Apple Music", b.x + 40f, b.y + 7f, 12.5f, Theme.TEXT_PRIMARY)
+                ui.text(I18n.text(if (me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized) "Signed in" else "Log in"), b.x + 40f, b.y + 24f, 10f, Theme.TEXT_SECONDARY)
+                val chip = LayoutBounds(b.right - 28f, b.y, 28f, 40f)
+                chipRect = chip
+                menuRects += chip
+                Theme.drawChevron(ui.ctx, chip.x + 14f, chip.y + 20f, 7f, if (menuOpen) 270f else 90f, Theme.TEXT_SECONDARY)
+                ui.hits += chip to { menuOpen = !menuOpen }
+                ui.hits += LayoutBounds(b.x, b.y, b.width - 28f, b.height) to { screen.login.open() }
+                return
+            }
+        }
         if (MusicSources.selected == MusicSource.APPLE) {
             val b = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
             ui.card(b, Theme.CARD, 10f)
@@ -297,7 +355,8 @@ internal class Sidebar(private val screen: MusicScreen) {
             ui.hits += LayoutBounds(b.x, b.y, b.width - 30f, b.height) to { screen.login.open() }
             return
         }
-        val ub = LayoutBounds(side.x + 6f, side.bottom - 46f, side.width - 12f, 40f)
+        val inset = if (UiStyle.continuous) ROW_INSET else 6f
+        val ub = LayoutBounds(side.x + inset, side.bottom - 46f, side.width - inset * 2f, 40f)
         val av = LayoutBounds(ub.x + 6f, ub.y + 6f, 28f, 28f)
         val source = MusicSources.selected
         val native = source != MusicSource.NETEASE
@@ -318,7 +377,7 @@ internal class Sidebar(private val screen: MusicScreen) {
         if (if (native) account != null else NeteaseApi.loggedIn) {
             val aurl = if (native) account!!.avatarUrl else NeteaseApi.avatarUrl
             val avatarKey = if (native) "u:${source.key}:${account!!.userId}:$aurl" else "u:${NeteaseApi.userId}"
-            ui.drawCover(av, if (aurl.isNotEmpty()) CoverCache.get(avatarKey, aurl) else null, 14f)
+            ui.drawCover(av, if (aurl.isEmpty()) null else if (UiStyle.continuous) CoverCache.rounded(avatarKey, aurl, 0.5f) else CoverCache.get(avatarKey, aurl), 14f)
             val who = if (native) account!!.nickname.ifEmpty { I18n.text(source.label) + " · " + account.userId }
                 else NeteaseApi.nickname.ifEmpty { I18n.text("Logged in") }
             // 酷狗概念版：名字太长时先缩名字，"· 概念版"一直留着
@@ -488,7 +547,12 @@ internal class Sidebar(private val screen: MusicScreen) {
         }
         if (pillAlpha > 0.01f && pillBot - pillTop > 2f) {
             ui.ctx.pushOpacity(pillAlpha)
-            ui.ctx.drawGlass(LayoutBounds(side.x + 6f, pillTop, side.width - 12f, pillBot - pillTop), Theme.GLASS_SELECTION)
+            if (UiStyle.continuous) {
+                val row = LayoutBounds(side.x + ROW_INSET, pillTop, side.width - ROW_INSET * 2f, pillBot - pillTop)
+                ui.ctx.drawShape(row, ShapeStyle(ROW_SELECTION, min(ROW_H / 2f, row.height / 2f)))
+            } else {
+                ui.ctx.drawGlass(LayoutBounds(side.x + 6f, pillTop, side.width - 12f, pillBot - pillTop), Theme.GLASS_SELECTION)
+            }
             ui.ctx.popOpacity()
         }
     }
