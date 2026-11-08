@@ -63,7 +63,7 @@ object CoverCache {
     private val roundQueued = HashSet<String>()
 
     /** 圆角半径占边长的比例（Song card / 灵动岛用） */
-    private const val ROUND = 0.2f
+    const val DEFAULT_CORNER_RATIO = 0.2f
 
     /** 渲染线程每帧调用：把下载好的图片上传成纹理，超出上限就删掉最久没画的 */
     fun upload() {
@@ -141,7 +141,7 @@ object CoverCache {
     private const val ROUND_SUFFIX = "#r"
 
     /** 圆角版封面（渲染线程调用）：原图下好后再生成一张四角透明的纹理。ratio = 圆角半径 / 边长 */
-    fun rounded(key: String, url: String, ratio: Float = ROUND): Texture? {
+    fun rounded(key: String, url: String, ratio: Float = DEFAULT_CORNER_RATIO): Texture? {
         val continuous = me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous
         // 两种界面风格的遮罩不一样，分开缓存
         val rk = key + ROUND_SUFFIX + (ratio * 100).toInt() + (if (continuous) "c" else "")
@@ -162,7 +162,7 @@ object CoverCache {
         return null
     }
 
-    fun trackRounded(t: NeteaseTrack, ratio: Float = ROUND) = rounded("t:${t.key}", t.coverUrl, ratio)
+    fun trackRounded(t: NeteaseTrack, ratio: Float = DEFAULT_CORNER_RATIO) = rounded("t:${t.key}", t.coverUrl, ratio)
 
     /** 已经下载好的原图（取颜色用，渲染线程调用）；还没下好是 null */
     fun image(key: String): BufferedImage? = sources[key]
@@ -195,7 +195,7 @@ object CoverCache {
         return out
     }
     fun playlist(p: NeteasePlaylist) = get("p:${p.id}", p.coverUrl)
-    fun playlistRounded(p: NeteasePlaylist, ratio: Float = ROUND) = rounded("p:${p.id}", p.coverUrl, ratio)
+    fun playlistRounded(p: NeteasePlaylist, ratio: Float = DEFAULT_CORNER_RATIO) = rounded("p:${p.id}", p.coverUrl, ratio)
 
     private fun square(src: BufferedImage, size: Int): BufferedImage {
         val side = min(src.width, src.height)
