@@ -80,7 +80,7 @@ class LegacyMusicScreen(
     }
 
     override fun keyTyped(typedChar: Char, keyCode: Int) {
-        screen.keyTyped(typedChar, keyCode)
+        screen.keyTyped(typedChar, keyCode, committedSettingsText = inputMethod.active)
         inputMethod.setActive(mc.currentScreen === this && screen.textInputActive)
     }
 

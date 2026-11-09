@@ -668,7 +668,7 @@ class MusicScreen(
     // ---------------------------------------------------------------- 键盘
 
     /** 按键：[keyCode] 是 [Keys] 键码 */
-    fun keyTyped(typedChar: Char, keyCode: Int) {
+    fun keyTyped(typedChar: Char, keyCode: Int, committedSettingsText: Boolean = false) {
         if (closingAt != 0L || closed) {
             if (module.matchesOpenKey(keyCode)) module.consumeOpenKey()
             return
@@ -681,7 +681,10 @@ class MusicScreen(
         // 正在输入 / 录按键的地方先拿走按键
         if (!lyricsOpen) {
             if (ScreenState.page == Page.GROUP && groupPage.keyTyped(typedChar, keyCode)) return
-            if (settings.keyTyped(typedChar, keyCode)) return
+            // With SDL text input active, settings get text from KEY_NONE events.
+            // Keep physical key codes for editing commands and shortcut recording.
+            val settingsChar = if (committedSettingsText && keyCode != Keys.NONE) '\u0000' else typedChar
+            if (settings.keyTyped(settingsChar, keyCode)) return
             if (sidebar.keyTyped(typedChar, keyCode)) return
             if (tracks.filterKeyTyped(typedChar, keyCode)) return
         }
