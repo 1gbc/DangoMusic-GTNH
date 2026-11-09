@@ -4,7 +4,7 @@ import com.google.gson.JsonObject
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import java.util.concurrent.Executors
 
-/** Browser owns audio and queue in this first game integration. No audio enters Java Sound. */
+/** The browser plays the current song. MusicPlayer owns the in-game queue. */
 object AppleWebPlayer {
     @Volatile private var server: AppleWebServer? = null
     @Volatile var message = ""
@@ -150,25 +150,39 @@ object AppleWebPlayer {
             connected && !authorized -> "Apple Music website sign-in is not yet authorized for library access"
             else -> ""
         }
+        fun str(k: String) = s?.get(k)?.asString.orEmpty()
+        val current = MusicPlayer.current
+        val reportedId = str("id")
+        if (s?.get("ended")?.asBoolean == true) {
+            // Older companions can report an end without an item ID. A pending load
+            // is a barrier in either case, including when repeating the same song.
+            if (!endedOnce && loadStartedAt == 0L && current?.source == MusicSource.APPLE &&
+                (reportedId.isEmpty() || current.matchesAppleId(reportedId))) {
+                endedOnce = true
+                MusicPlayer.finishAppleTrack()
+            }
+            return
+        }
+        endedOnce = false
         if (s == null || !s.get("available").asBoolean || s.get("title").asString.isEmpty()) {
             if (loadStartedAt != 0L && System.nanoTime() - loadStartedAt < 65_000_000_000L && server?.error().isNullOrEmpty()) return
             loadStartedAt = 0L
             MusicPlayer.clearAppleState()
             return
         }
-        fun str(k: String) = s.get(k)?.asString.orEmpty()
-        val id = str("id").ifEmpty { str("title") + ":" + str("artist") }
+        val id = reportedId.ifEmpty { str("title") + ":" + str("artist") }
         loadStartedAt = 0L
-        val track = MusicPlayer.queue.firstOrNull { it.source == MusicSource.APPLE && (it.nativeId == id || it.mediaId.removePrefix("library:") == id) }
+        val track = current?.takeIf { it.matchesAppleId(id) }
+            ?: MusicPlayer.queue.firstOrNull { it.matchesAppleId(id) }
             ?: NeteaseTrack(MusicSources.stableId(MusicSource.APPLE, id), str("title"), listOf(str("artist")),
                 s.get("durationMs").asLong, str("cover"), MusicSource.APPLE, id).apply { albumName = str("album") }
-        track.durationMs = s.get("durationMs").asLong
+        val duration = s.get("durationMs").asLong
+        if (duration > 0) track.durationMs = duration
         if (str("cover").isNotEmpty()) track.coverUrl = str("cover")
         MusicPlayer.acceptAppleState(track, s.get("positionMs").asLong, s.get("playing").asBoolean)
-        val ended = s.get("ended")?.asBoolean == true
-        if (ended && !endedOnce) { endedOnce = true; MusicPlayer.finishAppleTrack() }
-        if (!ended) endedOnce = false
     }
+    private fun NeteaseTrack.matchesAppleId(id: String) =
+        source == MusicSource.APPLE && (nativeId == id || mediaId.removePrefix("library:") == id)
     fun disconnect() {
         val retired = synchronized(this) {
             ++connectionEpoch

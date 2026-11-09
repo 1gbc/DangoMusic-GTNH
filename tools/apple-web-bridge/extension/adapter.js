@@ -36,6 +36,22 @@ async function appleAdapter(command) {
   const text=v=>typeof v==='string'?v.slice(0,300):'';
   const coverUrl=value=>{try{const u=new URL(typeof value==='string'?value.replace('{w}','256').replace('{h}','256'):'');return u.protocol==='https:'&&/(^|\.)mzstatic\.com$/.test(u.hostname)&&!u.username?u.href:'';}catch{return '';}};
   const idOk=v=>typeof v==='string'&&/^[A-Za-z0-9._:-]{1,100}$/.test(v);
+  const isEnded=state=>['ended','completed'].some(k=>MusicKit.PlaybackStates?.[k]!==undefined&&state===MusicKit.PlaybackStates[k]);
+  if(globalThis.__dangoAppleCompletion?.player!==player) {
+    const completion=globalThis.__dangoAppleCompletion={player,id:''};
+    if(typeof player.addEventListener==='function'&&MusicKit.Events?.playbackStateDidChange) {
+      player.addEventListener(MusicKit.Events.playbackStateDidChange,event=>{
+        if(isEnded(event.state)) {
+          // MusicKit clears nowPlayingItem before publishing the end state.
+          const id=event.nowPlayingItem?.id||player.nowPlayingItem?.id;
+          if(idOk(id))completion.id=id;
+        } else if(event.state===MusicKit.PlaybackStates?.playing) {
+          completion.id='';
+        }
+      });
+    }
+  }
+  const completion=globalThis.__dangoAppleCompletion;
   if(command?.name==='region') {
     if(typeof player.api?.music!=='function')return {storefront:''};
     try {
@@ -139,6 +155,7 @@ async function appleAdapter(command) {
     if(signIn){signIn.click();return {loginRoute:'website'};}
     if(player.isAuthorized!==true&&typeof player.authorize==='function')Promise.resolve(player.authorize()).catch(()=>{});
   } else if(command?.name==='load') {
+    completion.id='';
     globalThis.__dangoAppleMediaError='';
     const v=command.value||{};if(!idOk(v.id)||typeof player.setQueue!=='function')throw Error('Song loading unavailable');
     const generation=(globalThis.__dangoAppleGeneration||0)+1;globalThis.__dangoAppleGeneration=generation;
@@ -159,6 +176,7 @@ async function appleAdapter(command) {
     globalThis.__dangoAppleLoadStage='queue';
     await player.setQueue(descriptor);
     if(globalThis.__dangoAppleGeneration!==generation)return {cancelled:true};
+    completion.id='';
     stage='play';globalThis.__dangoAppleLoadStage='play';await player.play();
     globalThis.__dangoAppleLoadStage='done';
     } catch(e) {globalThis.__dangoAppleLoadStage='error';return failure(e,stage);}
@@ -174,6 +192,7 @@ async function appleAdapter(command) {
       const method=methods[command.name];
       if(!method||typeof player[method]!=='function')throw Error('Control unavailable: '+command.name);
       if(command.name==='seek'&&(!Number.isFinite(command.value)||command.value<0||command.value>86400))throw Error('Invalid seek');
+      completion.id='';
       let timer;
       try {
         await Promise.race([
@@ -185,13 +204,13 @@ async function appleAdapter(command) {
   }
   const readiness=await sessionReadiness();
   const item=player.nowPlayingItem, a=item?.attributes||{};
-  const artwork=a.artwork?.url;
-  let cover='';
-  try{const u=new URL(typeof artwork==='string'?artwork.replace('{w}','256').replace('{h}','256'):'');if(u.protocol==='https:'&&/(^|\.)mzstatic\.com$/.test(u.hostname))cover=u.href;}catch{}
+  const playing=player.isPlaying===true;
+  const endedId=!playing&&(!item||completion.id===item.id)?completion.id:'';
+  const cover=coverUrl(a.artwork?.url);
   const capabilities=Object.keys(methods).filter(k=>typeof player[methods[k]]==='function');
   if(typeof player.volume==='number')capabilities.push('volume');
-  return {available:true,previewOnly:player.previewOnly===true,loadingStage:globalThis.__dangoAppleLoadStage||'',error:globalThis.__dangoAppleMediaError||readiness.error||'',authorized:readiness.authorized,authState:readiness.authState,ended:['completed','ended'].some(k=>MusicKit.PlaybackStates?.[k]!==undefined&&player.playbackState===MusicKit.PlaybackStates[k]),title:text(a.name||item?.title),artist:text(a.artistName||item?.artistName),album:text(a.albumName),id:text(item?.id),cover,
-    playing:player.isPlaying===true,positionMs:Number.isFinite(player.currentPlaybackTime)?player.currentPlaybackTime*1000:0,
-    durationMs:Number.isFinite(player.currentPlaybackDuration)?player.currentPlaybackDuration*1000:0,capabilities};
+  return {available:true,previewOnly:player.previewOnly===true,loadingStage:globalThis.__dangoAppleLoadStage||'',error:globalThis.__dangoAppleMediaError||readiness.error||'',authorized:readiness.authorized,authState:readiness.authState,ended:!playing&&(!!endedId||isEnded(player.playbackState)),title:text(a.name||item?.title),artist:text(a.artistName||item?.artistName),album:text(a.albumName),id:text(endedId||item?.id),cover,
+    playing,positionMs:Number.isFinite(player.currentPlaybackTime)?player.currentPlaybackTime*1000:0,
+    durationMs:player.currentPlaybackDuration>0&&Number.isFinite(player.currentPlaybackDuration)?player.currentPlaybackDuration*1000:a.durationInMillis||0,capabilities};
 }
 if(typeof module!=='undefined')module.exports={appleAdapter};

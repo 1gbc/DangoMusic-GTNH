@@ -16,6 +16,12 @@ public class AppleLyricsCheck {
         check(provider.selectMatch(target,List.of(song(3,"Song","Other singer",200000)))==null,"Reject other artist");
         check(provider.selectMatch(target,List.of(song(3,"Song","Singer",204000)))==null,"Reject other duration");
         check(provider.selectMatch(target,List.of(good,song(3,"Song","Singer",200050)))==null,"Reject ambiguous matches");
+        NeteaseTrack duet=song(4,"Duet","Singer A & Singer B",200000);
+        NeteaseTrack separate=new NeteaseTrack(5,"Duet",List.of("Singer B","Singer A"),200050,"",MusicSource.NETEASE,"5");
+        check(provider.selectMatch(duet,List.of(separate))==separate,"Match Apple combined credits against separate NetEase credits in either order");
+        check(provider.selectMatch(duet,List.of(song(6,"Duet","Singer A",200000)))==null,"Do not match a solo recording to a duet");
+        NeteaseTrack band=song(7,"Song","AC/DC",200000);
+        check(provider.selectMatch(band,List.of(song(8,"Song","AC/DC",200000)))!=null,"A slash in a band name still matches");
         Lyrics lrc=provider.parse("[00:01.00]first\n[00:05.00]second","lrc");
         check(lrc!=null&&lrc.indexAt(2000)==0&&lrc.indexAt(6000)==1,"Existing world lyric clock consumes Apple lines");
         Lyrics shifted=provider.shift(lrc,500);
