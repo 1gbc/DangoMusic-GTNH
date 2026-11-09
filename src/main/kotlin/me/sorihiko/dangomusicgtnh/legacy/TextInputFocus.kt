@@ -5,7 +5,8 @@ import java.lang.reflect.Method
 
 /** lwjgl3ify queues committed SDL text as ordinary LWJGL keyboard character events. */
 internal class TextInputFocus {
-    private var active = false
+    var active = false
+        private set
 
     fun setActive(focused: Boolean) {
         if (focused == active) return
