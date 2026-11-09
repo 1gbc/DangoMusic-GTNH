@@ -7,5 +7,6 @@
   "key.dangomusic.next": "下一首",
   "key.dangomusic.volume_up": "增大音量",
   "key.dangomusic.volume_down": "减小音量",
-  "key.dangomusic.toggle_lyrics": "显示 / 隐藏歌词"
+  "key.dangomusic.toggle_lyrics": "显示 / 隐藏歌词",
+  "key.dangomusic.lyric_preview": "翻看驾驶舱歌词（按住）"
 }

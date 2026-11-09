@@ -36,8 +36,12 @@ object CjkFont {
     const val PLAIN = 0
     const val BOLD = 1
     const val DISPLAY = 2
-    /** 歌词：先用玩家放进 fonts 文件夹里选中的字体，没有的字再退回普通字体 */
+    /** 歌词：先用玩家选的字体，没有的字再退回普通字体 */
     const val LYRIC = 3
+    /** 驾驶舱歌词：先用玩家给驾驶舱选的字体，没有的字退回粗体 */
+    const val SIDE = 4
+    /** 样式槽位数（字形缓存的键 = 字符 × STYLES + 样式） */
+    private const val STYLES = 8
 
     /** 字形贴图里的字号（像素），屏幕上按需缩放 */
     private fun baseOf(style: Int) = if (style == DISPLAY) 96f else 48f
@@ -65,7 +69,7 @@ object CjkFont {
     )
 
     private val frc = FontRenderContext(null, true, true)
-    private val fontLists = arrayOfNulls<List<Font>>(4)
+    private val fontLists = arrayOfNulls<List<Font>>(STYLES)
 
     private val glyphs = HashMap<Int, Glyph?>()
     private val pages = ArrayList<Int>()
@@ -85,9 +89,10 @@ object CjkFont {
 
     private fun fonts(style: Int): List<Font> {
         fontLists[style]?.let { return it }
-        if (style == LYRIC) {
-            val list = (lyricFont?.let { listOf(it.deriveFont(Font.PLAIN, baseOf(LYRIC))) } ?: emptyList()) + fonts(PLAIN)
-            fontLists[LYRIC] = list
+        if (style == LYRIC || style == SIDE) {
+            val custom = customFonts[style]?.let { listOf(it.deriveFont(Font.PLAIN, baseOf(style))) } ?: emptyList()
+            val list = custom + fonts(if (style == SIDE) BOLD else PLAIN)
+            fontLists[style] = list
             return list
         }
         val base = baseOf(style)
@@ -148,7 +153,7 @@ object CjkFont {
     }
 
     fun glyph(c: Char, style: Int): Glyph? {
-        val key = c.code * 4 + style
+        val key = c.code * STYLES + style
         if (glyphs.containsKey(key)) return glyphs[key]
         val g = try {
             render(c, style)
@@ -159,25 +164,21 @@ object CjkFont {
         return g
     }
 
-    private var lyricFont: Font? = null
-    private var lyricFontPath: String? = null
+    private val customFonts = arrayOfNulls<Font>(STYLES)
+    private val customKeys = arrayOfNulls<String>(STYLES)
 
-    /** 换歌词字体（null = 默认）：同一个文件不重复加载；加载失败就当默认 */
-    fun setLyricFont(file: File?) {
-        val path = file?.absolutePath
-        if (path == lyricFontPath) return
-        lyricFontPath = path
-        lyricFont = if (file == null) null else try {
-            Font.createFont(Font.TRUETYPE_FONT, file).also {
-                DangoLogger.info("Dango Music: lyric font {}", it.fontName)
-            }
-        } catch (e: Throwable) {
-            DangoLogger.warn("Dango Music: could not load lyric font {}: {}", file.name, e.toString())
-            null
-        }
-        // 歌词字形重新画（贴图页里旧的字形留着，不影响）
-        fontLists[LYRIC] = null
-        glyphs.keys.removeAll { it % 4 == LYRIC }
+    /**
+     * 换 [LYRIC] / [SIDE] 槽位的字体（null = 默认）。[key] 是字体的版本标记（同一个文件被替换后会变）：
+     * 和上次一样就什么都不做，变了就把这个槽位的字形重新画（热重载；贴图页里旧的字形留着，不影响）
+     */
+    fun setFont(style: Int, font: Font?, key: String?) {
+        if (style != LYRIC && style != SIDE) return
+        val k = if (font == null) null else key
+        if (k == customKeys[style] && customFonts[style] === font) return
+        customKeys[style] = k
+        customFonts[style] = font
+        fontLists[style] = null
+        glyphs.keys.removeAll { it % STYLES == style }
     }
 
     fun width(s: String, size: Float, style: Int): Float {

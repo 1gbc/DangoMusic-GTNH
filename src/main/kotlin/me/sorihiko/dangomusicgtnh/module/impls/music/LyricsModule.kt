@@ -1,8 +1,10 @@
 package me.sorihiko.dangomusicgtnh.module.impls.music
 
 import me.sorihiko.dangomusicgtnh.DangoClient
+import me.sorihiko.dangomusicgtnh.DangoLogger
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import me.sorihiko.dangomusicgtnh.event.EventHandler
+import me.sorihiko.dangomusicgtnh.events.GameMouseEvent
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
 import me.sorihiko.dangomusicgtnh.gfx.ViewAngles
@@ -125,7 +127,7 @@ class LyricsModule : Module() {
     @ModuleValue("Refraction", "How strongly the glass bends the game behind it")
     internal val sideRefraction = FloatValue(0f, 1f, 0.2f, 2)
 
-    @ModuleValue("Cover color glow", "The text glows in the cover's main color, follows each new song and brightens on the beat")
+    @ModuleValue("Text glow", "The letters glow in their own color and brighten on the beat")
     internal val sideGlow = BooleanValue(true)
 
     @ModuleValue("Glow strength", "How strongly the text and halo glow")
@@ -136,6 +138,35 @@ class LyricsModule : Module() {
 
     @ModuleValue("Guide line", "A thin glowing line beside the list with a tick at the current line")
     internal val sideGuide = BooleanValue(true)
+
+    @ModuleValue("Cockpit font", "The default bold font, a font from config/dangomusicgtnh/fonts, another mod's font folder, or a system font")
+    internal val sideFont = TextValue("")
+
+    /** 驾驶舱字体那一行里选“像素字体”时为 false（和 3D 歌词的 smoothFont 一样，设置页里合进字体那一行） */
+    @ModuleValue("Cockpit smooth font", "")
+    internal val sideSmoothFont = BooleanValue(true)
+
+    @ModuleValue("Cockpit colors", "Cover color follows each song; or use your own color, a cover gradient, a rainbow, or a flowing aurora of the cover colors")
+    internal val sideColors = IntValue(SIDE_COVER, SIDE_AURORA, SIDE_COVER)
+
+    @ModuleValue("Cockpit color", "Used when Cockpit colors is set to Custom color")
+    internal val sideColor = ColorValue(0x8EC5FF)
+
+    @ModuleValue("Color in letters", "How much of the color goes into the letters themselves; 0 keeps white letters with a colored glow")
+    internal val sideTint = FloatValue(0f, 1f, 0.2f, 2)
+
+    @ModuleValue("Text brightness", "Makes the lyrics brighter or darker")
+    internal val sideBrightness = FloatValue(0.3f, 1.6f, 1f, 2)
+
+    @ModuleValue("Other lines", "How visible the lines before and after the current one are")
+    internal val sideOtherLines = FloatValue(0.1f, 1f, 0.45f, 2)
+
+    @ModuleValue("Auto contrast", "Text too close in color to what is behind it is lightened or darkened so it stays readable")
+    internal val autoContrast = BooleanValue(false)
+
+    /** 按住预览键滚轮翻看驾驶舱歌词：翻到了第几行（0 = 歌名，第 n 句是 n），-1 = 不在预览 */
+    private var previewRow = -1
+    private var previewInputAt = 0L
 
     private val side = SideLyrics()
     /** 快捷键关掉歌词前用的样式（再按一次恢复成它；存盘，重开游戏后也能恢复；设置页里不显示） */
@@ -612,7 +643,9 @@ class LyricsModule : Module() {
         if (!enabled) return
         rainbowPhase = ((System.nanoTime() / 1_000_000_000.0 * rainbowSpeed.value) % 1.0).toFloat()
         // 歌词字体：选了就换（同一个文件不会重复加载）
-        DangoClient.gfx.text.lyricFont(if (smoothFont.get()) LyricFonts.file(lyricFont.value) else null)
+        // 歌词字体：每帧对一下版本标记，字体文件被替换了就重新加载（热重载）
+        val (lf, lk) = if (smoothFont.get()) LyricFonts.load(lyricFont.value) else (null to null)
+        DangoClient.gfx.text.font(CjkStyle.LYRIC, lf, lk)
         updateClock()
         val s = current
         // 小柱子的颜色取自封面，所以只开 Now playing 也要加载封面
@@ -741,7 +774,18 @@ class LyricsModule : Module() {
                     // 发光画完，把文字需要的渲染状态重新设好
                     gfx.world.resync()
                 }
-                drawWorld(songNow, stack, frameNanos, floor, view, count > 1)
+                // 近似色反色：字先画进离屏画布，合成时和后面的景色比较；做不了就照常直接画
+                val contrast = autoContrast.get() && (active != null || fading.isNotEmpty()) && gfx.contrast.begin()
+                // 离屏画布上 alpha 要叠加：重新设一次文字的渲染状态（混合方式）
+                if (contrast) gfx.world.resync()
+                try {
+                    drawWorld(songNow, stack, frameNanos, floor, view, count > 1)
+                } finally {
+                    if (contrast) {
+                        gfx.contrast.end()
+                        gfx.world.resync()
+                    }
+                }
             }
         }
     }
@@ -762,9 +806,14 @@ class LyricsModule : Module() {
     /** 侧边歌词列表：当前歌词、进度和设置交给 [SideLyrics] 画（玻璃字、透视倾斜、发光、逐字点亮） */
     private fun drawSide(e: HudRenderEvent, s: NowPlaying?) {
         val platform = DangoClient.platform
+        // 驾驶舱字体：每帧对一下版本标记，字体文件被替换了就重新加载（热重载）
+        val (sf, sk) = LyricFonts.load(sideFont.value)
+        DangoClient.gfx.text.font(CjkStyle.SIDE, sf, sk)
+        updatePreview()
         val frame = s?.let {
             val lyrics = currentKey?.let { key -> lyricsFor(key) }
             val pos = songPos.toLong()
+            val shown = cover.shownKey == it.key
             SideLyrics.Frame(
                 key = it.key,
                 title = it.title,
@@ -772,9 +821,11 @@ class LyricsModule : Module() {
                 lines = lyrics?.lines.orEmpty(),
                 index = lyrics?.indexAt(pos) ?: -1,
                 positionMs = pos,
-                accent = if (cover.shownKey == it.key) cover.accent else CoverArt.DEFAULT_ACCENT,
+                accent = if (shown) cover.accent else CoverArt.DEFAULT_ACCENT,
+                palette = if (shown) cover.palette else emptyList(),
                 beat = playbackBeatPulse(playbackPositionMs()),
                 visible = sideVisible() && !platform.chatOpen,
+                previewRow = previewRow,
             )
         }
         side.draw(e, frame, SideLyrics.Settings(
@@ -795,7 +846,56 @@ class LyricsModule : Module() {
             italic = sideItalic.value,
             refraction = sideRefraction.value,
             guide = sideGuide.get(),
+            colors = sideColors.value,
+            color = sideColor.value,
+            tint = sideTint.value,
+            brightness = sideBrightness.value,
+            otherLines = sideOtherLines.value,
+            contrast = autoContrast.get(),
+            fontKey = sk,
+            pixel = !sideSmoothFont.get(),
         ))
+    }
+
+    // ---------------------------------------------------------------- 驾驶舱歌词预览（按住预览键 + 滚轮）
+
+    private fun previewHeld(): Boolean = try {
+        DangoMusic.instance.moduleManager.get(NeteaseMusicModule::class.java).lyricPreviewHeld()
+    } catch (_: Exception) {
+        false
+    }
+
+    /** 不操作 3 秒自动回到正在唱的那一行 */
+    private fun updatePreview() {
+        if (previewRow >= 0 && System.currentTimeMillis() - previewInputAt > PREVIEW_RETURN_MS) previewRow = -1
+    }
+
+    /**
+     * 游戏里的鼠标：按住预览键时，滚轮翻看驾驶舱歌词（不切换快捷栏），左键跳到中间那一行（不挖方块 / 攻击）。
+     * 没按预览键、没在用驾驶舱歌词时什么都不做，鼠标照常交给游戏
+     */
+    @EventHandler
+    fun mouse(e: GameMouseEvent) {
+        if (!enabled || !sideVisible() || !DangoClient.platform.inGame || !previewHeld()) return
+        val s = current ?: return
+        val lyrics = currentKey?.let { lyricsFor(it) } ?: return
+        val rows = lyrics.lines.size
+        if (rows == 0) return
+        val currentRow = ((lyrics.indexAt(songPos.toLong())) + 1).coerceIn(0, rows)
+        if (e.wheel != 0) {
+            // 滚轮往上 = 看前面的歌词
+            // 记的是固定的行号：唱到下一句时，正在看的那一行不会跟着挪
+            previewRow = ((if (previewRow >= 0) previewRow else currentRow) - Integer.signum(e.wheel)).coerceIn(0, rows)
+            previewInputAt = System.currentTimeMillis()
+            e.consumed = true
+        } else if (e.button == 0 && e.pressed) {
+            e.consumed = true
+            val row = (if (previewRow >= 0) previewRow else currentRow).coerceIn(0, rows)
+            val target = if (row == 0) 0L else lyrics.lines[row - 1].timeMs
+            PlaybackView.seek(target.coerceAtLeast(0L))
+            previewRow = -1
+            DangoLogger.info("Cockpit lyrics: jump to line {} ({} ms) of {}", row, target, s.key)
+        }
     }
 
     /** 对拍时准星下面显示点到第几下 / 点出来的 BPM */
@@ -1748,3 +1848,12 @@ private const val STYLE_WORLD = 0
 private const val STYLE_SIDE = 1
 private const val STYLE_BOTH = 2
 private const val STYLE_OFF = 3
+
+/** 驾驶舱歌词的配色 */
+internal const val SIDE_COVER = 0
+internal const val SIDE_CUSTOM = 1
+internal const val SIDE_GRADIENT = 2
+internal const val SIDE_RAINBOW = 3
+internal const val SIDE_AURORA = 4
+
+private const val PREVIEW_RETURN_MS = 3000L

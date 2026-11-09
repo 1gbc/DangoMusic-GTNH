@@ -193,7 +193,8 @@ internal class Sidebar(private val screen: MusicScreen) {
                 ui.text(label, row.x + 40f, row.y + 11.5f, 12.5f, if (active) Theme.TEXT_PRIMARY else ROW_TEXT, Theme.FONT_MEDIUM)
             } else {
                 val iconColor = if (active || redIcon) RED else Theme.TEXT_SECONDARY
-                if (!drawShapeIcon(glyph, row.x + 18f, row.y + 15f, iconColor)) ui.icon(glyph, row.x + 18f, row.y + 15f, 12f, iconColor)
+                // 经典风格也用矢量图标（字体里的符号小字号下笔画细、显得“瘦”），颜色和位置保持经典的样子
+                SidebarIcons.draw(ctx, glyph, row.x + 18f, row.y + 15f, iconColor, 17f)
                 ui.text(label, row.x + 34f, row.y + 10f, 12f, if (active) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
             }
             ui.hits += row to action
@@ -256,7 +257,7 @@ internal class Sidebar(private val screen: MusicScreen) {
                 ui.text(ui.trim(p.name, row.right - 10f - (row.x + 40f), 12.5f), row.x + 40f, row.y + 11.5f, 12.5f, if (active) Theme.TEXT_PRIMARY else ROW_TEXT)
             } else {
                 if (thumb != null) ui.drawCover(LayoutBounds(row.x + 9f, row.y + 5f, 18f, 18f), thumb)
-                else ui.icon(if (liked) "♥" else "≡", row.x + 18f, row.y + 14f, 12f, if (liked || active) RED else Theme.TEXT_SECONDARY)
+                else SidebarIcons.draw(ctx, if (liked) "♥" else "≡", row.x + 18f, row.y + 14f, if (liked || active) RED else Theme.TEXT_SECONDARY, 16f)
                 val c = if (active) Theme.TEXT_PRIMARY else if (p.owned) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY
                 ui.text(ui.trim(p.name, row.right - 8f - (row.x + 34f), 12f), row.x + 34f, row.y + 9f, 12f, c)
             }
@@ -310,7 +311,7 @@ internal class Sidebar(private val screen: MusicScreen) {
         val sw = 14f * k + 6f * k + ui.width(sLabel, size, Theme.FONT_SEMIBOLD)
         val sx = b.x + (b.width - sw) / 2f
         val cy = b.y + b.height / 2f
-        ui.icon("⚙", sx + 7f * k, cy, 14f * k, sCol)
+        SidebarIcons.draw(ui.ctx, "⚙", sx + 7f * k, cy, sCol, 16f * k)
         ui.text(sLabel, sx + 20f * k, cy - size * 0.39f - 0.5f, size, sCol, Theme.FONT_SEMIBOLD)
         ui.hits += sb to {
             settingsPress.v -= 7f
@@ -353,7 +354,7 @@ internal class Sidebar(private val screen: MusicScreen) {
             val chip = LayoutBounds(b.right - 30f, b.y, 30f, 40f)
             chipRect = chip
             menuRects += chip
-            ui.icon("⇄", chip.x + 15f, chip.y + 20f, 12f, Theme.TEXT_PRIMARY)
+            SidebarIcons.draw(ui.ctx, "⇄", chip.x + 15f, chip.y + 20f, Theme.TEXT_PRIMARY, 14f)
             ui.hits += chip to { menuOpen = !menuOpen }
             ui.hits += LayoutBounds(b.x, b.y, b.width - 30f, b.height) to { screen.login.open() }
             return
@@ -371,8 +372,7 @@ internal class Sidebar(private val screen: MusicScreen) {
         val chip = LayoutBounds(ub.right - chipW - 6f, ub.y + 9f, chipW, 22f)
         ui.card(chip, if (menuOpen || ui.hover(chip)) Theme.CARD_HOVER else Theme.CARD, 7f)
         ui.text(chipLabel, chip.x + 8f, chip.y + 7f, 10f, if (menuOpen) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_MEDIUM)
-        if(UiStyle.continuous) SidebarIcons.draw(ui.ctx,"⇄",chip.right-10f,chip.y+11f,Theme.TEXT_SECONDARY,12f)
-        else ui.icon("⇄", chip.right - 10f, chip.y + 11f, 10f, Theme.TEXT_SECONDARY)
+        SidebarIcons.draw(ui.ctx, "⇄", chip.right - 10f, chip.y + 11f, Theme.TEXT_SECONDARY, 12f)
         chipRect = chip
         menuRects += chip
         ui.hits += chip to { menuOpen = !menuOpen }
@@ -451,6 +451,7 @@ internal class Sidebar(private val screen: MusicScreen) {
     /** 音源菜单：在账号栏上方弹出，三个音源（已登录的带小圆点）+ 退出当前账号 */
     private fun drawSourceMenu(side: LayoutBounds, menu: LayoutBounds) {
         val ctx = ui.ctx
+        val modern = UiStyle.continuous
         val current = MusicSources.selected
         val sources = MusicSource.values()
         val itemH = MENU_ITEM_H
@@ -459,8 +460,13 @@ internal class Sidebar(private val screen: MusicScreen) {
         // 液态玻璃底：圆角、斜面和折射跟着当前大小走，小的时候也不会变形
         val r = kotlin.math.min(14f, menu.height / 2f)
         val edge = kotlin.math.min(12f, kotlin.math.min(menu.width, menu.height) / 3f)
-        ctx.drawGlass(menu, MENU_GLASS.copy(radius = r, bevel = edge, refraction = edge))
-        ctx.drawShape(menu, ShapeStyle(Color(0f, 0f, 0f, 0f), r, 1f, Color(1f, 1f, 1f, 0.10f)))
+        if (modern) {
+            ctx.drawGlass(menu, MENU_GLASS.copy(radius = r, bevel = edge, refraction = edge))
+            ctx.drawShape(menu, ShapeStyle(Color(0f, 0f, 0f, 0f), r, 1f, Color(1f, 1f, 1f, 0.10f)))
+        } else {
+            // 经典风格：和播放栏菜单一样的浅色磨砂玻璃
+            PopupLook.panel(ctx, menu)
+        }
 
         // 内容在菜单长到一半以后逐行淡入、从下往上浮起；收起时一起淡出
         val content = ((sh - 0.35f) / 0.5f).coerceIn(0f, 1f)
@@ -468,6 +474,10 @@ internal class Sidebar(private val screen: MusicScreen) {
         if (interactive) menuRects += menu
         val hits = mutableListOf<Hit>()
         ui.beginClip(menu)
+        // 鼠标在菜单上时，下面的歌单不显示悬停；菜单里的照常
+        ui.registerPopup(menu)
+        val wasPopup = ui.inPopup
+        ui.inPopup = true
         var y = full.y + 8f
         var index = 0
         fun rowAt(rowY: Float): Pair<LayoutBounds, Float> {
@@ -479,7 +489,9 @@ internal class Sidebar(private val screen: MusicScreen) {
             val (row, a) = rowAt(y)
             val on = s == current
             ctx.pushOpacity(a)
-            if (on) ui.card(row, RED.copy(a = 0.20f), 8f) else if (interactive && ui.hover(row)) ui.card(row, Theme.CARD_HOVER, 8f)
+            val selFill = if (modern) RED.copy(a = 0.20f) else PopupLook.selected
+            val hoverFill = if (modern) Theme.CARD_HOVER else PopupLook.hover
+            if (on) ui.card(row, selFill, 8f) else if (interactive && ui.hover(row)) ui.card(row, hoverFill, 8f)
             if (loggedIn(s)) ctx.drawShape(LayoutBounds(row.x + 10f, row.y + row.height / 2f - 3f, 6f, 6f), ShapeStyle(Theme.GREEN, 3f))
             ui.text(I18n.text(s.label), row.x + 24f, row.y + 9f, 12f, if (on) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY,
                 if (on) Theme.FONT_SEMIBOLD else Theme.FONT_MEDIUM)
@@ -496,8 +508,8 @@ internal class Sidebar(private val screen: MusicScreen) {
         if (canLogOut) {
             val (row0, a) = rowAt(y + 9f)
             ctx.pushOpacity(a)
-            ctx.drawShape(LayoutBounds(full.x + 12f, row0.y - 5f, full.width - 24f, 1f), ShapeStyle(Color(1f, 1f, 1f, 0.08f), 0.5f))
-            if (interactive && ui.hover(row0)) ui.card(row0, Theme.CARD_HOVER, 8f)
+            ctx.drawShape(LayoutBounds(full.x + 12f, row0.y - 5f, full.width - 24f, 1f), ShapeStyle(if (modern) Color(1f, 1f, 1f, 0.08f) else PopupLook.divider, 0.5f))
+            if (interactive && ui.hover(row0)) ui.card(row0, if (modern) Theme.CARD_HOVER else PopupLook.hover, 8f)
             ui.text(I18n.text("Log out"), row0.x + 24f, row0.y + 9f, 12f, Theme.TEXT_TERTIARY, Theme.FONT_MEDIUM)
             ctx.popOpacity()
             if (interactive) {
@@ -511,6 +523,7 @@ internal class Sidebar(private val screen: MusicScreen) {
                 }
             }
         }
+        ui.inPopup = wasPopup
         ui.endClip()
         // 菜单里的空白处也算菜单：点了不穿透到下面的歌单（菜单盖在歌单上面，所以它的点击排在最前面）
         if (interactive) hits += menu to {}
@@ -583,28 +596,6 @@ internal class Sidebar(private val screen: MusicScreen) {
             }
             DangoClient.platform.ctrlDown && keyCode == Keys.A -> searchText = ""
             Keys.isAllowedChar(typedChar) -> searchText = (searchText + typedChar).take(80)
-        }
-        return true
-    }
-
-    /** 侧边栏里系统字体画不好的图标：房子（菱形屋顶 + 墙身）和云（三个圆 + 圆角底座）。画了返回 true */
-    private fun drawShapeIcon(glyph: String, cx: Float, cy: Float, color: Color): Boolean {
-        val ctx = ui.ctx
-        when (glyph) {
-            "⌂" -> {
-                ctx.drawShape(LayoutBounds(cx - 4.5f, cy - 1f, 9f, 6.5f), ShapeStyle(color, 1.5f))
-                ctx.pushTranslate(cx, cy - 1.5f, 0f)
-                ctx.pushRotate(45f, 0f, 0f, 1f)
-                ctx.drawShape(LayoutBounds(-4.4f, -4.4f, 8.8f, 8.8f), ShapeStyle(color, 1.6f))
-                ctx.popTransform()
-                ctx.popTransform()
-            }
-            "☁" -> {
-                ctx.drawShape(LayoutBounds(cx - 6.5f, cy - 0.5f, 13f, 5.5f), ShapeStyle(color, 2.75f))
-                ctx.drawShape(LayoutBounds(cx - 5.5f, cy - 2.5f, 6f, 6f), ShapeStyle(color, 3f))
-                ctx.drawShape(LayoutBounds(cx - 2f, cy - 5f, 8f, 8f), ShapeStyle(color, 4f))
-            }
-            else -> return false
         }
         return true
     }

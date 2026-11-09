@@ -47,6 +47,19 @@ interface Gfx {
 
     /** 玻璃字（侧边歌词用） */
     val glassText: GlassTextPass
+
+    /** 近似色自动反色（3D 歌词用） */
+    val contrast: ContrastPass
+}
+
+/**
+ * 近似色自动反色：[begin] 之后画的文字先进离屏画布，[end] 时逐个像素和后面的景色比较，
+ * 太接近就提亮 / 压暗再合成回画面。[begin] 返回 false 表示这一帧做不了，照常直接画就行。
+ */
+interface ContrastPass {
+    fun begin(): Boolean
+    /** begin 返回 true 之后一定要调用（出错也要） */
+    fun end()
 }
 
 /** 平滑字体的样式 */
@@ -56,6 +69,8 @@ object CjkStyle {
     const val DISPLAY = 2
     /** 歌词（玩家选的字体，没有的字退回普通字体） */
     const val LYRIC = 3
+    /** 驾驶舱歌词（玩家给驾驶舱选的字体，没有的字退回粗体） */
+    const val SIDE = 4
 }
 
 /** 一段要画的平滑字体文字。centered = (x, y) 是可见部分的中心；否则 y 是基线 */
@@ -117,8 +132,11 @@ interface TextCanvas {
     /** 平滑字体的颜色 */
     fun color(r: Float, g: Float, b: Float, a: Float)
 
-    /** 歌词用的字体文件（null = 默认）；只在渲染线程调用 */
-    fun lyricFont(file: java.io.File?) {}
+    /**
+     * 给 [CjkStyle.LYRIC] / [CjkStyle.SIDE] 换字体（null = 默认）。[key] 是字体的版本标记，变了才重新生成字形。
+     * 只在渲染线程调用
+     */
+    fun font(style: Int, font: java.awt.Font?, key: String?) {}
 
     /** 横向错切：x 加上 -t·y（t = tan(角度)，y 向下时字的上半部分往右倒，就是斜体） */
     fun skewX(t: Float) {}
@@ -180,15 +198,16 @@ interface GlowPass {
  *
  * 用法：[begin] → 用 [TextCanvas] 画字（坐标是窗口像素，原点左上角，y 向下）→ [end]。
  * 画字时的颜色是“遮罩”的约定，不是最终颜色：
- *   alpha = 这里有多少玻璃（0 = 没有），rgb 的亮度 = 这块玻璃自己发多少光（0..1）。
- * 显卡做不了离屏画布 / 着色器时，字直接按这个颜色画到屏幕上（白色的字），透视照样生效。
+ *   alpha = 这里有多少字（0 = 没有）；rgb = 这个字的颜色 × 亮度（颜色先调成最亮的通道是 1，
+ *   这样合成时能分出颜色和亮度）。光晕、玻璃里的光都用每个字自己的颜色。
+ * 显卡做不了离屏画布 / 着色器时，字直接按这个颜色画到屏幕上，透视照样生效。
  */
 interface GlassTextPass {
     /** 开始画；返回 false 表示这一帧什么都画不了 */
     fun begin(view: GlassTextView): Boolean
 
-    /** 画一条没有贴图的竖条 / 横条（引导线用），颜色约定同上，上下两端的 alpha 可以不同 */
-    fun bar(x: Float, y: Float, w: Float, h: Float, emission: Float, alphaTop: Float, alphaBottom: Float)
+    /** 画一条没有贴图的竖条 / 横条（引导线用），颜色约定同上（rgb = 颜色 × 亮度），上下两端的 alpha 可以不同 */
+    fun bar(x: Float, y: Float, w: Float, h: Float, r: Float, g: Float, b: Float, alphaTop: Float, alphaBottom: Float)
 
     /** 把画好的字合成到画面上；begin 返回 true 之后一定要调用（出错也要） */
     fun end(style: GlassTextStyle)
@@ -201,9 +220,7 @@ interface GlassTextPass {
 class GlassTextView(val pivotX: Float, val pivotY: Float, val yaw: Float, val pitch: Float)
 
 class GlassTextStyle(
-    /** 玻璃发光 / 光晕的颜色 */
-    val r: Float, val g: Float, val b: Float,
-    /** 0..1：玻璃有多“浓”；越低越接近完全透明 */
+    /** 0..1：字有多“浓”（实心字的不透明度 / 玻璃有多明显）；越低越通透 */
     val opacity: Float,
     /** 折射偏移（窗口像素） */
     val refraction: Float,
@@ -215,6 +232,12 @@ class GlassTextStyle(
     val frost: Float,
     /** true = 不做玻璃，画成实心的发光字 */
     val solid: Boolean,
+    /** 0..1：字本身染上多少颜色（0 = 白字配彩色光晕，1 = 字也是彩色的） */
+    val tintText: Float,
+    /** 字的整体亮度（1 = 正常） */
+    val brightness: Float,
+    /** 字和后面的画面颜色太接近时自动提亮 / 压暗 */
+    val contrast: Boolean,
 )
 
 /** 左上角"正在播放"这种原版风格的 HUD（原版 GUI 缩放的坐标） */

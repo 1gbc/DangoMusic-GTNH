@@ -19,9 +19,12 @@ import me.sorihiko.dangomusicgtnh.module.values.ModuleValue
 import me.sorihiko.dangomusicgtnh.music.MusicScreen
 import me.sorihiko.dangomusicgtnh.platform.Keys
 import me.sorihiko.dangomusicgtnh.platform.allowedPlayerKey
+import me.sorihiko.dangomusicgtnh.ui.GlassStyle
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
+import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
 import me.sorihiko.dangomusicgtnh.ui.Theme
+import me.sorihiko.dangomusicgtnh.ui.Vec2
 import me.sorihiko.dangomusicgtnh.utils.Color
 
 import kotlin.math.max
@@ -68,11 +71,15 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         "uiStyle" to listOf("Classic", "Continuous corners"),
         "lyricStyle" to listOf("3D world lyrics", "Cockpit lyrics", "Both", "Hidden"),
         "sidePosition" to listOf("Left middle", "Left bottom", "Right middle"),
+        "sideColors" to listOf("Cover color", "Custom color", "Cover gradient", "Rainbow", "Aurora"),
         "shareQuality" to listOf("Standard (128k)", "Higher (192k)", "High (320k)"),
     )
 
     /** 显示成百分比的选项 */
-    private val percentKeys = setOf("volume", "glowRadius", "posX", "posY")
+    private val percentKeys = setOf(
+        "volume", "glowRadius", "posX", "posY",
+        "sideOpacity", "sideTint", "sideBrightness", "sideOtherLines", "sideGlowStrength", "sideRefraction",
+    )
 
     private val tabs: List<List<Group>> by lazy { buildSettings() }
 
@@ -156,6 +163,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     fun beginFrame() {
         pickerHits.clear()
+        fontHits.clear()
+        fontAnchorSeen = false
         keyButtons.clear()
         keyResetButtons.clear()
     }
@@ -166,6 +175,10 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     }
 
     fun scroll(wheel: Int) {
+        if (fontOpen && fontPanel.contains(ui.mx, ui.my)) {
+            fontScroll = (fontScroll + (if (wheel > 0) -66f else 66f)).coerceIn(0f, fontMaxScroll)
+            return
+        }
         target = (target + (if (wheel > 0) -60f else 60f) * (if (DangoClient.platform.ctrlDown) 4f else 1f)).coerceIn(0f, maxScroll)
     }
 
@@ -207,6 +220,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     /** 点到别处时：收起快捷键录制和数值输入 */
     fun onClickElsewhere(hit: Hit?) {
         if (picker != null && (hit == null || pickerHits.none { it === hit.first })) closePicker()
+        if (fontOpen && (hit == null || fontHits.none { it === hit.first })) fontOpen = false
         if (bindingKey != null && (hit == null || hit.first !in keyButtons)) bindingKey = null
         if (editRow != null && (hit == null || hit.first != editRect.intersect(area))) commitEdit()
     }
@@ -252,7 +266,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 val (ann, v) = left.remove(k) ?: return@mapNotNull null
                 val ctl = when {
                     k == "language" -> Ctl.LANGUAGE
-                    k == "lyricFont" -> Ctl.FONT
+                    k == "lyricFont" || k == "sideFont" -> Ctl.FONT
                     k in choiceLabels -> Ctl.CHOICE
                     v is BooleanValue -> Ctl.TOGGLE
                     k == "openKey" || (k.startsWith("key") && v is IntValue) -> Ctl.KEY
@@ -268,7 +282,9 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                     else -> custom
                 }
                 // 歌词字体这一行同时管"平滑字体"开关（像素字体 = 关）
-                val value = if (ctl == Ctl.FONT) FontChoice(v as TextValue, all.getValue("smoothFont").second as BooleanValue) else v
+                val value = if (ctl == Ctl.FONT) {
+                    FontChoice(v as TextValue, all.getValue(if (k == "lyricFont") "smoothFont" else "sideSmoothFont").second as BooleanValue)
+                } else v
                 Row(ann.name.ifEmpty { k }, ann.desc, value, ctl, conds[k], fmts[k] ?: ::fmtValue, if (k in percentKeys) 100f else 1f, k, show)
             }
         }
@@ -307,7 +323,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             ),
             shows = mapOf(
                 // 拆分歌词改的是歌词数据本身（歌词页也受影响），不随样式收起
-                "translation" to anyLyrics,
+                "translation" to anyLyrics, "autoContrast" to anyLyrics,
+                "sideColor" to { lm.sideColors.value == 1 },
                 // 注音和翻译的动画只有 3D 歌词有
                 "romanization" to world, "translationAnimation" to world, "translationWiggle" to world,
                 "textColor" to { colors.value == 0 },
@@ -318,17 +335,21 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             ),
         )
         ly.left.remove("smoothFont")   // 合进了"歌词字体"那一行
+        ly.left.remove("sideSmoothFont") // 合进了"驾驶舱字体"那一行
         ly.left.remove("worldMode")    // 由“歌词样式”统一管（旧存档里关着的话，启动时换算成“不显示”）
         ly.left.remove("styleBeforeOff") // 快捷键内部记的值
         val lyrics = mutableListOf(
             Group("Lyrics", "Style and translation", lm, false,
-                ly.take(listOf("lyricStyle", "translation", "romanization", "translationAnimation", "translationWiggle", "splitLines"))),
+                ly.take(listOf("lyricStyle", "autoContrast", "translation", "romanization", "translationAnimation", "translationWiggle", "splitLines"))),
             Group("Cockpit lyrics", "Position and tilt", lm, false, ly.take(listOf(
                 "sidePosition", "sideOffsetX", "sideOffsetY", "sideWidth", "sideLines", "sideTextSize",
                 "sideTilt", "sidePitch", "sideItalic", "sideGuide",
             )), show = side),
-            Group("Cockpit look", "Glow and glass", lm, false, ly.take(listOf(
-                "sideGlow", "sideTextGlow", "sideGlowStrength", "sideOpacity", "sideGlass", "sideRefraction",
+            Group("Cockpit look", "Font and colors", lm, false, ly.take(listOf(
+                "sideFont", "sideColors", "sideColor", "sideTint", "sideBrightness", "sideOpacity", "sideOtherLines",
+            )), show = side),
+            Group("Cockpit glow", "Glow and glass", lm, false, ly.take(listOf(
+                "sideGlow", "sideTextGlow", "sideGlowStrength", "sideGlass", "sideRefraction",
             )), show = side),
             Group("3D lyrics", "Font and colors", lm, false,
                 ly.take(listOf("scale", "maxLyricLines", "lyricFont", "lyricColors", "textColor", "translationColor", "rainbowSpeed")), show = world),
@@ -429,6 +450,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             ui.text(I18n.text("Settings"), page.x, page.y, 22f, Theme.TEXT_PRIMARY, Theme.FONT_DISPLAY)
             ui.text(I18n.text("Changes apply instantly and are saved automatically"), page.x, page.y + 30f, 11f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
             drawTabs(page)
+            drawResetButton(page)
         }
 
         val top = page.y + 54f
@@ -466,7 +488,9 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             val ty = view.y + (view.height - th) * (pos / maxScroll)
             ui.ctx.drawShape(LayoutBounds(view.right - 4f, ty, 4f, th), ShapeStyle(Color(1f, 1f, 1f, 0.30f), 2f))
         }
+        if (picker != null || fontChoice != null) ui.mt.flush(ui.scale)
         drawPicker(view)
+        drawFontList(view)
     }
 
     // ---------------------------------------------------------------- 取色器
@@ -559,7 +583,10 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         px = px.coerceIn(view.x, view.right - w - 8f)
         py = py.coerceIn(view.y, max(view.y, view.bottom - h))
         val panel = LayoutBounds(px, py, w, h)
+        ui.registerPopup(panel)
         ctx.drawShape(panel, ShapeStyle(Color(0.11f, 0.11f, 0.13f, 0.98f), 12f, 1f, Color(1f, 1f, 1f, 0.14f)))
+        val wasPopup = ui.inPopup
+        ui.inPopup = true
         val hits = ArrayList<Hit>()
         val x = px + 12f
         val iw = w - 24f
@@ -632,6 +659,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         }
 
         // 面板本身吃掉点击（点空白处不会点到下面的选项）；点击区域插到最前面，比设置列表优先
+        ui.inPopup = wasPopup
         hits += panel to {}
         for (hh in hits) pickerHits += hh.first
         ui.hits.addAll(0, hits)
@@ -731,6 +759,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                     ScreenState.settingsTab = i
                     resetScroll()
                     bindingKey = null
+                    closeFontListNow()
+                    closePicker()
                 }
             }
         }
@@ -868,37 +898,71 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     private fun stepper(clip: LayoutBounds, cx: Float, cy: Float, label: String, enabled: Boolean, step: (Int) -> Unit) {
         val prev = LayoutBounds(cx, cy - 11f, 22f, 22f)
         val next = LayoutBounds(cx + 122f, cy - 11f, 22f, 22f)
-        for ((button, glyph, delta) in listOf(Triple(prev, "◀", -1), Triple(next, "▶", 1))) {
+        for ((button, delta) in listOf(prev to -1, next to 1)) {
             ui.card(button, if (ui.hover(button)) Theme.CARD_HOVER else Theme.CARD, 6f)
-            ui.icon(glyph, button.x + 11f, cy, 8f, if (enabled) Theme.TEXT_PRIMARY else Theme.TEXT_TERTIARY)
+            PlayerIcons.draw(ui.ctx, if (delta < 0) PlayerIcons.chevronLeft else PlayerIcons.chevronRight, button.x + 11f, cy, 13f,
+                if (enabled) Theme.TEXT_PRIMARY else Theme.TEXT_TERTIARY)
             ui.hits += button.intersect(clip) to { step(delta) }
         }
         val shown = ui.trim(label, 94f, 11f, Theme.FONT_MEDIUM)
         ui.text(shown, cx + 72f - ui.width(shown, 11f, Theme.FONT_MEDIUM) / 2f, cy - 11f * 0.39f - 0.5f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
     }
 
-    /** 歌词字体这一行的值：字体文件名 + 平滑字体开关 */
-    private class FontChoice(val font: TextValue, val smooth: BooleanValue)
+    /** 字体这一行的值：字体 id（见 [LyricFonts]）+ 平滑字体开关（只有 3D 歌词有像素字体，驾驶舱是 null） */
+    private class FontChoice(val font: TextValue, val smooth: BooleanValue?)
 
-    /** 歌词字体：◀ 像素字体 / 平滑字体 / fonts 文件夹里的字体 ▶，左边的小文件夹按钮打开那个文件夹 */
+    /** 字体弹出列表：哪一行打开的、贴着哪个按钮、列表滚到哪 */
+    private var fontChoice: FontChoice? = null
+    private var fontAnchor = LayoutBounds()
+    private var fontPanel = LayoutBounds()
+    private var fontScroll = 0f
+    private var fontMaxScroll = 0f
+    /** 这一帧画到了打开列表的那一行 */
+    private var fontAnchorSeen = false
+    private val fontHits = mutableListOf<LayoutBounds>()
+
+    private fun fontName(choice: FontChoice): String {
+        val id = choice.font.value
+        return when {
+            choice.smooth?.get() == false -> I18n.text("Pixel font")
+            id.isEmpty() -> I18n.text(if (choice.font === cockpitFont) "Default bold" else "Smooth font")
+            !LyricFonts.exists(id) -> LyricFonts.label(id) + I18n.text(" (missing)")
+            else -> LyricFonts.label(id)
+        }
+    }
+
+    /** 字体：左边小文件夹按钮打开我们的字体文件夹，右边按钮点开字体列表 */
     private fun drawFontPicker(choice: FontChoice, clip: LayoutBounds, cx: Float, cy: Float) {
-        val files = LyricFonts.list()
-        // 0 = 像素字体，1 = 平滑字体（默认），之后是文件
-        val index = when {
-            !choice.smooth.get() -> 0
-            choice.font.value.isEmpty() || choice.font.value !in files -> 1
-            else -> 2 + files.indexOf(choice.font.value)
+        val box = LayoutBounds(cx + 22f, cy - 12f, 144f, 24f)
+        val open = fontChoice === choice && fontOpen
+        ui.card(box, if (open || ui.hover(box)) Theme.CARD_HOVER else Theme.CARD, 7f)
+        val shown = ui.trim(fontName(choice), 116f, 11f, Theme.FONT_MEDIUM)
+        ui.text(shown, box.x + 9f, cy - 11f * 0.39f - 0.5f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
+        PlayerIcons.draw(ui.ctx, if (open) PlayerIcons.chevronUp else PlayerIcons.chevronDown, box.right - 12f, cy, 12f, Theme.TEXT_SECONDARY)
+        if (fontChoice === choice && box.y + box.height / 2f in clip.y..clip.bottom) {
+            fontAnchor = box
+            fontAnchorSeen = true
         }
-        val name = when (index) {
-            0 -> I18n.text("Pixel font")
-            1 -> I18n.text("Smooth font")
-            else -> LyricFonts.label(files[index - 2])
-        }
-        // 文件夹按钮放在最左边，后面的 ◀ ▶ 和其他选项行右对齐
-        stepper(clip, cx + 22f, cy, name, true) { delta ->
-            val next = Math.floorMod(index + delta, files.size + 2)
-            if (choice.smooth.get() != (next != 0)) choice.smooth.toggle()
-            choice.font.value = if (next >= 2) files[next - 2] else ""
+        val hit = box.intersect(clip)
+        fontHits += hit
+        ui.hits += hit to {
+            if (fontChoice === choice && fontOpen) {
+                fontOpen = false
+            } else {
+                commitEdit()
+                closePicker()
+                bindingKey = null
+                if (fontChoice !== choice) {
+                    // 换了一行（或者是新打开）：从这个按钮重新展开
+                    fontMotion.snap(false)
+                    fontLastNanos = 0L
+                }
+                fontChoice = choice
+                fontOpen = true
+                fontAnchor = box
+                fontScroll = 0f
+                scrollToSelected = true
+            }
         }
         // 文件夹图标：一个小标签 + 一个圆角方块
         val folder = LayoutBounds(cx, cy - 11f, 18f, 22f)
@@ -909,6 +973,258 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             // 打不开文件夹（安卓等）：在底部提示栏告诉玩家往哪放
             if (!LyricFonts.openFolder())
                 Library.showStatus(I18n.text("Fonts folder: ") + LyricFonts.folder.absolutePath + I18n.text(" (put .ttf / .otf files here)"))
+        }
+    }
+
+    /** 打开列表时滚到选中的那一项（只滚一次） */
+    private var scrollToSelected = false
+
+    /** 一项：分组标题（header）或者一个字体 */
+    private class FontItem(val label: String, val pixel: Boolean, val id: String, val header: Boolean)
+
+    /** 列表正在展开 / 展开着；false 时如果 [fontChoice] 还在，就是正在收起 */
+    private var fontOpen = false
+    /** 弹出动画：和播放栏的菜单同一套（从按钮展开 / 收回，收起时一起淡出） */
+    private val fontMotion = PopupMotion()
+    private var fontLastNanos = 0L
+
+    /** 马上收起（切标签、恢复默认时），不播动画 */
+    private fun closeFontListNow() {
+        fontChoice = null
+        fontOpen = false
+        fontMotion.snap(false)
+        fontLastNanos = 0L
+    }
+
+    /**
+     * 字体列表：从下拉按钮里展开的弹出菜单，外观和播放栏的菜单一样（经典风格浅色玻璃，连续圆角风格跟随那边的设计，见 PopupLook）。
+     * 顶上是标题和刷新按钮；像素字体 / 默认，然后按“字体文件夹 / 其它模组 / 系统字体”分组；滚轮滚动，点一项选中
+     */
+    private fun drawFontList(view: LayoutBounds) {
+        val choice = fontChoice ?: return
+        // 打开它的那一行滚出视野 / 切走了：直接收起
+        if (!fontAnchorSeen) {
+            closeFontListNow()
+            return
+        }
+        val now = System.nanoTime()
+        // 好一阵子没画（离开了设置页）：回来时不带着旧状态冒出来
+        if (fontLastNanos != 0L && now - fontLastNanos > 1_000_000_000L) {
+            closeFontListNow()
+            return
+        }
+        val dt = if (fontLastNanos == 0L) 0.016f else ((now - fontLastNanos) / 1e9f).coerceIn(0f, 0.05f)
+        fontLastNanos = now
+        fontMotion.step(fontOpen, dt)
+        if (!fontOpen && !fontMotion.visible) {
+            closeFontListNow()
+            return
+        }
+
+        val items = ArrayList<FontItem>()
+        items += FontItem(I18n.text("Pixel font"), true, "", false)
+        items += FontItem(I18n.text(if (choice.font === cockpitFont) "Default bold" else "Smooth font"), false, "", false)
+        val entries = LyricFonts.entries()
+        for ((kind, title) in listOf(
+            LyricFonts.Kind.OWN to "Fonts folder",
+            LyricFonts.Kind.MOD to "Other mods",
+            LyricFonts.Kind.SYSTEM to "System fonts",
+        )) {
+            val group = entries.filter { it.kind == kind }
+            if (group.isEmpty()) continue
+            items += FontItem(I18n.text(title), false, "", true)
+            for (e in group) items += FontItem(if (kind == LyricFonts.Kind.MOD) "${e.label} · ${e.source}" else e.label, false, e.id, false)
+        }
+
+        val itemH = 28f
+        val headerH = 34f
+        val bottomLimit = view.bottom - ui.bottomInset
+        val w = 260f
+        val listH = items.sumOf { (if (it.header) 24.0 else itemH.toDouble()) }.toFloat()
+        val h = (headerH + listH + 8f).coerceAtMost(360f)
+        var top = fontAnchor.bottom + 6f
+        if (top + h > bottomLimit) top = fontAnchor.y - h - 6f
+        top = top.coerceAtMost(bottomLimit - h).coerceAtLeast(view.y)
+        val right = fontAnchor.right.coerceAtMost(view.right - 8f).coerceAtLeast(view.x + w)
+        val full = LayoutBounds(right - w, top, w, h)
+        val p = fontMotion.progress.coerceIn(0f, 1f)
+        val menu = fontMotion.bounds(fontAnchor, full)
+        fontPanel = menu
+        fontMaxScroll = max(0f, listH + 8f - (h - headerH))
+
+        // 已经排队的文字刚画完，把现在的画面截成玻璃背景：菜单透出的是模糊的设置页，而不是盖着一堆字
+        val ctx = ui.ctx
+        ctx.recaptureBackdrop()
+        ctx.pushOpacity(p)
+        PopupLook.panel(ctx, menu)
+        ctx.popOpacity()
+        // 鼠标在列表上时，下面的设置行不显示悬停；列表里的照常
+        ui.registerPopup(menu)
+        val wasPopup = ui.inPopup
+        ui.inPopup = true
+
+        // 内容跟着菜单展开淡入、往上浮一点；收起时一起淡出
+        val content = fontMotion.contentOpacity
+        val lift = 10f * (1f - p)
+        val interactive = fontOpen && p > 0.6f
+        val hits = ArrayList<Hit>()
+        ui.beginClip(menu)
+        ctx.pushOpacity(content)
+        try {
+            // 标题 + 刷新按钮
+            ui.text(I18n.text("Fonts"), full.x + 16f, full.y + 11f + lift, 11f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+            val refresh = LayoutBounds(full.right - 38f, full.y + 6f + lift, 26f, 22f)
+            val refreshHover = interactive && ui.hover(refresh)
+            if (refreshHover) ui.card(refresh, PopupLook.hover, 7f)
+            PlayerIcons.draw(ctx, PlayerIcons.refresh, refresh.x + refresh.width / 2f, refresh.y + refresh.height / 2f, 15f,
+                if (refreshHover) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY)
+            if (interactive) hits += refresh to {
+                // 下一帧重新扫目录可能要一会儿，别被当成“离开了设置页”而收起
+                fontLastNanos = 0L
+                LyricFonts.refresh()
+                Library.showStatus(I18n.text("Font list refreshed"))
+            }
+            ctx.drawShape(LayoutBounds(full.x + 12f, full.y + headerH - 1f + lift, full.width - 24f, 1f), ShapeStyle(PopupLook.divider, 0.5f))
+        } finally {
+            ctx.popOpacity()
+            ui.endClip()
+        }
+
+        val list = LayoutBounds(menu.x, max(menu.y, full.y + headerH), menu.width, max(0f, menu.bottom - (full.y + headerH)))
+        if (scrollToSelected) {
+            scrollToSelected = false
+            var yy = 4f
+            for (it in items) {
+                if (!it.header && isSelected(choice, it)) {
+                    fontScroll = (yy - (h - headerH) / 2f + itemH).coerceIn(0f, fontMaxScroll)
+                    break
+                }
+                yy += if (it.header) 24f else itemH
+            }
+        }
+        fontScroll = fontScroll.coerceIn(0f, fontMaxScroll)
+        ui.beginClip(list)
+        ctx.pushOpacity(content)
+        try {
+            var y = full.y + headerH + 4f - fontScroll + lift
+            for (item in items) {
+                val rowH = if (item.header) 24f else itemH
+                if (y + rowH < list.y || y > list.bottom) {
+                    y += rowH
+                    continue
+                }
+                if (item.header) {
+                    ctx.drawShape(LayoutBounds(full.x + 12f, y + 4f, full.width - 24f, 1f), ShapeStyle(PopupLook.divider, 0.5f))
+                    ui.text(item.label, full.x + 16f, y + 9f, 9.5f, Theme.TEXT_TERTIARY, Theme.FONT_SEMIBOLD)
+                } else {
+                    val row = LayoutBounds(full.x + 6f, y + 1f, full.width - 12f, rowH - 2f)
+                    val on = isSelected(choice, item)
+                    val hover = interactive && ui.hover(row) && list.contains(ui.mx, ui.my)
+                    if (on) ui.card(row, PopupLook.selected, PopupLook.rowRadius(row.height))
+                    else if (hover) ui.card(row, PopupLook.hover, PopupLook.rowRadius(row.height))
+                    val label = ui.trim(item.label, row.width - 40f, 12f, if (on) Theme.FONT_SEMIBOLD else Theme.FONT_MEDIUM)
+                    ui.text(label, row.x + 12f, row.y + row.height / 2f - 12f * 0.39f - 0.5f, 12f,
+                        Theme.TEXT_PRIMARY, if (on) Theme.FONT_SEMIBOLD else Theme.FONT_MEDIUM)
+                    if (on) PlayerIcons.draw(ctx, PlayerIcons.check, row.right - 16f, row.y + row.height / 2f, 14f, RED)
+                    if (interactive) hits += row.intersect(list) to {
+                        if (item.pixel) {
+                            choice.smooth?.set(false)
+                            choice.font.value = ""
+                        } else {
+                            choice.smooth?.set(true)
+                            choice.font.value = item.id
+                        }
+                        fontOpen = false
+                    }
+                }
+                y += rowH
+            }
+            // 滚动条
+            if (fontMaxScroll > 0f) {
+                val total = listH + 8f
+                val th = max(24f, list.height * list.height / total)
+                val ty = list.y + (list.height - th) * (fontScroll / fontMaxScroll)
+                ctx.drawShape(LayoutBounds(menu.right - 6f, ty, 3f, th), ShapeStyle(Color(1f, 1f, 1f, 0.28f), 1.5f))
+            }
+        } finally {
+            ctx.popOpacity()
+            ui.endClip()
+        }
+        ui.inPopup = wasPopup
+        // 菜单里的空白处也算菜单：点了不穿透到下面的设置（菜单盖在上面，点击排在最前面）；展开动画中途也一样
+        if (fontOpen && p > 0.05f) hits += menu to {}
+        for (hh in hits) fontHits += hh.first
+        ui.hits.addAll(0, hits)
+    }
+
+    /** 驾驶舱字体那一行的值（列表里“默认”显示成“默认粗体”） */
+    private val cockpitFont: TextValue? by lazy {
+        try {
+            fieldsOf(DangoMusic.instance.moduleManager.get(LyricsModule::class.java))["sideFont"]?.second as? TextValue
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+
+    private fun isSelected(choice: FontChoice, item: FontItem): Boolean = when {
+        item.pixel -> choice.smooth?.get() == false
+        choice.smooth?.get() == false -> false
+        else -> choice.font.value == item.id
+    }
+
+    // ---------------------------------------------------------------- 恢复默认
+
+    /** 第一次点之后 3 秒内再点一次才真的恢复（防止手滑） */
+    private var resetArmedUntil = 0L
+
+    /** 页头右边（标签左侧）：恢复默认设置 */
+    private fun drawResetButton(page: LayoutBounds) {
+        val tabsX = page.right - 96f * 3 - 8f
+        val armed = System.currentTimeMillis() < resetArmedUntil
+        val label = I18n.text(if (armed) "Click again to confirm" else "Reset to defaults")
+        val w = ui.width(label, 11f, Theme.FONT_SEMIBOLD) + 22f
+        val b = LayoutBounds(tabsX - w - 10f, page.y + 6f, w, 24f)
+        ui.card(b, if (armed) RED else if (ui.hover(b)) Theme.CARD_HOVER else Theme.CARD, 8f)
+        ui.text(label, b.x + 11f, b.y + 12f - 11f * 0.39f - 0.5f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        ui.hits += b to {
+            if (System.currentTimeMillis() < resetArmedUntil) {
+                resetArmedUntil = 0L
+                resetAll()
+                Library.showStatus(I18n.text("All settings are back to their defaults"))
+            } else {
+                resetArmedUntil = System.currentTimeMillis() + 3000L
+            }
+        }
+    }
+
+    /**
+     * 所有标签里的设置恢复默认：开关、滑条、选项、颜色、字体、快捷键，以及灵动岛 / 封面进度这些组标题上的模块开关。
+     * 界面语言不动（恢复成别的语言反而找不到按钮）
+     */
+    private fun resetAll() {
+        commitEdit()
+        closePicker()
+        closeFontListNow()
+        bindingKey = null
+        for (tab in tabs) for (g in tab) {
+            if (g.toggle && g.owner.enabled != g.owner.enabledByDefault) g.owner.enabled = g.owner.enabledByDefault
+            for (r in g.rows) {
+                when (val v = r.value) {
+                    is BooleanValue -> v.reset()
+                    is IntValue -> when (r.ctl) {
+                        Ctl.LANGUAGE -> Unit
+                        Ctl.KEY -> module.resetKeyBinding(v)
+                        else -> v.reset()
+                    }
+                    is FloatValue -> v.reset()
+                    is ColorValue -> v.reset()
+                    is FontChoice -> {
+                        v.font.reset()
+                        v.smooth?.reset()
+                    }
+                }
+            }
         }
     }
 
@@ -1025,6 +1341,10 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 DangoClient.platform.ctrlDown && keyCode == Keys.A -> hexText = ""
                 (typedChar.isDigit() || typedChar.lowercaseChar() in 'a'..'f') && hexText.length < 6 -> hexText += typedChar.uppercaseChar()
             }
+            return true
+        }
+        if (fontOpen && keyCode == Keys.ESCAPE) {
+            fontOpen = false
             return true
         }
         if (picker != null && keyCode == Keys.ESCAPE) {

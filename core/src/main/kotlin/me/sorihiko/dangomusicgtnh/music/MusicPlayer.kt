@@ -610,7 +610,7 @@ object MusicPlayer {
                     url.replaced -> "The original was unavailable, playing another version"
                     else -> ""
                 }
-                trackGain = if (normalize) measuredGain ?: loudnessGain(url) else 1f
+                trackGain = if (normalize) capByPeak(measuredGain, url) ?: loudnessGain(url) else 1f
                 if (paused) {
                     pausedAtMs = position
                     state = State.PAUSED
@@ -868,6 +868,13 @@ object MusicPlayer {
     /** 这首歌要乘的倍数（1 = 原样） */
     @Volatile private var trackGain = 1f
 
+    /**
+     * 本地只分析了开头，峰值可能比整首歌的小（安静前奏 + 很响的副歌）。音源给了整首歌的峰值时，
+     * 再按它压一次，保证放大后副歌也不会超过上限
+     */
+    private fun capByPeak(measured: Float?, url: NeteaseApi.SongUrl): Float? =
+        measured?.let { if (url.peak > 0f) minOf(it, 0.98f / url.peak) else it }
+
     private fun loudnessGain(url: NeteaseApi.SongUrl): Float {
         if (!normalize || url.gainDb == 0f) return 1f
         var gain = Math.pow(10.0, url.gainDb / 20.0).toFloat()
@@ -902,6 +909,9 @@ object MusicPlayer {
             var lowPass = 0f
             var avgEnergy = 0f
             var lastBeatMs = -1000f
+            // 音量均衡和环境音效用浮点算，最后统一软限幅再变回 16 位：中间不会被截断
+            val limiter = SoftLimiter()
+            var mix = FloatArray(0)
 
             var appliedVolume = -1f
             var pending = first
@@ -979,9 +989,13 @@ object MusicPlayer {
                 decodedMs += frameMs
                 // 音量均衡、环境音效（水下变闷、洞穴回声……）在鼓点检测之后加，不影响节奏判断
                 val raw = originalAudio
-                val gain = if (!raw && normalize) trackGain else 1f
-                if (gain != 1f) for (idx in 0 until len) pcm[idx] = (pcm[idx] * gain).toInt().coerceIn(-32768, 32767).toShort()
-                if (!raw) EnvironmentAudio.process(pcm, len, ch, frame.rate, frameMs)
+                if (!raw) {
+                    val gain = if (normalize) trackGain else 1f
+                    if (mix.size < len) mix = FloatArray(len)
+                    for (idx in 0 until len) mix[idx] = pcm[idx] * gain
+                    EnvironmentAudio.process(mix, len, ch, frame.rate, frameMs)
+                    limiter.process(mix, len, ch, frame.rate, pcm)
+                }
                 val data = ByteArray(len * 2)
                 for (k in 0 until len) {
                     val v = pcm[k].toInt()

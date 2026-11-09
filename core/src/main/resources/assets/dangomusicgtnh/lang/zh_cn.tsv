@@ -662,8 +662,6 @@ Moves the list up (positive) or down (negative) from its position	在所选位�
 Text opacity	文字不透明度
 Lower it so the lyrics cover less of the game	调低一点，歌词挡住的游戏画面更少
 The letters become see-through glass that bends the game behind them; off is solid glowing text	字变成透明的玻璃，透出并扭曲后面的游戏画面；关掉是实心的发光字
-Cover color glow	封面色发光
-The text glows in the cover's main color, follows each new song and brightens on the beat	文字发出封面主色的光，换歌时跟着变，踩到节拍时亮一下
 How strongly the text and halo glow	文字和光晕发光的强弱
 Interface	界面
 Look and language	风格与语言
@@ -674,6 +672,37 @@ Merged into the Dynamic Island	已合并进灵动岛
 Cockpit lyrics: yours aren't projected, others' show in your list	驾驶舱歌词：自己的歌词不投影，别人的显示在你的列表里
 Lyric style is set to Hidden	歌词样式设成了不显示
 Others' lyrics show in your cockpit list	别人的歌词显示在你的驾驶舱列表里
+ (missing)	（找不到了）
+All settings are back to their defaults	所有设置已恢复默认
+Aurora	极光
+Auto contrast	近似色自动反色
+Click again to confirm	再点一次确认
+Cockpit color	驾驶舱颜色
+Cockpit colors	驾驶舱配色
+Cockpit font	驾驶舱字体
+Cockpit glow	驾驶舱发光
+Color in letters	文字染色
+Cover color follows each song; or use your own color, a cover gradient, a rainbow, or a flowing aurora of the cover colors	封面主色会跟着每首歌变；也可以用自己选的颜色、封面渐变、彩虹，或者封面颜色流动的极光
+Default bold	默认粗体
+Fonts folder	字体文件夹
+Hold it and scroll the mouse wheel to browse the cockpit lyrics; left-click jumps to the line in the middle	按住它滚动鼠标滚轮翻看驾驶舱歌词，点左键跳到中间那一句
+How much of the color goes into the letters themselves; 0 keeps white letters with a colored glow	字本身染上多少颜色；0 是白字配彩色光晕
+How visible the lines before and after the current one are	当前行前后的那些行有多明显
+Lyric preview	翻看歌词
+Makes the lyrics brighter or darker	让歌词更亮或者更暗
+Other lines	其它行深浅
+Other mods	其它模组
+Reset to defaults	恢复默认
+System fonts	系统字体
+Text brightness	文字亮度
+Text glow	文字发光
+Text too close in color to what is behind it is lightened or darkened so it stays readable	歌词和后面景色的颜色太接近时，自动把字提亮或压暗，保证看得清
+The default bold font, a font from config/dangomusicgtnh/fonts, another mod's font folder, or a system font	默认粗体、config/dangomusicgtnh/fonts 里的字体、其它模组字体目录里的字体，或者系统字体
+The letters glow in their own color and brighten on the beat	字发出自己颜色的光，踩到节拍时亮一下
+Used when Cockpit colors is set to Custom color	驾驶舱配色选“自定义颜色”时用
+Fonts	字体
+Font list refreshed	字体列表已刷新
+Cockpit smooth font	驾驶舱平滑字体
 Perspective tilt	透视倾斜
 Turns the list toward the middle of the screen like a cockpit side display	像座舱侧屏一样，把列表朝屏幕中间转过去
 Pitch	前后倾斜

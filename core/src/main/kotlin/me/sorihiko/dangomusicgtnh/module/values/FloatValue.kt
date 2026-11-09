@@ -11,9 +11,14 @@ class FloatValue(
     var value: Float = minRange
         private set
 
+    /** 默认值（设置页“恢复默认”用） */
+    val default: Float = value
+
     init {
         setValue(value)
     }
+
+    fun reset() = setValue(default)
 
     fun setValue(value: Float) {
         // 不是数（比如拿 0 宽度的滑条算出来的）就不要，否则之后显示 / 保存都会出错

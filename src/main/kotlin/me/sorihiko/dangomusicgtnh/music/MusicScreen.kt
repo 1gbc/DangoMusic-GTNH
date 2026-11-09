@@ -315,6 +315,7 @@ class MusicScreen(
             settings.tick()
 
             ui.hits.clear()
+            ui.beginPopupFrame()
             settings.beginFrame()
             ui.mt.clear()
             tracks.beginFrame()
@@ -587,7 +588,8 @@ class MusicScreen(
             return
         }
         if (mouseButton == 0 && beginWindowDrag(mx, my)) return
-        if (!lyricsOpen && mouseButton == 0 && settings.resetKeyAt(mx, my)) return
+        // 快捷键的“重置”按钮可能滚到了播放栏底下：点在播放栏上时先交给播放栏（以前会把音质按钮的点击吃掉）
+        if (!lyricsOpen && mouseButton == 0 && !barRect.contains(mx, my) && settings.resetKeyAt(mx, my)) return
         if (!lyricsOpen && settings.bindMouse(mouseButton)) return
         val mouseKey = Keys.mouse(mouseButton)
         if (module.matchesOpenKey(mouseKey)) {
@@ -680,13 +682,14 @@ class MusicScreen(
         if (keyCode == Keys.ESCAPE && bar.dismissMenu()) return
         // 正在输入 / 录按键的地方先拿走按键
         if (!lyricsOpen) {
-            if (ScreenState.page == Page.GROUP && groupPage.keyTyped(typedChar, keyCode)) return
-            // With SDL text input active, settings get text from KEY_NONE events.
-            // Keep physical key codes for editing commands and shortcut recording.
-            val settingsChar = if (committedSettingsText && keyCode != Keys.NONE) '\u0000' else typedChar
-            if (settings.keyTyped(settingsChar, keyCode)) return
-            if (sidebar.keyTyped(typedChar, keyCode)) return
-            if (tracks.filterKeyTyped(typedChar, keyCode)) return
+            // With SDL text input active, text arrives in KEY_NONE events (committed text).
+            // Keep physical key codes for editing commands and shortcut recording, but don't insert their
+            // characters again: every text field (settings, search, filter, group page) would get each letter twice.
+            val textChar = if (committedSettingsText && keyCode != Keys.NONE) '\u0000' else typedChar
+            if (ScreenState.page == Page.GROUP && groupPage.keyTyped(textChar, keyCode)) return
+            if (settings.keyTyped(textChar, keyCode)) return
+            if (sidebar.keyTyped(textChar, keyCode)) return
+            if (tracks.filterKeyTyped(textChar, keyCode)) return
         }
         if (module.matchesOpenKey(keyCode)) {
             if (!openKeyHeld) {

@@ -90,8 +90,8 @@ void main() {
 }
 """
 
-        // 合成：mask = 遮罩（预乘：rgb = 发光 × alpha），d0 / d1 = 模糊后的遮罩（算法线），
-        // halo = 放大叠回来的光晕，sharp / soft = 玻璃后面的画面（清晰 / 轻度模糊）
+        // 合成：mask = 遮罩（预乘：rgb = 字的颜色 × 亮度，颜色最亮的通道是 1），d0 / d1 = 模糊后的遮罩（算法线），
+        // halo = 放大叠回来的光晕（带每个字自己的颜色），sharp / soft = 字后面的画面（清晰 / 轻度模糊）
         const val COMPOSITE = """
 #version 120
 uniform sampler2D mask;
@@ -103,19 +103,29 @@ uniform sampler2D soft;
 uniform vec2 screen;
 uniform vec2 t0;
 uniform vec2 t1;
-uniform vec3 tint;
 uniform float opacity;
 uniform float refraction;
 uniform float emission;
 uniform float haloAmt;
 uniform float frost;
 uniform float solid;
+uniform float tintText;
+uniform float brightness;
+uniform float contrast;
 float rand(vec2 co) { return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+// 字和后面的画面颜色太接近时，往相反的明暗方向推：背景亮就把字压暗，背景暗就把字提亮（保留字的色相）
+vec3 separate(vec3 col, vec3 bg) {
+    float d = max(length(col - bg) * 0.7, abs(luma(col) - luma(bg)) * 1.6);
+    float sim = 1.0 - smoothstep(0.18, 0.42, d);
+    vec3 target = luma(bg) > 0.45 ? col * 0.22 : mix(col, vec3(1.0), 0.75);
+    return mix(col, target, sim);
+}
 void main() {
     vec2 uv = gl_FragCoord.xy / screen;
     vec4 m = texture2D(mask, uv);
     float cov = m.a;
-    vec3 energy = tint * (texture2D(halo, uv).r * haloAmt);
+    vec3 energy = texture2D(halo, uv).rgb * haloAmt;
     if (cov < 0.003 && energy.r + energy.g + energy.b < 0.003) discard;
     vec3 g = vec3(1.0) - exp(-energy);
     g = floor(g * 255.0 + rand(gl_FragCoord.xy)) / 255.0;
@@ -129,18 +139,28 @@ void main() {
     float hy = (texture2D(d0, uv + vec2(0.0, t0.y)).a - texture2D(d0, uv - vec2(0.0, t0.y)).a) * 0.6
              + (texture2D(d1, uv + vec2(0.0, t1.y)).a - texture2D(d1, uv - vec2(0.0, t1.y)).a) * 0.4;
     vec3 n = normalize(vec3(-hx * 2.4, -hy * 2.4, 1.0));
-    float lit = clamp(m.r / max(cov, 0.02), 0.0, 1.0);
+    vec3 c = clamp(m.rgb / max(cov, 0.02), 0.0, 1.0);
+    float lit = max(c.r, max(c.g, c.b));
+    vec3 hue = c / max(lit, 0.001);
 
     vec2 off = -n.xy * refraction / screen;
     vec3 sharpC = vec3(texture2D(sharp, uv + off * 1.25).r, texture2D(sharp, uv + off).g, texture2D(sharp, uv + off * 0.75).b);
     vec3 bg = mix(sharpC, texture2D(soft, uv + off).rgb, frost);
     float fres = pow(1.0 - n.z, 1.3);
     float spec = pow(max(dot(n, normalize(vec3(-0.5, 0.55, 0.68))), 0.0), 22.0);
-    vec3 rim = mix(vec3(1.0), tint, 0.35) * (fres * 1.1 + spec * 0.7) * (0.45 + 0.55 * lit);
-    vec3 inner = tint * emission * (0.2 + 0.8 * lit);
-    vec3 glassC = bg * 0.78 + inner + rim;
-    vec3 solidC = mix(vec3(1.0), tint, 0.2) * (0.5 + 0.5 * lit) + inner * 0.4;
+    vec3 rim = mix(vec3(1.0), hue, 0.35) * (fres * 1.1 + spec * 0.7) * (0.45 + 0.55 * lit);
+    vec3 inner = hue * emission * (0.2 + 0.8 * lit);
+    vec3 lightC = (inner + rim) * brightness;
+    float bgDim = 0.78;
+    if (contrast > 0.5) {
+        vec3 behind = texture2D(soft, uv).rgb;
+        lightC = separate(lightC + bg * 0.3, behind) - bg * 0.3;
+        bgDim = mix(0.78, 0.5, smoothstep(0.55, 0.85, luma(behind)));
+    }
+    vec3 glassC = bg * bgDim + max(lightC, vec3(0.0));
+    vec3 solidC = mix(vec3(1.0), hue, tintText) * (0.35 + 0.65 * lit) * brightness + inner * 0.4;
     vec3 body = mix(glassC, solidC, solid);
+    if (contrast > 0.5 && solid > 0.5) body = separate(body, texture2D(soft, uv).rgb);
     float a = cov * opacity;
     gl_FragColor = vec4(body * a + g * (1.0 - a), a);
 }
@@ -318,15 +338,14 @@ void main() {
         return true
     }
 
-    override fun bar(x: Float, y: Float, w: Float, h: Float, emission: Float, alphaTop: Float, alphaBottom: Float) {
+    override fun bar(x: Float, y: Float, w: Float, h: Float, r: Float, g: Float, b: Float, alphaTop: Float, alphaBottom: Float) {
         if (mode == 0 || w <= 0f || h <= 0f) return
-        val e = emission.coerceIn(0f, 1f)
         GL11.glDisable(GL11.GL_TEXTURE_2D)
         GL11.glBegin(GL11.GL_QUADS)
-        GL11.glColor4f(e, e, e, alphaTop.coerceIn(0f, 1f))
+        GL11.glColor4f(r.coerceIn(0f, 1f), g.coerceIn(0f, 1f), b.coerceIn(0f, 1f), alphaTop.coerceIn(0f, 1f))
         GL11.glVertex2f(x, y)
         GL11.glVertex2f(x + w, y)
-        GL11.glColor4f(e, e, e, alphaBottom.coerceIn(0f, 1f))
+        GL11.glColor4f(r.coerceIn(0f, 1f), g.coerceIn(0f, 1f), b.coerceIn(0f, 1f), alphaBottom.coerceIn(0f, 1f))
         GL11.glVertex2f(x + w, y + h)
         GL11.glVertex2f(x, y + h)
         GL11.glEnd()
@@ -434,7 +453,9 @@ void main() {
             GL20.glUniform2f(u("screen"), mask.width.toFloat(), mask.height.toFloat())
             GL20.glUniform2f(u("t0"), 1f / down[0].width, 1f / down[0].height)
             GL20.glUniform2f(u("t1"), 1f / down[1].width, 1f / down[1].height)
-            GL20.glUniform3f(u("tint"), s.r, s.g, s.b)
+            GL20.glUniform1f(u("tintText"), s.tintText.coerceIn(0f, 1f))
+            GL20.glUniform1f(u("brightness"), s.brightness.coerceIn(0f, 2f))
+            GL20.glUniform1f(u("contrast"), if (s.contrast) 1f else 0f)
             GL20.glUniform1f(u("opacity"), s.opacity.coerceIn(0f, 1f))
             GL20.glUniform1f(u("refraction"), s.refraction.coerceAtLeast(0f))
             GL20.glUniform1f(u("emission"), s.emission.coerceAtLeast(0f))
