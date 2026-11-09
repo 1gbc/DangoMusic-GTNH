@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-<a href="#功能概览">功能</a> · <a href="#运行环境">环境</a> · <a href="#下载与安装">安装</a> · <a href="#快速上手">上手</a> · <a href="CHANGELOG.md">更新记录</a> · <a href="docs/RELEASE_AUDIT.md">发布审查</a>
+<a href="#功能概览">功能</a> · <a href="#运行环境">环境</a> · <a href="#下载与安装">安装</a> · <a href="#快速上手">上手</a> · <a href="CHANGELOG.md">更新记录</a> · <a href="TODO.md">团队待办</a> · <a href="docs/RELEASE_AUDIT.md">发布审查</a>
 </p>
 
 ## 项目与来源
