@@ -17,6 +17,7 @@ import kotlin.math.abs
 /** Uses the shared timed-lyrics model for both the player page and world rendering. */
 object AppleLyrics {
     private val failedAt = ConcurrentHashMap<String, Long>()
+    private val artistSeparators = Regex("\\s+(?:&|and|x|feat\\.?|ft\\.?|/)\\s+|[,，、;；]", RegexOption.IGNORE_CASE)
     fun fileStem(track: NeteaseTrack): String {
         val id = track.nativeId.takeIf { it.matches(Regex("[A-Za-z0-9._-]{1,160}")) && !it.startsWith(".") }
             ?: MessageDigest.getInstance("SHA-256").digest(track.key.toByteArray(Charsets.UTF_8))
@@ -38,14 +39,23 @@ object AppleLyrics {
                 String(Files.readAllBytes(offsetFile), Charsets.UTF_8).trim().toLongOrNull()?.coerceIn(-600000,600000) ?: 0L else 0L
             return shift(lyrics, offset)
         }
+        // The lyrics UI can request a song before MusicKit supplies its duration.
+        // Do not cache that as a failed match.
+        if (track.durationMs <= 0 || track.name.isBlank() || track.artists.all { it.isBlank() }) return null
         val now = System.nanoTime()
         if (now - (failedAt[track.key] ?: (now - 600_000_000_000L)) < 600_000_000_000L) return null
-        try {
-            val matches = NeteaseApi.search(track.name + " " + track.artists.joinToString(" "), 12)
-            val match = selectMatch(track, matches)
-            val result = match?.let { LyricsProvider.neteaseLyricById(it.id) }
-            if (result != null) return Lyrics(result.lines, "NetEase · matched for Apple Music")
-        } catch (_: Exception) { /* No lyrics must never interrupt playback. */ }
+        val credits = track.artists.flatMap { it.split(artistSeparators) }.joinToString(" ")
+        val matches = ArrayList<NeteaseTrack>()
+        val checked = HashSet<Long>()
+        for (query in listOf("${track.name} $credits", track.name)) {
+            try {
+                matches += NeteaseApi.search(query, 30)
+                val match = selectMatch(track, matches) ?: continue
+                if (!checked.add(match.id)) continue
+                val result = LyricsProvider.neteaseLyricById(match.id) ?: continue
+                return Lyrics(result.lines, "NetEase · matched for Apple Music")
+            } catch (_: Exception) { /* Try the next lookup without interrupting playback. */ }
+        }
         if (failedAt.size > 512) failedAt.clear()
         failedAt[track.key] = now
         return null
@@ -58,9 +68,12 @@ object AppleLyrics {
         if (track.durationMs <= 0 || normalized(track.name).isEmpty() || track.artists.isEmpty()) return null
         val artist = normalized(track.artists.joinToString(""))
         if (artist.isEmpty()) return null
+        val credits = track.artists.flatMap { it.split(artistSeparators) }.map(::normalized).filter { it.isNotEmpty() }.sorted()
+        val title = normalized(track.name)
         val valid = candidates.filter {
-            normalized(it.name) == normalized(track.name) && normalized(it.artists.joinToString("")) == artist &&
-                it.durationMs > 0 && abs(it.durationMs - track.durationMs) <= 2000
+            it.durationMs > 0 && abs(it.durationMs - track.durationMs) <= 2000 && normalized(it.name) == title &&
+                (normalized(it.artists.joinToString("")) == artist ||
+                    (it.artists.size > 1 && it.artists.map(::normalized).sorted() == credits))
         }
         val sameAlbum = valid.filter { track.albumName.isNotBlank() && normalized(it.albumName) == normalized(track.albumName) }
         val ranked = sameAlbum.ifEmpty { valid }.distinctBy { it.id }.sortedBy { abs(it.durationMs - track.durationMs) }
