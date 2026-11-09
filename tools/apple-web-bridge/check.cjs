@@ -156,6 +156,33 @@ test('catalog browsing returns only metadata and a stopped pending load never st
   await context.appleAdapter({name:'stop'});await cancelledBeforeQueue;
   assert.equal(plays,0,'Stop during the authorization await must cancel the load too');
 });
+test('natural completion survives cleared metadata and a later SDK state change', async()=>{
+  const vm=require('node:vm');
+  const states={playing:2,paused:3,stopped:4,ended:5,completed:10};
+  let onState;
+  const item={id:'123',attributes:{name:'Track'}};
+  const player={isAuthorized:true,nowPlayingItem:item,isPlaying:true,playbackState:states.playing,
+    addEventListener(name,handler){assert.equal(name,'playbackStateDidChange');onState=handler;},
+    setQueue:async()=>{},play:async()=>{}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},URL,setTimeout,clearTimeout,
+    MusicKit:{getInstance:()=>player,PlaybackStates:states,Events:{playbackStateDidChange:'playbackStateDidChange'}}});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  assert.equal((await context.appleAdapter(null)).ended,false);
+  player.isPlaying=false;
+  player.playbackState=states.paused;
+  onState({state:states.paused,nowPlayingItem:item});
+  assert.equal((await context.appleAdapter(null)).ended,false);
+  player.nowPlayingItem=undefined;
+  onState({state:states.ended,nowPlayingItem:item});
+  player.playbackState=states.stopped;
+  const state=await context.appleAdapter(null);
+  assert.equal(state.title,'');
+  assert.equal(state.id,'123');
+  assert.equal(state.ended,true);
+  assert.equal((await context.appleAdapter(null)).ended,true,'The bridge can retry the report');
+  const reloaded=await context.appleAdapter({name:'load',value:{id:'123'}});
+  assert.equal(reloaded.ended,false,'Repeating the same song clears the prior completion');
+});
 test('page adapter reads the actual player clock and validates controls without reading credentials', async()=>{
   const vm=require('node:vm');
   const source=fs.readFileSync(__dirname+'/extension/adapter.js','utf8');

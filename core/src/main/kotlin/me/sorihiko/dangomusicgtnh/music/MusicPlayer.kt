@@ -544,7 +544,7 @@ object MusicPlayer {
             neteaseStream = null
         }
         if (queue.none { it.key == track.key }) { queue = listOf(track); originalQueue = queue }
-        index = queue.indexOfFirst { it.key == track.key }
+        if (queue.getOrNull(index)?.key != track.key) index = queue.indexOfFirst { it.key == track.key }
         current = track
         applePosition = position
         pausedAtMs = position
