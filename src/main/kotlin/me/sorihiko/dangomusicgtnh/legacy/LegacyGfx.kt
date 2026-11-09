@@ -3,6 +3,7 @@ package me.sorihiko.dangomusicgtnh.legacy
 import me.sorihiko.dangomusicgtnh.font.CjkFont
 import me.sorihiko.dangomusicgtnh.gfx.CjkRun
 import me.sorihiko.dangomusicgtnh.gfx.Gfx
+import me.sorihiko.dangomusicgtnh.gfx.ContrastPass
 import me.sorihiko.dangomusicgtnh.gfx.GlassTextPass
 import me.sorihiko.dangomusicgtnh.gfx.GlowPass
 import me.sorihiko.dangomusicgtnh.gfx.GuiCanvas
@@ -12,6 +13,7 @@ import me.sorihiko.dangomusicgtnh.gfx.Texture
 import me.sorihiko.dangomusicgtnh.gfx.Textures
 import me.sorihiko.dangomusicgtnh.gfx.WorldView
 import me.sorihiko.dangomusicgtnh.lyrics.DeepGlow
+import me.sorihiko.dangomusicgtnh.lyrics.ContrastLayer
 import me.sorihiko.dangomusicgtnh.lyrics.GlassText
 import me.sorihiko.dangomusicgtnh.ui.GlassRenderContext
 import me.sorihiko.dangomusicgtnh.utils.render.GlCaps
@@ -116,6 +118,10 @@ object LegacyGfx : Gfx {
     override val glow: GlowPass = DeepGlow()
     override val hud: HudCanvas = LegacyHud
     override val glassText: GlassTextPass = GlassText()
+    override val contrast: ContrastPass = ContrastLayer()
+
+    /** 近似色反色画到离屏画布时为 true：文字的 alpha 要叠加而不是覆盖（见 [prepareTextState]） */
+    @Volatile internal var accumulateAlpha = false
 
     /** 直接用 GL 绑过贴图 / 设过颜色之后，同步回 MC 的状态缓存，免得后面 MC 字体画错 */
     internal fun resetColorAndTexture() {
@@ -134,7 +140,8 @@ object LegacyGfx : Gfx {
         GlStateManager.disableLighting()
         GlStateManager.disableFog()
         GlStateManager.enableBlend()
-        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
+        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE,
+            if (accumulateAlpha) GL11.GL_ONE_MINUS_SRC_ALPHA else GL11.GL_ZERO)
         GlStateManager.disableCull()
     }
 }
@@ -163,7 +170,7 @@ object LegacyText : TextCanvas {
 
     override fun color(r: Float, g: Float, b: Float, a: Float) = GL11.glColor4f(r, g, b, a)
 
-    override fun lyricFont(file: java.io.File?) = CjkFont.setLyricFont(file)
+    override fun font(style: Int, font: java.awt.Font?, key: String?) = CjkFont.setFont(style, font, key)
 
     override fun smoothText(text: String, x: Float, baseline: Float, size: Float, style: Int) =
         CjkFont.draw(text, x, baseline, size, style)

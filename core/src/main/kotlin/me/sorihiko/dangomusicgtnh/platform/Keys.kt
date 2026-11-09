@@ -6,6 +6,8 @@ package me.sorihiko.dangomusicgtnh.platform
  */
 object Keys {
     const val NONE = 0
+    /** 左 Alt */
+    const val LMENU = 56
     const val ESCAPE = 1
     const val BACK = 14
     const val TAB = 15

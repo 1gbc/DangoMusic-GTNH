@@ -219,7 +219,8 @@ class NearbyModule : Module() {
 
         fun draw(glowPass: Boolean) {
             val pen = DangoClient.gfx.text
-            pen.lyricFont(if (style.smooth) LyricFonts.file(style.font) else null)
+            val (font, key) = if (style.smooth) LyricFonts.load(style.font) else (null to null)
+            pen.font(CjkStyle.LYRIC, font, key)
             if (style.smooth) pen.beginSmooth()
             val stride = when {
                 style.romanization -> 24f

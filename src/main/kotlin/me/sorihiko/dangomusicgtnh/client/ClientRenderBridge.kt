@@ -5,6 +5,7 @@ import cpw.mods.fml.common.gameevent.TickEvent as ForgeTickEvent
 import me.sorihiko.dangomusicgtnh.DangoClient
 import me.sorihiko.dangomusicgtnh.DangoLogger
 import me.sorihiko.dangomusicgtnh.DangoMusic
+import me.sorihiko.dangomusicgtnh.events.GameMouseEvent
 import me.sorihiko.dangomusicgtnh.events.HudRenderEvent
 import me.sorihiko.dangomusicgtnh.events.TickEvent
 import me.sorihiko.dangomusicgtnh.events.WorldRenderEndEvent
@@ -13,6 +14,7 @@ import me.sorihiko.dangomusicgtnh.network.NearbyClient
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.ScaledResolution
 import net.minecraftforge.client.event.GuiScreenEvent
+import net.minecraftforge.client.event.MouseEvent
 import net.minecraftforge.client.event.RenderGameOverlayEvent
 import net.minecraftforge.client.event.RenderWorldLastEvent
 
@@ -58,6 +60,16 @@ internal object ClientRenderBridge {
             }
             else -> Unit
         }
+    }
+
+    /** 游戏里（没开界面）的鼠标输入：模组用掉的（比如按住预览键滚动歌词）就不再交给游戏 */
+    @SubscribeEvent
+    fun mouse(event: MouseEvent) {
+        if (!graphicsReady || Minecraft.getMinecraft().currentScreen != null) return
+        if (event.dwheel == 0 && event.button < 0) return
+        val e = GameMouseEvent(event.dwheel, event.button, event.buttonstate)
+        DangoMusic.callEvent(e)
+        if (e.consumed) event.isCanceled = true
     }
 
     @SubscribeEvent

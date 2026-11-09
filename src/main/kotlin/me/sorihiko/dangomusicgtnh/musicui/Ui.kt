@@ -102,7 +102,39 @@ internal class Ui {
     /** 内容区底部被播放栏盖住的高度：能滚动的页面多留这么多，最后一项才能滚到播放栏上面 */
     var bottomInset = 0f
 
-    fun hover(b: LayoutBounds) = b.contains(mx, my) && occluder?.contains(mx, my) != true
+    fun hover(b: LayoutBounds) = b.contains(mx, my) && occluder?.contains(mx, my) != true &&
+        (inPopup || popupsPrev.none { it.contains(mx, my) })
+
+    /** 上一帧画出来的弹窗（菜单、字体列表、取色器）：鼠标在弹窗上时，下面的内容不显示悬停效果 */
+    private var popupsPrev: List<LayoutBounds> = emptyList()
+    private val popupsNow = ArrayList<LayoutBounds>()
+
+    /** 正在画弹窗自己的内容：弹窗里的悬停不受上面的限制 */
+    var inPopup = false
+
+    /** 弹窗登记自己这一帧的范围（下一帧的内容按它挡住悬停；内容比弹窗先画，所以用上一帧的） */
+    fun registerPopup(b: LayoutBounds) {
+        popupsNow += b
+    }
+
+    /** 每帧开头调用：换成这一帧要用的弹窗范围 */
+    fun beginPopupFrame() {
+        popupsPrev = ArrayList(popupsNow)
+        popupsNow.clear()
+        inPopup = false
+    }
+
+    /** 画弹窗内容：期间的悬停照常判断 */
+    inline fun popup(b: LayoutBounds, block: () -> Unit) {
+        registerPopup(b)
+        val was = inPopup
+        inPopup = true
+        try {
+            block()
+        } finally {
+            inPopup = was
+        }
+    }
 
     fun card(b: LayoutBounds, color: Color, radius: Float = 10f) =
         ctx.drawShape(b, ShapeStyle(color, radius))

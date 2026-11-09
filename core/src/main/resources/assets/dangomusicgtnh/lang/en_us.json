@@ -7,5 +7,6 @@
   "key.dangomusic.next": "Next track",
   "key.dangomusic.volume_up": "Volume up",
   "key.dangomusic.volume_down": "Volume down",
-  "key.dangomusic.toggle_lyrics": "Toggle lyrics"
+  "key.dangomusic.toggle_lyrics": "Toggle lyrics",
+  "key.dangomusic.lyric_preview": "Browse cockpit lyrics (hold)"
 }

@@ -9,9 +9,14 @@ class IntValue(
     var value: Int = minRange
         private set
 
+    /** 默认值（设置页“恢复默认”用） */
+    val default: Int = value.coerceIn(minRange, maxRange)
+
     init {
         setValue(value)
     }
+
+    fun reset() = setValue(default)
 
     fun setValue(value: Int) {
         this.value = value.coerceIn(minRange, maxRange)
