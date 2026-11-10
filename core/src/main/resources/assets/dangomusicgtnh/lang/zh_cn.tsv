@@ -85,7 +85,7 @@ Lyrics move in front of walls, leaves and the ground instead of going through th
 Spread	分布范围
 How far left or right each line can appear (degrees)	每句歌词的左右偏移范围（度）
 Split lines	自动拆句
-Split two lines written as one (NetEase often does this) so they appear separately	将网易云合并在一行的两句歌词分开显示
+Split two lines written as one (NetEase often does this). The lyrics page uses it too, so it stays when lyrics are hidden	把网易云合在一行的两句歌词分开显示；播放器歌词页也会用到，歌词不显示时也保留
 Card size	歌曲卡片大小
 Show when paused	暂停时显示
 Keep the card visible while paused	暂停播放后仍显示歌曲卡片
@@ -646,6 +646,8 @@ Side lines	显示行数
 How many lines the side list shows	侧边列表一次显示几行
 Side text size	字号
 Text size in the side list	侧边列表的文字大小
+Side line spacing	行距
+Space between lines in the side list (it never gets so tight that lines overlap)	侧边列表每行之间的距离（调到最小也不会让两行叠在一起）
 Where lyrics appear: floating in the world, cockpit-style on the screen edge, both, or nowhere	歌词显示在哪：漂浮在世界里、像驾驶舱一样贴在屏幕边、两者都要，或者不显示
 Cockpit lyrics	驾驶舱歌词
 Hidden	不显示
@@ -716,5 +718,9 @@ Halo	光晕
 A soft light spreading around the text	字周围散开的一圈柔光
 Guide line	引导线
 A thin glowing line beside the list with a tick at the current line	列表旁边一条发光的细线，当前行有个刻度
+Cockpit inertia	惯性
+The list lags a little when you turn or jump, then springs back, like a helmet display	转视角或跳跃时列表稍微滞后再弹回来，像头盔显示器
+Inertia strength	惯性强度
+How far the list swings	列表晃动的幅度
 LIBRARY	资料库
 Playback mode	播放模式
