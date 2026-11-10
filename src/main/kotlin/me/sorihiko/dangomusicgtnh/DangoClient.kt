@@ -6,7 +6,6 @@ import me.sorihiko.dangomusicgtnh.module.impls.music.DynamicIslandModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.LyricsModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.NearbyModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
-import me.sorihiko.dangomusicgtnh.module.impls.music.SongCardModule
 import me.sorihiko.dangomusicgtnh.music.MusicScreen
 import me.sorihiko.dangomusicgtnh.platform.Platform
 
@@ -30,7 +29,6 @@ object DangoClient {
             listOf(
                 musicModule,
                 LyricsModule(),
-                SongCardModule(),
                 DynamicIslandModule(),
                 NearbyModule(),
             ),
@@ -48,8 +46,7 @@ object DangoClient {
         if (platform.inMainMenu) {
             val modules = DangoMusic.instance.moduleManager
             val island = modules.get(DynamicIslandModule::class.java)
-            if (island.showingMergedCard) island.renderIsland()
-            else modules.get(LyricsModule::class.java).renderMainMenu()
+            island.renderIsland()
         }
     }
 }

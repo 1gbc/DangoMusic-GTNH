@@ -55,6 +55,7 @@ object KugouMusicSource : MusicSourceApi {
         val cover = song.text("imgurl").ifEmpty { song.text("album_sizable_cover").ifEmpty { song.obj("trans_param")?.text("union_cover").orEmpty() } }
         return NeteaseTrack(MusicSources.stableId(source,hash),cleanSourceText(title),names.map(::cleanSourceText),ms,
             KugouCatalog.image(cover),source,hash,hash,value("album_id", "albumId", "AlbumID").ifEmpty { album.text("album_id").ifEmpty { album.text("albumId") } }).apply {
+            albumName = cleanSourceText(value("album_name", "albumname", "albumName", "AlbumName").ifEmpty { album.text("album_name").ifEmpty { album.text("albumName") } })
             albumAudioId = value("album_audio_id", "albumAudioId").ifEmpty { song.obj("base")?.text("album_audio_id").orEmpty() }
             if (ids.size == names.size) artistIds = ids.map { id -> id.takeIf { it.matches(Regex("[0-9]{1,20}")) && it != "0" }.orEmpty() }
         }

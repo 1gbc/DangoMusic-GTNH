@@ -162,6 +162,7 @@ internal class KugouCloud(
                 parsed.artists, parsed.durationMs, parsed.coverUrl, MusicSource.KUGOU, parsed.nativeId, parsed.mediaId, parsed.albumId).apply {
                 cloud = true
                 albumAudioId = parsed.albumAudioId
+                albumName = parsed.albumName
             }
         }
     }
