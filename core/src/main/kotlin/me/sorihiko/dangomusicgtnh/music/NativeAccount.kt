@@ -45,8 +45,8 @@ object NativeAccounts {
         if (loaded.add(source)) {
             try {
                 val file = path(source)
-                if (Files.isRegularFile(file)) {
-                    val root = JsonParser().parse(String(Files.readAllBytes(file), Charsets.UTF_8)).asJsonObject
+                SessionFiles.read(file)?.let { bytes ->
+                    val root = JsonParser().parse(String(bytes, Charsets.UTF_8)).asJsonObject
                     require(root.text("source") == source.key)
                     val manager = CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER)
                     root.getAsJsonArray("cookies")?.forEach { entry ->

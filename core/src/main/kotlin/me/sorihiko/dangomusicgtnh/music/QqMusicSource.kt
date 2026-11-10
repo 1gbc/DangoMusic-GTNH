@@ -87,6 +87,8 @@ object QqMusicSource : MusicSourceApi {
                 if (album.isEmpty()) "" else "https://y.gtimg.cn/music/photo_new/T002R300x300M000$album.jpg",
                 source, mid, song.text("strMediaMid").ifEmpty { song.text("media_mid").ifEmpty { song.obj("file")?.text("media_mid").orEmpty().ifEmpty { mid } } }, album,
         ).apply {
+            val albumData = song.obj("album")
+            albumName = cleanSourceText(song.text("albumname").ifEmpty { albumData?.text("name").orEmpty().ifEmpty { albumData?.text("title").orEmpty() } })
             artistIds = song.getAsJsonArray("singer")?.map { if (it.isJsonObject) it.asJsonObject.text("mid") else "" } ?: emptyList()
         }
     }

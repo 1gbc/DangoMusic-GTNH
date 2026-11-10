@@ -60,6 +60,7 @@ data class SharedTrack(
     val albumId: String = "",
     val mediaId: String = "",
     val albumAudioId: String = "",
+    val albumName: String? = null,
 ) {
     val key: String get() = "$source:$nativeId" + if (source == MusicSource.KUGOU.key && cloud) ":cloud" else ""
 
@@ -79,6 +80,7 @@ data class SharedTrack(
         track.cloud = cloud
         track.cloudId = cloudId
         track.albumAudioId = albumAudioId
+        track.albumName = albumName.orEmpty().take(NearbyProtocol.MAX_TRACK_NAME)
         return track
     }
 
@@ -96,6 +98,7 @@ data class SharedTrack(
             albumId = track.albumId,
             mediaId = track.mediaId,
             albumAudioId = track.albumAudioId,
+            albumName = track.albumName.take(NearbyProtocol.MAX_TRACK_NAME).takeIf { it.isNotBlank() },
         )
     }
 }

@@ -40,6 +40,7 @@ object AppleWebPlayer {
             if (!executable.isFile) { startupFailure = "Install the Apple Music playback component in config/dangomusicgtnh/apple-player"; message = startupFailure; return@execute }
             if (!System.getProperty("os.name", "").startsWith("Windows")) { startupFailure = "The embedded Apple player currently requires Windows"; message = startupFailure; return@execute }
             try {
+                val profile = DangoMusic.instance.accountsDir.resolve("apple-webview")
                 command("stop")
                 if (connected) Thread.sleep(1200)
                 nativeProcess?.destroy()
@@ -56,7 +57,7 @@ object AppleWebPlayer {
                 }
                 val bootstrap = JsonObject().apply {
                     addProperty("link", endpoint.pairingLink())
-                    addProperty("profile", DangoMusic.instance.accountsDir.resolve("apple-webview").toAbsolutePath().toString())
+                    addProperty("profile", profile.toString())
                     addProperty("parentPid", java.lang.management.ManagementFactory.getRuntimeMXBean().name.substringBefore('@').toLongOrNull() ?: 0L)
                 }
                 child.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(bootstrap.toString()); it.newLine() }

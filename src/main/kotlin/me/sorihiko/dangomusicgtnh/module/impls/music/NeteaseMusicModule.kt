@@ -32,7 +32,7 @@ import me.sorihiko.dangomusicgtnh.platform.PlayerKeyBinding
 
 /**
  * 内置网易云播放器。按 Open key（默认 M）打开播放器界面，播放自己的网易云歌单。
- * 登录：把网易云网页版的 MUSIC_U Cookie 填进 config/dangomusic/netease_cookie.txt
+ * 登录：在播放器内扫码。
  * 开着 Lyrics 模块时，会优先用这里的播放进度、歌曲 ID 和封面。
  */
 @ModuleMeta(Category.MUSIC, "NeteaseMusic")
@@ -223,7 +223,6 @@ class NeteaseMusicModule : Module() {
     }
 
     override fun onEnable() {
-        NeteaseApi.ensureCookieFile()
         // 续播：ConfigManager 到第 3 个 tick 才启用模块，启动时直接恢复会看到 enabled=false。
         // 在模块真正启用时恢复，每次启动只做一次；放到后台线程读文件
         if (!restoreAttempted) {

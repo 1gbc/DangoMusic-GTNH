@@ -568,6 +568,7 @@ object NearbyServer {
                 albumId = it.albumId.take(128),
                 mediaId = it.mediaId.take(128),
                 albumAudioId = it.albumAudioId.take(128),
+                albumName = it.albumName?.take(NearbyProtocol.MAX_TRACK_NAME),
             )
         }
         val url = now.url?.takeIf {

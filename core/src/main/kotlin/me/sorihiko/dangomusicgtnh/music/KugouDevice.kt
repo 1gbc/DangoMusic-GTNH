@@ -4,12 +4,11 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import java.math.BigInteger
-import java.nio.file.Files
 import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
- * 这台电脑在酷狗那边的"设备身份"：第一次用时随机生成，存在配置目录里，之后一直用同一套。
+ * 这台电脑在酷狗那边的"设备身份"：第一次用时随机生成，存在系统用户目录里，之后一直用同一套。
  * 酷狗对每次都换设备的请求更容易风控（新账号尤其明显），所以登录和概念版的请求都带上它。
  * 里面只有随机数，不含任何真实的硬件信息。
  */
@@ -28,9 +27,8 @@ internal object KugouDevice {
     private fun file() = DangoMusic.instance.accountsDir.resolve("kugou_device.json")
 
     private fun load(): Identity? = try {
-        val path = file()
-        if (!Files.isRegularFile(path)) null else {
-            val root = JsonParser().parse(String(Files.readAllBytes(path), Charsets.UTF_8)).asJsonObject
+        SessionFiles.read(file())?.let { bytes ->
+            val root = JsonParser().parse(String(bytes, Charsets.UTF_8)).asJsonObject
             val identity = Identity(root.text("guid"), root.text("dev"), root.text("mac"))
             identity.takeIf { it.guid.matches(Regex("[0-9A-F]{32}")) && it.dev.isNotEmpty() && it.mac.isNotEmpty() }
         }

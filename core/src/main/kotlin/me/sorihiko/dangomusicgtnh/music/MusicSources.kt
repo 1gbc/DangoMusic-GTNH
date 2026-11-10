@@ -57,7 +57,6 @@ object MusicSources {
         }
         override fun lyrics(track: NeteaseTrack) = NeteaseApi.lyrics(track)
         override fun playlists(): List<NeteasePlaylist> {
-            NeteaseApi.ensureCookieFile()
             val lists = NeteaseApi.userPlaylists()
             return if (NeteaseApi.loggedIn) lists + NeteasePlaylist(NeteaseApi.CLOUD_ID, me.sorihiko.dangomusicgtnh.i18n.I18n.text("Cloud drive"), 0, "", false) else lists
         }

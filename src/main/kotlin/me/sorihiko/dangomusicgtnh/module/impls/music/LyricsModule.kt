@@ -76,7 +76,6 @@ private const val TRANSLATION_WRAP = 270
 
 /**
  * 歌词：内置播放器放歌时，从网易云取（逐字）歌词，一句句以动画漂浮在世界里。
- * 另外负责左上角原版风格的"正在播放"（Now playing / Cover）。
  */
 @ModuleMeta(Category.MUSIC, "Lyrics")
 class LyricsModule : Module() {
@@ -229,12 +228,6 @@ class LyricsModule : Module() {
         }
         worldMode.set(true)
     }
-
-    @ModuleValue("Top-left song info", "Show the current song in the top left")
-    private val nowPlaying = BooleanValue(false)
-
-    @ModuleValue("Show cover", "Show the album cover in the top left")
-    private val showCover = BooleanValue(true)
 
     @ModuleValue("Scale", "Lyrics size")
     private val scale = FloatValue(0.5f, 3f, 1f, 1)
@@ -472,11 +465,6 @@ class LyricsModule : Module() {
     }
 
     private var upcomingKey: Triple<Floating?, Int, Lyrics?>? = null
-    /** 左上角小柱子当前颜色（向封面主色渐变） */
-    private var barR = 0xF2 / 255f
-    private var barG = 0xA7 / 255f
-    private var barB = 0xC3 / 255f
-    private var barColorNanos = 0L
     /** 暂停期间（歌词先隐藏，恢复播放时再出现） */
     private var wasPaused = false
     private val flash = TextFlash()
@@ -636,17 +624,6 @@ class LyricsModule : Module() {
 
     // ---------------------------------------------------------------- 渲染
 
-    /** 主菜单复用简洁的 Now playing，不启动世界歌词或修改 HUD 开关。 */
-    fun renderMainMenu() {
-        if (!DangoClient.platform.inMainMenu) return
-        val s = nowPlaying() ?: return
-        s.track.coverUrl.takeIf { it.isNotEmpty() }?.let { cover.requestUrl(s.key, it) }
-        DangoClient.gfx.guarded {
-            cover.upload()
-            drawNowPlaying(s, null)
-        }
-    }
-
     @EventHandler
     fun render(e: WorldRenderEndEvent) {
         // 生物跟着节奏摇：每帧把设置同步过去，各版本画生物时读
@@ -671,8 +648,7 @@ class LyricsModule : Module() {
         DangoClient.gfx.text.font(CjkStyle.LYRIC, lf, lk)
         updateClock()
         val s = current
-        // 小柱子的颜色取自封面，所以只开 Now playing 也要加载封面
-        if (s != null && (showCover.get() || nowPlaying.get() || sideVisible() ||lyricColors.value == COLORS_COVER || lyricColors.value == COLORS_GRADIENT || (ktvMode.get() && ktvLyricColors.value in COLORS_COVER..COLORS_GRADIENT))) {
+        if (s != null && (sideVisible() || lyricColors.value == COLORS_COVER || lyricColors.value == COLORS_GRADIENT || (ktvMode.get() && ktvLyricColors.value in COLORS_COVER..COLORS_GRADIENT))) {
             s.track.coverUrl.takeIf { it.isNotEmpty() }?.let { cover.requestUrl(s.key, it) }
         }
         cover.upload()
@@ -815,13 +791,12 @@ class LyricsModule : Module() {
         }
     }
 
-    /** 屏幕上的东西（原版暗角之后画，不会被压暗）：左上角 Now playing、对拍提示 */
+    /** 屏幕上的东西（原版暗角之后画，不会被压暗）：驾驶舱歌词和对拍提示 */
     @EventHandler
     fun renderHud(e: HudRenderEvent) {
         if (!enabled) return
         val s = current
         DangoClient.gfx.guarded {
-            if (nowPlaying.get() && s != null && !songCardCovers()) drawNowPlaying(s, currentKey?.let { lyricsFor(it) })
             // 不用驾驶舱样式时也调一下：刚切走时让列表淡出，而不是一下子消失（完全淡出后什么都不画）
             if (sideVisible() || !side.idle) drawSide(e, s)
             Dance.tapStatus()?.let { drawTapStatus(it) }
@@ -1827,61 +1802,7 @@ class LyricsModule : Module() {
      *           [时钟来源 进度]  歌词来源
      */
     /** 歌曲卡片 HUD 正在显示内置播放器的歌时，就不再画左上角的信息，免得重复 */
-    private fun songCardCovers(): Boolean = try {
-        val modules = DangoMusic.instance.moduleManager
-        modules.get(DynamicIslandModule::class.java).showingMergedCard || modules.get(SongCardModule::class.java).showing
-    } catch (_: Exception) {
-        false
-    }
 
-    private fun drawNowPlaying(s: NowPlaying, lyrics: Lyrics?) {
-        val hud = DangoClient.gfx.hud
-        hud.begin()
-        val x = 6
-        val y = 6
-        val coverSize = 32
-
-        // 封面（换歌时淡入）；还没加载到时画一个占位方块
-        var textX = x
-        if (showCover.get()) {
-            val loc = cover.location
-            val ready = loc != null && cover.shownKey == s.key
-            hud.rect(x - 1, y - 1, x + coverSize + 1, y + coverSize + 1, 0x66000000)
-            if (ready) {
-                val fade = ((System.nanoTime() - cover.shownAtNanos) / 1e9f / 0.35f).coerceIn(0f, 1f)
-                hud.texture(loc!!, x, y, coverSize, coverSize, fade)
-            } else {
-                hud.rect(x, y, x + coverSize, y + coverSize, 0x55F2A7C3)
-            }
-            textX = x + coverSize + 6
-        }
-
-        // 三根跳动的小柱子：颜色跟随封面主色，换歌时慢慢过渡
-        val target = if (cover.shownKey == s.key) cover.accent else CoverArt.DEFAULT_ACCENT
-        val nowNs = System.nanoTime()
-        val dt = if (barColorNanos == 0L) 1f else ((nowNs - barColorNanos) / 1e9f).coerceIn(0f, 0.1f)
-        barColorNanos = nowNs
-        val k = 1f - kotlin.math.exp(-dt / 0.25f)
-        barR += (((target shr 16) and 0xFF) / 255f - barR) * k
-        barG += (((target shr 8) and 0xFF) / 255f - barG) * k
-        barB += ((target and 0xFF) / 255f - barB) * k
-        val barColor = (0xFF shl 24) or ((barR * 255).toInt().coerceIn(0, 255) shl 16) or
-            ((barG * 255).toInt().coerceIn(0, 255) shl 8) or (barB * 255).toInt().coerceIn(0, 255)
-        val t = nowNs / 1e9
-        for (i in 0 until 3) {
-            val h = if (s.playing) (3 + 4 * (0.5 + 0.5 * sin(t * (6.0 + i * 1.7) + i))).toInt() else 2
-            val bx = textX + i * 3
-            hud.rect(bx, y + 8 - h, bx + 2, y + 8, barColor)
-        }
-
-        val title = s.title.let { if (it.length > 40) it.take(39) + "…" else it }
-        hud.text(title, (textX + 12).toFloat(), y.toFloat(), 0xFFFFFFFF.toInt(), true)
-        if (s.artist.isNotEmpty()) {
-            hud.text(s.artist, textX.toFloat(), (y + 11).toFloat(), 0xFFB8B8C8.toInt(), true)
-        }
-
-        hud.end()
-    }
 }
 
 /** 歌词配色：自定义颜色 / 封面主色 / 封面渐变 / 彩虹 */

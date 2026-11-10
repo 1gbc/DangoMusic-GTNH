@@ -8,7 +8,6 @@ import me.sorihiko.dangomusicgtnh.module.impls.music.DynamicIslandModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.LyricsModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.NearbyModule
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
-import me.sorihiko.dangomusicgtnh.module.impls.music.SongCardModule
 import me.sorihiko.dangomusicgtnh.module.values.BooleanValue
 import me.sorihiko.dangomusicgtnh.module.values.ColorValue
 import me.sorihiko.dangomusicgtnh.module.values.FloatValue
@@ -68,6 +67,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         "lyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "ktvLyricColors" to listOf("Custom color", "Cover color", "Cover gradient", "Rainbow"),
         "audioOutput" to listOf("Auto", "Java Sound", "Game audio (OpenAL)"),
+        "islandLayout" to listOf("Full island", "Compact island"),
         "uiStyle" to listOf("Classic", "Continuous corners"),
         "lyricStyle" to listOf("3D world lyrics", "Cockpit lyrics", "Both", "Hidden"),
         "sidePosition" to listOf("Left middle", "Left bottom", "Right middle"),
@@ -312,7 +312,6 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 "ktvBaseShadow" to "ktvMode", "ktvSungShadow" to "ktvMode",
                 "danceAuto" to "dance", "danceTap" to "dance", "danceSpin" to "dance", "danceAmount" to "dance", "danceOffset" to "dance",
                 "translationAnimation" to "translation", "translationWiggle" to "translation", "translationColor" to "translation",
-                "showCover" to "nowPlaying",
                 "sideRefraction" to "sideGlass",
                 "sideInertiaStrength" to "sideInertia",
             ),
@@ -364,8 +363,6 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             )), show = world),
             Group("Dance", "Mobs on the beat", lm, false, ly.take(listOf("dance", "danceAuto", "danceTap", "danceSpin", "danceAmount", "danceOffset"))),
         )
-        // 左上角的原版风格"正在播放"和 Song card 是同一类东西，放到 Music & HUD 里
-        val nowPlaying = Group("Song info", "Top left, classic style", lm, false, ly.take(listOf("nowPlaying", "showCover")))
         ly.take().let { if (it.isNotEmpty()) lyrics += Group("Other", "More", lm, false, it) }
 
         // ---------------------------------------------------------------- 音乐与 HUD
@@ -384,15 +381,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         }
         if (!DangoMusic.instance.platform.hasGameAudio) player.left.remove("audioOutput") // 1.8.9 只有 Java Sound
         val islandModule = mm.get(DynamicIslandModule::class.java)
-        val island = Src(islandModule, deps = mapOf("notifyTime" to "songNotify"), fmts = mapOf(
-            "posX" to ::percent, "posY" to ::percent,
-            "notifyTime" to { v: Any -> "%.1f s".format((v as FloatValue).value) },
-        ))
-        val mergeCard = bool(islandModule, "mergeCoverProgress")
-        val showMusic = bool(islandModule, "showMusic")
-        // 和 DynamicIslandModule.showingMergedCard 一致：岛开着、显示正在播放、并且合并了，卡片才不单独显示
-        val merged = { islandModule.enabled && showMusic.get() && mergeCard.get() }
-        val card = Src(mm.get(SongCardModule::class.java), fmts = mapOf("posX" to ::percent, "posY" to ::percent))
+        val island = Src(islandModule, fmts = mapOf("posX" to ::percent, "posY" to ::percent))
         val playback = player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "resumeSession"))
         val environment = player.take(listOf("envAudio", "envRain", "envStrength", "envRays"))
         val looks = player.take(listOf("uiStyle", "language"))
@@ -402,12 +391,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             Group("Environment audio", "Sound around you", module, false, environment,
                 dim = { original.get() }, note = { if (original.get()) "Off while Original audio is on" else null }),
             Group("Dynamic Island", "Overlay", islandModule, true, island.take(listOf(
-                "glass", "showMusic", "mergeCoverProgress", "songNotify", "notifyTime", "scale", "posX", "posY",
+                "islandLayout", "glass", "scale", "posX", "posY",
             )) + island.take()),
-            Group("Cover progress HUD", "Separate position when not merged", card.m, true,
-                card.take(listOf("scale", "showPaused", "posX", "posY")) + card.take(),
-                dim = merged, note = { if (merged()) "Merged into the Dynamic Island" else null }),
-            nowPlaying,
             Group("Interface", "Look and language", module, false, looks),
             Group("Advanced", "Output and buffering", module, false, advanced),
             Group("Hotkeys", "Click, then press a key · Backspace clears", module, false, player.take()),
@@ -490,6 +475,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             val ty = view.y + (view.height - th) * (pos / maxScroll)
             ui.ctx.drawShape(LayoutBounds(view.right - 4f, ty, 4f, th), ShapeStyle(Color(1f, 1f, 1f, 0.30f), 2f))
         }
+        drawResetNotice(page, top)
         if (picker != null || fontChoice != null) ui.mt.flush(ui.scale)
         drawPicker(view)
         drawFontList(view)
@@ -1179,6 +1165,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     /** 第一次点之后 3 秒内再点一次才真的恢复（防止手滑） */
     private var resetArmedUntil = 0L
+    private var resetNoticeAt: Long? = null
 
     /** 页头右边（标签左侧）：恢复默认设置 */
     private fun drawResetButton(page: LayoutBounds) {
@@ -1193,10 +1180,42 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             if (System.currentTimeMillis() < resetArmedUntil) {
                 resetArmedUntil = 0L
                 resetAll()
-                Library.showStatus(I18n.text("All settings are back to their defaults"))
+                resetNoticeAt = System.nanoTime()
             } else {
                 resetArmedUntil = System.currentTimeMillis() + 3000L
             }
+        }
+    }
+
+    private fun drawResetNotice(page: LayoutBounds, contentTop: Float) {
+        val startedAt = resetNoticeAt ?: return
+        val elapsed = (System.nanoTime() - startedAt) / 1_000_000f
+        val enterMs = 220f
+        val holdMs = 2000f
+        val exitMs = 200f
+        if (elapsed >= enterMs + holdMs + exitMs) {
+            resetNoticeAt = null
+            return
+        }
+
+        val enter = ui.easeOut(elapsed / enterMs)
+        val exit = ui.easeOut((elapsed - enterMs - holdMs) / exitMs)
+        val opacity = enter * (1f - exit)
+        val size = 13f
+        val font = Theme.FONT_SEMIBOLD
+        val label = ui.trim(I18n.text("All settings are back to their defaults"), page.width - 44f, size, font)
+        val textWidth = ui.width(label, size, font)
+        val centerX = page.x + page.width / 2f
+        val centerY = contentTop + 24f
+        val expansion = 0.86f + 0.14f * enter
+        val width = textWidth + 36f * expansion
+        val height = 34f * expansion
+        val bounds = LayoutBounds(centerX - width / 2f, centerY - height / 2f, width, height)
+
+        ui.mt.flush(ui.scale)
+        ui.shifted(0f, -10f * (1f - enter) - 6f * exit, opacity) {
+            PopupLook.panel(ui.ctx, bounds)
+            ui.text(label, centerX - textWidth / 2f, centerY - size * 0.39f - 0.5f, size, Theme.TEXT_PRIMARY, font)
         }
     }
 
