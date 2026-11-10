@@ -79,6 +79,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     private val percentKeys = setOf(
         "volume", "glowRadius", "posX", "posY",
         "sideOpacity", "sideTint", "sideBrightness", "sideOtherLines", "sideGlowStrength", "sideRefraction",
+        "sideInertiaStrength",
     )
 
     private val tabs: List<List<Group>> by lazy { buildSettings() }
@@ -312,6 +313,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 "danceAuto" to "dance", "danceTap" to "dance", "danceSpin" to "dance", "danceAmount" to "dance", "danceOffset" to "dance",
                 "translationAnimation" to "translation", "translationWiggle" to "translation", "translationColor" to "translation",
                 "sideRefraction" to "sideGlass",
+                "sideInertiaStrength" to "sideInertia",
             ),
             fmts = mapOf(
                 "spread" to degrees,
@@ -324,8 +326,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                 // 拆分歌词改的是歌词数据本身（歌词页也受影响），不随样式收起
                 "translation" to anyLyrics, "autoContrast" to anyLyrics,
                 "sideColor" to { lm.sideColors.value == 1 },
-                // 注音和翻译的动画只有 3D 歌词有
-                "romanization" to world, "translationAnimation" to world, "translationWiggle" to world,
+                // 音译 3D 和驾驶舱都有；翻译的动画只有 3D 歌词有
+                "romanization" to anyLyrics, "translationAnimation" to world, "translationWiggle" to world,
                 "textColor" to { colors.value == 0 },
                 "translationColor" to { colors.value == 0 },
                 "rainbowSpeed" to { colors.value == 3 },
@@ -341,8 +343,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             Group("Lyrics", "Style and translation", lm, false,
                 ly.take(listOf("lyricStyle", "autoContrast", "translation", "romanization", "translationAnimation", "translationWiggle", "splitLines"))),
             Group("Cockpit lyrics", "Position and tilt", lm, false, ly.take(listOf(
-                "sidePosition", "sideOffsetX", "sideOffsetY", "sideWidth", "sideLines", "sideTextSize",
-                "sideTilt", "sidePitch", "sideItalic", "sideGuide",
+                "sidePosition", "sideOffsetX", "sideOffsetY", "sideWidth", "sideLines", "sideTextSize", "sideLineSpacing",
+                "sideTilt", "sidePitch", "sideItalic", "sideGuide", "sideInertia", "sideInertiaStrength",
             )), show = side),
             Group("Cockpit look", "Font and colors", lm, false, ly.take(listOf(
                 "sideFont", "sideColors", "sideColor", "sideTint", "sideBrightness", "sideOpacity", "sideOtherLines",

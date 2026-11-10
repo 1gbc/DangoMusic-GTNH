@@ -108,6 +108,9 @@ class LyricsModule : Module() {
     @ModuleValue("Side text size", "Text size in the side list")
     internal val sideTextSize = FloatValue(0.7f, 1.6f, 1f, 2)
 
+    @ModuleValue("Side line spacing", "Space between lines in the side list (it never gets so tight that lines overlap)")
+    internal val sideLineSpacing = FloatValue(0.7f, 1.6f, 1f, 2)
+
     @ModuleValue("Perspective tilt", "Turns the list toward the middle of the screen like a cockpit side display")
     internal val sideTilt = FloatValue(-45f, 45f, 18f, 0)
 
@@ -137,6 +140,12 @@ class LyricsModule : Module() {
 
     @ModuleValue("Guide line", "A thin glowing line beside the list with a tick at the current line")
     internal val sideGuide = BooleanValue(true)
+
+    @ModuleValue("Cockpit inertia", "The list lags a little when you turn or jump, then springs back, like a helmet display")
+    internal val sideInertia = BooleanValue(false)
+
+    @ModuleValue("Inertia strength", "How far the list swings")
+    internal val sideInertiaStrength = FloatValue(0.1f, 1f, 0.5f, 2)
 
     @ModuleValue("Cockpit font", "The default bold font, a font from config/dangomusicgtnh/fonts, another mod's font folder, or a system font")
     internal val sideFont = TextValue("")
@@ -318,7 +327,7 @@ class LyricsModule : Module() {
     @ModuleValue("Spread", "How far left or right each line can appear (degrees)")
     private val spread = FloatValue(0f, 60f, 30f, 0)
 
-    @ModuleValue("Split lines", "Split two lines written as one (NetEase often does this) so they appear separately")
+    @ModuleValue("Split lines", "Split two lines written as one (NetEase often does this). The lyrics page uses it too, so it stays when lyrics are hidden")
     private val splitLines = BooleanValue(true)
 
     @ModuleValue("Translation", "Show the translation under each lyric line when the song has one")
@@ -386,6 +395,8 @@ class LyricsModule : Module() {
     private var songPos = 0.0                 // 毫秒，本地平滑时钟
     private var lastSeenNanos = 0L
     private var lastIndex = -1
+    /** [lastIndex] 是按哪种拆句算的：拆句开关变了，下标就对不上了，要重新找 */
+    private var indexedSplit = LyricSplit.enabled
 
     private val random = Random()
 
@@ -495,13 +506,25 @@ class LyricsModule : Module() {
     private fun lyricsFor(key: String): Lyrics? = cache[key] as? Lyrics
 
     internal fun playerLyrics(track: NeteaseTrack): Lyrics? {
+        syncSplit()
         requestLyrics(track)
         return lyricsFor(track.key)
     }
 
     /** Line-level lyrics for the nearby/group projection; null until the payload is loaded. */
-    internal fun shareLines(track: NeteaseTrack): List<SharedLyricLine>? =
-        shareableLyrics(lyricsFor(track.key))
+    internal fun shareLines(track: NeteaseTrack): List<SharedLyricLine>? {
+        syncSplit()
+        return shareableLyrics(lyricsFor(track.key))
+    }
+
+    /**
+     * 把“自动拆句”开关同步给歌词数据。歌词页、联机分享在主菜单里、或者这个模块关着时也会读歌词，
+     * 不能只在世界渲染里同步，所以读歌词的地方都先对一下。只改开关，不碰 [lastIndex]（那个由渲染自己发现变化后重算）
+     */
+    private fun syncSplit() {
+        val split = splitLines.get()
+        if (LyricSplit.enabled != split) LyricSplit.enabled = split
+    }
 
     /** Visual settings so a listener sees the same font, colors, scale and glow. */
     internal fun shareStyle(): LyricsStyle = LyricsStyle(
@@ -629,9 +652,11 @@ class LyricsModule : Module() {
             s.track.coverUrl.takeIf { it.isNotEmpty() }?.let { cover.requestUrl(s.key, it) }
         }
         cover.upload()
-        // 拆句开关变了：歌词行的下标都变了，重新找当前这句
-        if (LyricSplit.enabled != splitLines.get()) {
-            LyricSplit.enabled = splitLines.get()
+        // 拆句开关变了：歌词行的下标都变了，重新找当前这句。
+        // 开关可能已经被歌词页先同步过了，所以这里和上次算下标时用的拆句比，而不是和开关比
+        syncSplit()
+        if (indexedSplit != LyricSplit.enabled) {
+            indexedSplit = LyricSplit.enabled
             lastIndex = -1
         }
         val lyrics = currentKey?.let { lyricsFor(it) }
@@ -810,17 +835,20 @@ class LyricsModule : Module() {
             width = sideWidth.value,
             lines = sideLines.value,
             textSize = sideTextSize.value,
+            lineSpacing = sideLineSpacing.value,
             glass = sideGlass.get(),
             opacity = sideOpacity.value,
             glow = sideGlow.get(),
             glowStrength = sideGlowStrength.value,
             halo = sideTextGlow.get(),
             translation = translation.get(),
+            romanization = romanization.get(),
             tilt = sideTilt.value,
             pitch = sidePitch.value,
             italic = sideItalic.value,
             refraction = sideRefraction.value,
             guide = sideGuide.get(),
+            inertia = if (sideInertia.get()) sideInertiaStrength.value else 0f,
             colors = sideColors.value,
             color = sideColor.value,
             tint = sideTint.value,
@@ -1419,6 +1447,7 @@ class LyricsModule : Module() {
         lastCamY = camY
         lastCamZ = camZ
         val maxDist = distance.value * 2.0
+        val minD = distance.value * 0.6
 
         val vHalf = platform.fov / 2.0
         val aspect = platform.windowWidth.toDouble() / platform.windowHeight.coerceAtLeast(1)
@@ -1443,16 +1472,39 @@ class LyricsModule : Module() {
                 f.y = world.cameraY + ry
                 f.z = world.cameraZ + rz
             }
+            // 走近歌词时，Keep away 画的时候会把它推到 minD 远，字在屏幕上的大小要按这个距离算。
+            // 以前这里用原来很近的距离算字的角度大小：越走越近，算出来字比视野还宽，
+            // 下面的可活动范围缩成 0，歌词就被弹簧拉到屏幕正中间；多行时下一句接着这一句的位置，
+            // 会一直卡在中间，只有后退拉开距离才恢复
+            val drawnLen = if (keepAway.get()) max(len, minD) else len
+            if (drawnLen > len) {
+                // 记的位置也一起推过去（像被推着走），之后不会一直贴着镜头来回甩；
+                // 但推过去的地方被方块挡着（正往墙走）就不写回，后退时还能回到墙前原来的位置
+                val k = drawnLen / len
+                val px = rx * k
+                val py = ry * k
+                val pz = rz * k
+                if (platform.clearFraction(world.cameraX, world.cameraY, world.cameraZ,
+                        world.cameraX + px, world.cameraY + py, world.cameraZ + pz) >= 1.0) {
+                    rx = px; ry = py; rz = pz
+                    len = drawnLen
+                    f.x = world.cameraX + rx
+                    f.y = world.cameraY + ry
+                    f.z = world.cameraZ + rz
+                }
+            }
 
-            // 字本身占的角度：留出一半宽 / 高，再多留 2 度边距
+            // 字本身占的角度（按画出来的距离）：留出一半宽 / 高，再多留 2 度边距
             // 翻译在原文下面多占一截：按整体高度算（偏保守，上下都留出来）
             val visible = if (f === active) stack.map { it.lyric } else listOf(f)
             val width = visible.maxOfOrNull(::rowWidth) ?: 0f
-            val halfW = Math.toDegrees(atan2(width * s / 2.0, len))
+            val halfW = Math.toDegrees(atan2(width * s / 2.0, drawnLen))
             val extra = if (f === active) stack.lastOrNull()?.let { it.center + rowBottom(it.lyric) - rowBottom(f) } ?: 0f else f.previousStackLift
-            val halfH = Math.toDegrees(atan2(max(rowBottom(f), extra + halfMain(f)) * s, len))
-            val hLim = max(0.0, hHalf - halfW - 2.0)
-            val vLim = max(0.0, vHalf - halfH - 2.0)
+            val halfH = Math.toDegrees(atan2(max(rowBottom(f), extra + halfMain(f)) * s, drawnLen))
+            // 字实在比视野还大（关了 Keep away 贴脸、字号很大）时也留一点活动范围，
+            // 不把歌词拉到正中间挡住准星；这时字会有一部分在屏幕外
+            val hLim = max(hHalf * 0.2, hHalf - halfW - 2.0)
+            val vLim = max(vHalf * 0.2, vHalf - halfH - 2.0)
 
             val curYaw = Math.toDegrees(atan2(-rx, rz))
             val curPitch = Math.toDegrees(asin((-ry / len).coerceIn(-1.0, 1.0)))
