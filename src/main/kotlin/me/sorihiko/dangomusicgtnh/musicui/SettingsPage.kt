@@ -488,6 +488,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             val ty = view.y + (view.height - th) * (pos / maxScroll)
             ui.ctx.drawShape(LayoutBounds(view.right - 4f, ty, 4f, th), ShapeStyle(Color(1f, 1f, 1f, 0.30f), 2f))
         }
+        drawResetNotice(page, top)
         if (picker != null || fontChoice != null) ui.mt.flush(ui.scale)
         drawPicker(view)
         drawFontList(view)
@@ -1177,6 +1178,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
 
     /** 第一次点之后 3 秒内再点一次才真的恢复（防止手滑） */
     private var resetArmedUntil = 0L
+    private var resetNoticeAt: Long? = null
 
     /** 页头右边（标签左侧）：恢复默认设置 */
     private fun drawResetButton(page: LayoutBounds) {
@@ -1191,10 +1193,42 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             if (System.currentTimeMillis() < resetArmedUntil) {
                 resetArmedUntil = 0L
                 resetAll()
-                Library.showStatus(I18n.text("All settings are back to their defaults"))
+                resetNoticeAt = System.nanoTime()
             } else {
                 resetArmedUntil = System.currentTimeMillis() + 3000L
             }
+        }
+    }
+
+    private fun drawResetNotice(page: LayoutBounds, contentTop: Float) {
+        val startedAt = resetNoticeAt ?: return
+        val elapsed = (System.nanoTime() - startedAt) / 1_000_000f
+        val enterMs = 220f
+        val holdMs = 2000f
+        val exitMs = 200f
+        if (elapsed >= enterMs + holdMs + exitMs) {
+            resetNoticeAt = null
+            return
+        }
+
+        val enter = ui.easeOut(elapsed / enterMs)
+        val exit = ui.easeOut((elapsed - enterMs - holdMs) / exitMs)
+        val opacity = enter * (1f - exit)
+        val size = 13f
+        val font = Theme.FONT_SEMIBOLD
+        val label = ui.trim(I18n.text("All settings are back to their defaults"), page.width - 44f, size, font)
+        val textWidth = ui.width(label, size, font)
+        val centerX = page.x + page.width / 2f
+        val centerY = contentTop + 24f
+        val expansion = 0.86f + 0.14f * enter
+        val width = textWidth + 36f * expansion
+        val height = 34f * expansion
+        val bounds = LayoutBounds(centerX - width / 2f, centerY - height / 2f, width, height)
+
+        ui.mt.flush(ui.scale)
+        ui.shifted(0f, -10f * (1f - enter) - 6f * exit, opacity) {
+            PopupLook.panel(ui.ctx, bounds)
+            ui.text(label, centerX - textWidth / 2f, centerY - size * 0.39f - 0.5f, size, Theme.TEXT_PRIMARY, font)
         }
     }
 
