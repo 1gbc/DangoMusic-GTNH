@@ -45,4 +45,4 @@
 
 ## 敏感数据
 
-本项目会在本地保存平台登录会话（Cookie / token），路径为实例的 `config/dangomusicgtnh/accounts/`。这些文件不应被提交、上传或附在 issue 中。日志中如出现签名 URL 或凭据，请先脱敏再报告。
+本项目会在本地保存平台登录会话（Cookie / token），路径为系统用户数据目录下的 `DangoMusicGTNH/accounts/`。旧版留在实例 `config/dangomusicgtnh/accounts/` 的凭据不再读取，但导出已有实例时仍须排除。这些文件不应被提交、上传或附在 issue 中。日志中如出现签名 URL 或凭据，请先脱敏再报告。

@@ -6,7 +6,7 @@
 
 # 5.33 更新：关闭窗口保留登录，首页和媒体库状态修复
 
-右上角 × 和 Alt+F4 改为隐藏组件，不再结束会话。游戏退出时组件才正常回收；重新打开游戏播放器会尝试复用固定 Default 配置中的有效登录资料。请保留 accounts/apple-webview，不要删除或迁移登录资料。Apple 撤销或过期的会话仍需重新授权，不能承诺永久免登录。
+右上角 × 和 Alt+F4 改为隐藏组件，不再结束会话。游戏退出时组件才正常回收；重新打开游戏播放器会尝试复用固定 Default 配置中的有效登录资料。登录资料与游戏实例分开存储。Apple 撤销或过期的会话仍需重新授权，不能承诺永久免登录。
 
 登录状态增加只读媒体库权限探测，修复 SDK 标志未就绪时游戏始终未登录的问题。首页提供“热门歌曲”“媒体库歌曲”和“刷新媒体库”；目录搜索/热门歌曲与个人媒体库权限分开处理。首次恢复需要等待数秒，媒体库失败会显示权限/接口/网络状态。
 
@@ -36,7 +36,7 @@
    `config/dangomusicgtnh/apple-player/DangoApplePlayer.exe`。
 4. 需要 Windows x64、Microsoft Edge WebView2 Evergreen Runtime，以及 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。开发机器已检测到这两个运行环境。无需安装 .NET SDK、Node 或浏览器扩展。
 5. 启动游戏，按 M，选 Apple Music，点击账号入口 → **启动内嵌播放器**。组件由游戏自动配对，不需要复制链接。
-6. 在组件自己的官方 Apple 页面登录。它使用独立本机资料目录，因此第一次需要重新登录，不会读取 Chrome 的 Cookie。登录资料保存在 `config/dangomusicgtnh/accounts/apple-webview/`，不要上传。
+6. 在组件自己的官方 Apple 页面登录。它使用独立本机资料目录，因此第一次需要重新登录，不会读取 Chrome 的 Cookie。登录资料保存在 `%LOCALAPPDATA%/DangoMusicGTNH/accounts/<实例标识>/apple-webview/`，不要上传。
 7. 首次测试请在组件窗口选歌并确认能播放，再点击 **隐藏窗口，回到游戏**，用游戏底栏和快捷键控制。需要登录或诊断时点击游戏里的 **显示登录窗口**。
 
 组件是附属进程，运行时无需外部浏览器窗口。游戏退出/崩溃后，组件检查父进程并退出；连接失效也会尝试暂停后退出。关闭组件主窗口会结束播放，隐藏窗口按钮则保留后台播放。只关闭自己创建的组件，不关闭用户浏览器。

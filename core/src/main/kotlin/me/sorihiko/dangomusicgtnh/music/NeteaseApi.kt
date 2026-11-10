@@ -6,11 +6,9 @@ import me.sorihiko.dangomusicgtnh.DangoLogger
 import me.sorihiko.dangomusicgtnh.DangoMusic
 
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
@@ -28,16 +26,15 @@ class NeteasePlaylist @JvmOverloads constructor(
 /**
  * 网易云音乐接口（内置播放器用）。
  *
- * 登录：把网易云网页版登录后的 Cookie（至少包含 MUSIC_U=...）放进
- *   config/dangomusicgtnh/accounts/netease_cookie.txt
- * 只保存在本地，只在请求 music.163.com 时带上。
+ * 扫码登录后的 Cookie 保存在系统用户目录，只在请求 music.163.com 时带上。
  */
 object NeteaseApi {
 
     private const val UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
-    private val cookieFile: File get() = DangoMusic.instance.accountsDir.resolve("netease_cookie.txt").toFile()
+    private val cookieFile get() = DangoMusic.instance.accountsDir.resolve("netease_cookie.dat")
+    @Volatile private var cachedCookie: String? = null
 
     @Volatile var nickname: String = ""
         private set
@@ -46,21 +43,22 @@ object NeteaseApi {
     @Volatile var avatarUrl: String = ""
         private set
 
-    /** 读 cookie 文件；只填了 MUSIC_U 的值也行 */
-    private fun cookie(): String {
-        val f = cookieFile
-        if (!f.isFile) return ""
-        var c = String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8).trim()
-        if (c.isEmpty()) return ""
-        if (!c.contains("=")) c = "MUSIC_U=$c"
-        return c
+    private fun cookie(): String = cachedCookie ?: synchronized(this) {
+        cachedCookie ?: try {
+            SessionFiles.read(cookieFile)?.let { String(it, StandardCharsets.UTF_8) }.orEmpty()
+        } catch (e: Exception) {
+            DangoLogger.warn("NetEase session unavailable: {}", e.javaClass.simpleName)
+            ""
+        }.also { cachedCookie = it }
     }
 
     val loggedIn: Boolean get() = cookie().contains("MUSIC_U=")
 
     /** 扫码登录成功后保存 Cookie，并清掉缓存的账号信息 */
     @Synchronized fun saveCookie(cookie: String) {
-        SessionFiles.write(cookieFile.toPath(), cookie.toByteArray(StandardCharsets.UTF_8))
+        if (cookie.isEmpty()) java.nio.file.Files.deleteIfExists(cookieFile)
+        else SessionFiles.write(cookieFile, cookie.toByteArray(StandardCharsets.UTF_8))
+        cachedCookie = cookie
         resetUser()
     }
 
@@ -75,17 +73,6 @@ object NeteaseApi {
         avatarUrl = ""
         liked = null
         likedAt = 0L
-    }
-
-    /** 第一次运行时创建一个带说明的空 cookie 文件，方便用户找到位置 */
-    @Synchronized fun ensureCookieFile() {
-        val f = cookieFile
-        if (f.exists()) return
-        try {
-            f.parentFile.mkdirs()
-            Files.createFile(f.toPath())
-        } catch (_: Exception) {
-        }
     }
 
     // ---------------------------------------------------------------- 账号

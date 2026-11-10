@@ -6,6 +6,7 @@ import me.sorihiko.dangomusicgtnh.event.EventManager
 import me.sorihiko.dangomusicgtnh.module.Module
 import me.sorihiko.dangomusicgtnh.module.ModuleManager
 import me.sorihiko.dangomusicgtnh.platform.Platform
+import me.sorihiko.dangomusicgtnh.music.SessionFiles
 
 import java.nio.file.Path
 
@@ -34,17 +35,15 @@ class DangoMusic private constructor(val platform: Platform) {
         }
     }
 
-    /** 配置、登录凭证、缓存都放在 .minecraft/config/dangomusicgtnh/ */
+    /** 实例配置和缓存保留在游戏目录，账号资料使用系统用户目录。 */
     val clientDir: Path = platform.configDir
-    val accountsDir: Path = clientDir.resolve("accounts")
+    val accountsDir: Path by lazy { SessionFiles.accountDirectory(clientDir) }
 
     val eventManager = EventManager()
     val moduleManager = ModuleManager(eventManager)
     val configManager = ConfigManager(moduleManager, clientDir.resolve("settings.json"))
 
     private fun init(modules: List<Module>) {
-        java.nio.file.Files.createDirectories(accountsDir)
-
         modules.forEach { moduleManager.register(it) }
         moduleManager.load()
 

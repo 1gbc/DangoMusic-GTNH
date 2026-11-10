@@ -43,7 +43,7 @@ L1 使用听众自己账号；L2 转交主机短期 URL；L3 可选服务端下�
    .minecraft/config/dangomusicgtnh/apple-player/DangoApplePlayer.exe
    ```
 
-   同级 DLL、运行配置和许可证一起保留，不多套一层 ZIP 文件夹。只更新 `apple-player`，保留 `accounts`。
+   同级 DLL、运行配置和许可证一起保留，不多套一层 ZIP 文件夹。只更新 `apple-player`，本机登录资料位于系统用户目录。
 4. 按 M 选择 Apple Music 并进入账号入口。组件自动启动和本机配对；首次在官方 Apple 弹窗亲自登录。没有验证过跨设备扫码登录。
 5. 在游戏搜索、打开媒体库/歌单并播放。主窗口 × / Alt+F4 隐藏组件，游戏退出时结束组件。Apple 会话有效时可恢复，撤销或过期仍须重新登录。
 
@@ -67,8 +67,9 @@ dotnet publish tools/apple-native-player/AppleNativePlayer.csproj -c Release -r 
 |---|---|
 | `config/dangomusicgtnh/settings.json` | 模块、歌词、HUD 与快捷键设置，升级保留 |
 | `config/dangomusicgtnh/settings.cfg` | Forge 侧初始音量，升级保留 |
-| `config/dangomusicgtnh/accounts/` | 平台会话与设备资料，含敏感内容，禁止上传 |
-| `config/dangomusicgtnh/accounts/apple-webview/` | Apple 独立登录资料、浏览器缓存和存储，不删除或上传 |
+| `%LOCALAPPDATA%/DangoMusicGTNH/accounts/<实例标识>/` | Windows 本机登录与设备资料，网易云、QQ 音乐和酷狗的会话由当前 Windows 用户加密 |
+| 上述目录下的 `apple-webview/` | Apple 内嵌播放器的独立浏览器资料 |
+| `$XDG_DATA_HOME/DangoMusicGTNH/accounts/<实例标识>/` | Linux/macOS 本机账号资料，仅当前用户可读写，默认数据根为 `~/.local/share` |
 | `config/dangomusicgtnh/lyrics/apple/` | 合法取得的本地歌词与 `.offset`，见 [导入格式](APPLE_5_34_LOCAL.md#导入歌词) |
 | `config/dangomusicgtnh/resume-queue.json` / `resume-state.json` | 非 Apple 队列和进度；主动停止后不续播，可能包含收听历史 |
 | `config/dangomusicgtnh/apple-player/` | 组件与诊断状态，不是歌曲下载目录 |
@@ -77,3 +78,5 @@ dotnet publish tools/apple-native-player/AppleNativePlayer.csproj -c Release -r 
 普通音源 `MusicPlayer` / `NearbyAudioPlayer` 使用下载到内存的音频字节，下一首预取也在内存；`CoverCache` 保存内存图片和纹理。当前没有统一的“已下载歌曲文件夹”。Apple WebView2 缓存由内核管理，不是可导出的音乐文件，不应随组件打包。
 
 反馈只提供必要的脱敏日志、诊断状态与复现步骤，不上传整个 config、账号目录或实例。安全问题按 [SECURITY](../SECURITY.md) 处理。
+
+从旧版升级后请重新登录。旧版 `config/dangomusicgtnh/accounts/` 不再被读取，导出旧实例时请排除该目录。实例迁移到新路径后会使用独立的登录资料。
