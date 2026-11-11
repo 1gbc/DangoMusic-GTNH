@@ -62,10 +62,10 @@ data class SharedTrack(
     val albumAudioId: String = "",
     val albumName: String? = null,
 ) {
-    val key: String get() = "$source:$nativeId" + if (source == MusicSource.KUGOU.key && cloud) ":cloud" else ""
+    val key: String get() = "$source:$nativeId"
 
     fun toTrack(): NeteaseTrack {
-        val src = MusicSource.values().firstOrNull { it.key == source } ?: MusicSource.NETEASE
+        val src = MusicSource.values().firstOrNull { it.key == source } ?: throw IllegalArgumentException("Unsupported music source")
         val track = NeteaseTrack(
             id = id,
             name = name.take(NearbyProtocol.MAX_TRACK_NAME),

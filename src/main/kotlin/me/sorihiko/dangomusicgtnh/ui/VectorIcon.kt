@@ -25,7 +25,7 @@ class VectorIcon private constructor(val segments: FloatArray, val strokeWidth: 
     companion object {
         const val MAX_SEGMENTS = 96
         const val STROKE = 1.75f
-        fun path(filled: Boolean = false, build: Builder.() -> Unit): VectorIcon {
+        fun path(filled: Boolean = false, strokeWidth: Float = STROKE, build: Builder.() -> Unit): VectorIcon {
             val path=Builder().apply(build).path
             var tolerance=0.025
             var segments=flatten(path,tolerance)
@@ -36,7 +36,7 @@ class VectorIcon private constructor(val segments: FloatArray, val strokeWidth: 
                 segments=flatten(path,tolerance)
             }
             require(segments.size/4<=MAX_SEGMENTS) { "Icon path exceeds shader capacity" }
-            return VectorIcon(segments,STROKE,filled)
+            return VectorIcon(segments,strokeWidth,filled)
         }
         private fun flatten(path: Path2D.Double,tolerance: Double): FloatArray {
             val it = FlatteningPathIterator(path.getPathIterator(null),tolerance,12)

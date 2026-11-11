@@ -23,13 +23,12 @@ internal object AuthHttp {
 
     fun allowed(source: MusicSource, host: String?): Boolean = when (source) {
         MusicSource.QQ -> host in setOf("xui.ptlogin2.qq.com", "ssl.ptlogin2.qq.com", "graph.qq.com", "y.qq.com", "u.y.qq.com", "szu.y.qq.com", "shu.y.qq.com", "c.y.qq.com")
-        MusicSource.KUGOU -> host in setOf("login-user.kugou.com", "loginservice.kugou.com", "wwwapi.kugou.com", "wwwapiretry.kugou.com", "www.kugou.com", "gateway.kugou.com", "kugouvip.kugou.com", "mcloudservice.kugou.com")
         else -> false
     }
 
     fun acceptCookies(source: MusicSource, uri: URI, cookies: CookieManager, headers: Map<String, List<String>>) {
         require(uri.scheme == "https" && allowed(source, uri.host))
-        val base = if (source == MusicSource.QQ) "qq.com" else "kugou.com"
+        val base = "qq.com"
         headers.filterKeys { it.equals("Set-Cookie", true) }.values.flatten().forEach { header ->
             val parsed = try { HttpCookie.parse(header) } catch (_: IllegalArgumentException) { emptyList<HttpCookie>() }
             parsed.forEach { cookie ->
@@ -65,7 +64,7 @@ internal object AuthHttp {
             val referer = when (uri.host) {
                 "graph.qq.com" -> "https://graph.qq.com/"
                 "ssl.ptlogin2.qq.com" -> "https://xui.ptlogin2.qq.com/"
-                else -> if (source == MusicSource.QQ) "https://y.qq.com/" else "https://www.kugou.com/"
+                else -> "https://y.qq.com/"
             }
             conn.setRequestProperty("Referer", referer)
             conn.setRequestProperty("Accept-Encoding", "identity")

@@ -27,7 +27,7 @@ import kotlin.math.min
 internal data class ArtistRef(val source: MusicSource, val id: String, val name: String)
 
 /**
- * 歌手页（网易云、QQ 音乐、酷狗），布局参考 SoundCloud-Desktop 的歌手页：
+ * 歌手页（网易云、QQ 音乐），布局参考 SoundCloud-Desktop 的歌手页：
  *   玻璃大卡片：发光的圆形头像、标签、大号名字、两行简介、播放按钮，右边几块数据
  *   主题色从头像里取，只用在头像后面的光晕和"歌手"标签上（卡片本身是中性的玻璃）
  *   下面一条浮着的标签栏（热门歌曲 / 专辑 / 简介，带数量），再下面一块圆角面板放内容

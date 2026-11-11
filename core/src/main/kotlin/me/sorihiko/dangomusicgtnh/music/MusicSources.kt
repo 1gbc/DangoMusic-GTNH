@@ -7,11 +7,16 @@ import java.security.MessageDigest
 
 /** Persistent provider names; never use a process-local counter as a song identifier. */
 enum class MusicSource(val key: String, val label: String) {
-    NETEASE("netease", "NetEase"), QQ("qq", "QQ Music"), KUGOU("kugou", "Kugou"), APPLE("apple", "Apple Music");
+    NETEASE("netease", "NetEase"), QQ("qq", "QQ Music"), APPLE("apple", "Apple Music");
+
+    val configId: Int get() = if (this == APPLE) 3 else ordinal
+    companion object {
+        fun fromConfig(id: Int) = values().firstOrNull { it.configId == id } ?: NETEASE
+    }
 }
 
 /** Only locally-authored public messages belong here; never include a token or request URL. */
-class SourceAccessException(message: String) : IllegalStateException(message)
+open class SourceAccessException(message: String) : IllegalStateException(message)
 
 interface MusicSourceApi {
     val source: MusicSource
@@ -85,7 +90,6 @@ object MusicSources {
     fun api(source: MusicSource = selected): MusicSourceApi = when (source) {
         MusicSource.NETEASE -> netease
         MusicSource.QQ -> QqMusicSource
-        MusicSource.KUGOU -> KugouMusicSource
         MusicSource.APPLE -> AppleMusicSource
     }
 

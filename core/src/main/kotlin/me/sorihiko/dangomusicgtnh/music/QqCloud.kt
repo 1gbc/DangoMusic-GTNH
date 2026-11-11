@@ -20,7 +20,7 @@ internal class QqCloud(
             if (!data.has("info_list") || (raw != null && !raw.isJsonNull && !raw.isJsonArray))
                 throw SourceAccessException("QQ Music returned incomplete cloud data. Please retry.")
             val rows = if (raw?.isJsonArray == true) raw.asJsonArray else com.google.gson.JsonArray()
-            if (rows.size() > 0 && !pages.add(KugouCloud.md5(rows.toString())))
+            if (rows.size() > 0 && !pages.add(java.security.MessageDigest.getInstance("MD5").digest(rows.toString().toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }))
                 throw SourceAccessException("QQ Music repeated a cloud page. Please retry.")
             for (item in rows) {
                 if (!item.isJsonObject) continue

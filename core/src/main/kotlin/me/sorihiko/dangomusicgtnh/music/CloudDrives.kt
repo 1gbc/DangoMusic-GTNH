@@ -5,11 +5,9 @@ import me.sorihiko.dangomusicgtnh.i18n.I18n
 /** Fixed navigation entries; never confused with provider playlist IDs. */
 object CloudDrives {
     const val QQ_ID = -163004L
-    const val KUGOU_ID = -163005L
     fun id(source: MusicSource): Long = when (source) {
         MusicSource.NETEASE -> NeteaseApi.CLOUD_ID
         MusicSource.QQ -> QQ_ID
-        MusicSource.KUGOU -> KUGOU_ID
         MusicSource.APPLE -> Long.MIN_VALUE
     }
     fun entry(source: MusicSource): NeteasePlaylist? {
@@ -19,8 +17,7 @@ object CloudDrives {
     }
     fun note(source: MusicSource): String = when (source) {
         MusicSource.QQ -> "Only uploads matched to QQ Music's catalog are shown. Original unmatched files are not supported."
-        MusicSource.KUGOU -> "Cloud uploads support MP3, Ogg Vorbis and FLAC. Private cloud tracks cannot be shared in Listen Together."
         else -> ""
     }
-    fun privateTrack(track: NeteaseTrack): Boolean = track.source == MusicSource.KUGOU && track.cloud
+    fun privateTrack(track: NeteaseTrack): Boolean = track.cloud
 }

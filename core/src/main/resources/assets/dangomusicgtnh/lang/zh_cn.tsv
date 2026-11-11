@@ -728,3 +728,26 @@ Island layout	显示样式
 Choose how much song information the island shows	选择灵动岛显示的歌曲信息
 Full island	完整版
 Compact island	简易版
+Playback tab	播放
+Interface & HUD	界面与 HUD
+Reset all settings	恢复全部设置
+Lyric details	歌词细项
+Cockpit layout	驾驶舱布局
+Cockpit font and colors	驾驶舱字体与配色
+Cockpit glow and glass	驾驶舱发光与玻璃
+Show lyrics for nearby and group playback	显示附近播放和听歌房的歌词
+Open cache folder	打开缓存文件目录
+Open the NetEase audio cache location	在文件管理器中打开网易云音频缓存目录
+Clear cache	清除缓存
+Remove downloaded NetEase audio from disk	删除已缓存的网易云音频
+Clearing cache…	正在清除缓存…
+NetEase cache cleared	网易云缓存已清除
+Could not clear the NetEase cache	无法清除网易云缓存
+Cache folder: 	缓存目录：
+正在获取网易云音源…	正在获取网易云音源…
+All comments	全部评论
+Loading comments…	正在加载评论…
+Could not load comments · Retry	评论加载失败 · 点击重试
+No comments yet	暂无评论
+Song comments	开启评论区
+Show the NetEase comments button and allow scrolling to comments	显示网易云评论按钮，并允许从歌词页滚入评论区

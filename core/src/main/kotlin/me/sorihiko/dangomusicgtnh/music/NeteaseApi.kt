@@ -600,6 +600,28 @@ object NeteaseApi {
 
     private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
 
+    data class SongComment(val id: Long, val nickname: String, val avatar: String, val content: String, val time: Long)
+    data class CommentPage(val comments: List<SongComment>, val total: Long, val more: Boolean, val nextOffset: Int)
+
+    fun songComments(id: Long, offset: Int): CommentPage {
+        require(id > 0L && offset >= 0)
+        val response = getJson("https://music.163.com/api/v1/resource/comments/R_SO_4_$id?limit=20&offset=$offset")
+            ?: throw SourceAccessException("Could not load comments")
+        val rows = response.get("comments")?.takeIf { it.isJsonArray }?.asJsonArray
+        if (response.number("code") != 200L || rows == null) throw SourceAccessException("Could not load comments")
+        val comments = rows.mapNotNull {
+            val row = it.takeIf { item -> item.isJsonObject }?.asJsonObject ?: return@mapNotNull null
+            val user = row.obj("user")
+            val avatar = user?.text("avatarUrl").orEmpty()
+            val host = runCatching { java.net.URI(avatar).host }.getOrNull().orEmpty().lowercase(java.util.Locale.ROOT)
+            SongComment(row.number("commentId"), user?.text("nickname").orEmpty(),
+                avatar.takeIf { host.endsWith(".126.net") || host.endsWith(".163.com") }.orEmpty(),
+                row.text("content"), row.number("time"))
+        }
+        return CommentPage(comments, response.number("total").coerceAtLeast(0L),
+            rows.size() > 0 && response.get("more")?.asBoolean == true, offset + rows.size())
+    }
+
     private fun getJson(url: String): JsonObject? {
         val bytes = request(url, accept = "application/json") ?: return null
         val root = JsonParser().parse(String(bytes, StandardCharsets.UTF_8))
@@ -618,6 +640,64 @@ object NeteaseApi {
     }
 
     internal const val MAX_AUDIO_BYTES = 64 * 1024 * 1024
+
+    private class AudioHttpFailure(val code: Int, val host: String, message: String) : SourceAccessException(message)
+
+    internal fun downloadTrack(
+        track: NeteaseTrack, quality: NeteaseQuality, active: () -> Boolean,
+        timeoutSeconds: Long = 75L, progress: (Int) -> Unit,
+    ): Pair<SongUrl, ByteArray>? {
+        val session = cookie().split(';').firstOrNull { it.trimStart().startsWith("MUSIC_U=") }?.trim().orEmpty()
+        val cacheGeneration = NeteaseDiskCache.generation
+        val cacheKey = if (track.cloud || track.id <= 0) null else NeteaseDiskCache.key(track.id, quality, session)
+        if (!active()) throw CancellationException()
+        if (cacheKey != null) {
+            val cached = runCatching { NeteaseDiskCache.read(cacheKey) }.getOrNull()
+            if (cached != null && active()) {
+                DangoLogger.info("NetEase disk cache hit: track={} quality={}", track.id, quality.id)
+                return cached
+            }
+        }
+        var tier = quality
+        var refreshed = false
+        var failure: AudioHttpFailure? = null
+        while (active()) {
+            val url = songUrl(track, tier, active) ?: break
+            try {
+                progress(0)
+                val audio = requestAudio(url.url, active, timeoutSeconds, progress) ?: return null
+                if (!active()) throw CancellationException()
+                if (cacheKey != null) {
+                    try {
+                        NeteaseDiskCache.write(cacheKey, url, audio, cacheGeneration)
+                    } catch (e: java.io.IOException) {
+                        DangoLogger.warn("NetEase disk cache write failed: {}", e.javaClass.simpleName)
+                    } catch (e: SecurityException) {
+                        DangoLogger.warn("NetEase disk cache write denied")
+                    }
+                }
+                return url to audio
+            } catch (error: AudioHttpFailure) {
+                DangoLogger.warn(
+                    "NetEase audio download failed: track={} requested={} returned={} route={} host={} HTTP {}",
+                    track.id, tier.id, url.neteaseStream?.quality?.id ?: "unknown",
+                    if (url.neteaseStream == null) "outer" else "api", error.host, error.code,
+                )
+                if (error.code != 403) throw error
+                failure = error
+                if (!refreshed) {
+                    refreshed = true
+                    continue
+                }
+                val effective = minOf(tier.ordinal, url.neteaseStream?.quality?.ordinal ?: tier.ordinal)
+                if (effective == 0 || url.neteaseStream == null) break
+                tier = NeteaseQuality.values()[effective - 1]
+            }
+        }
+        if (!active()) throw CancellationException()
+        failure?.let { throw it }
+        return null
+    }
 
     internal fun requestAudio(url: String, active: () -> Boolean, progress: (Int) -> Unit): ByteArray? =
         requestAudio(url, active, 75L, progress)
@@ -732,7 +812,7 @@ object NeteaseApi {
                             401, 403, 404, 410 -> "网易云未提供可播放的音源（HTTP $code）。"
                             else -> "网易云音源服务器返回 HTTP $code，请稍后重试。"
                         }
-                        throw SourceAccessException(message)
+                        throw AudioHttpFailure(code, endpoint.host, message)
                     }
                     return null
                 }

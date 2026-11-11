@@ -14,6 +14,7 @@ import me.sorihiko.dangomusicgtnh.module.values.FloatValue
 import me.sorihiko.dangomusicgtnh.module.values.IntValue
 import me.sorihiko.dangomusicgtnh.module.values.TextValue
 import me.sorihiko.dangomusicgtnh.music.LyricFonts
+import me.sorihiko.dangomusicgtnh.music.NeteaseDiskCache
 import me.sorihiko.dangomusicgtnh.module.values.ModuleValue
 import me.sorihiko.dangomusicgtnh.music.MusicScreen
 import me.sorihiko.dangomusicgtnh.platform.Keys
@@ -30,13 +31,16 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * 设置页（侧栏齿轮）：两个标签 Lyrics / Music & HUD，每个标签是若干分组卡片，两列瀑布流排开。
+ * 设置页按功能分页，细项可在各自的分组内展开。
  * 直接读写各模块的 @ModuleValue，改了立刻生效，ConfigManager 会自动存盘。
  */
 internal class SettingsPage(private val screen: MusicScreen, private val module: NeteaseMusicModule) {
     private val ui = screen.ui
 
-    private enum class Ctl { TOGGLE, SLIDER, KEY, LANGUAGE, COLOR, FONT, CHOICE }
+    private enum class Ctl { TOGGLE, SLIDER, KEY, LANGUAGE, COLOR, FONT, CHOICE, CACHE }
+    private enum class CacheAction { OPEN, CLEAR }
+    private var clearCacheUntil = 0L
+    @Volatile private var clearingCache = false
 
     /**
      * 一行设置。两种“暂时用不上”：
@@ -60,6 +64,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val show: (() -> Boolean)? = null,
         val dim: (() -> Boolean)? = null,
         val note: (() -> String?)? = null,
+        val collapsible: Boolean = true,
+        val fullWidth: Boolean = false,
     )
 
     /** 用 ◀ ▶ 切换的选项：设置名 → 每个值的显示名（从最小值开始） */
@@ -82,7 +88,14 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         "sideInertiaStrength",
     )
 
+    private enum class Tab(val label: String) {
+        PLAYBACK("Playback tab"), LYRICS("Lyrics"), INTERFACE("Interface & HUD"),
+        HOTKEYS("Hotkeys"), MULTIPLAYER("Multiplayer"),
+    }
+
     private val tabs: List<List<Group>> by lazy { buildSettings() }
+    private val expandedGroups = mutableSetOf<Group>()
+    private val selectedTab get() = Tab.values()[ScreenState.settingsTab.coerceIn(0, Tab.values().lastIndex)]
 
     /** 本帧画了设置列表的区域（滚轮用），没画就是空的 */
     var area = LayoutBounds()
@@ -132,11 +145,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     private val presets = intArrayOf(0xF7E1D7, 0xFFFFFF, 0xFFB3C8, 0xFF5C8A, 0xFFD27A, 0xA8E6CF, 0x8EC5FF, 0xC5A3FF)
 
 
-    // 标签切换：红色选中块的位置（会被拉长一点，像液体）、内容过渡的进度、从哪个标签切过来、旧标签的滚动位置
-    private val tabPill = Spring(300f, 23f, ScreenState.settingsTab.toFloat())
     private val tabFade = Spring(210f, 24f, 1f)
-    private var tabFrom = -1
-    private var tabFromPos = 0f
 
     /** 每个设置项的亮度（变暗 / 变亮的渐变） */
     private val rowFade = HashMap<Row, Spring>()
@@ -170,7 +179,17 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         keyResetButtons.clear()
     }
 
-    fun resetScroll() {
+    fun openPage() {
+        expandedGroups.clear()
+        clearCacheUntil = 0L
+        resetArmedUntil = 0L
+        resetNoticeAt = null
+        closeFontListNow()
+        closePicker()
+        resetScroll()
+    }
+
+    private fun resetScroll() {
         target = 0f
         pos = 0f
     }
@@ -341,15 +360,17 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         ly.left.remove("styleBeforeOff") // 快捷键内部记的值
         val lyrics = mutableListOf(
             Group("Lyrics", "Style and translation", lm, false,
-                ly.take(listOf("lyricStyle", "autoContrast", "translation", "romanization", "translationAnimation", "translationWiggle", "splitLines"))),
-            Group("Cockpit lyrics", "Position and tilt", lm, false, ly.take(listOf(
+                ly.take(listOf("lyricStyle", "translation", "romanization")), collapsible = false, fullWidth = true),
+            Group("Lyric details", "Style and translation", lm, false,
+                ly.take(listOf("autoContrast", "translationAnimation", "translationWiggle", "splitLines"))),
+            Group("Cockpit layout", "Position and tilt", lm, false, ly.take(listOf(
                 "sidePosition", "sideOffsetX", "sideOffsetY", "sideWidth", "sideLines", "sideTextSize", "sideLineSpacing",
                 "sideTilt", "sidePitch", "sideItalic", "sideGuide", "sideInertia", "sideInertiaStrength",
             )), show = side),
-            Group("Cockpit look", "Font and colors", lm, false, ly.take(listOf(
+            Group("Cockpit font and colors", "Font and colors", lm, false, ly.take(listOf(
                 "sideFont", "sideColors", "sideColor", "sideTint", "sideBrightness", "sideOpacity", "sideOtherLines",
             )), show = side),
-            Group("Cockpit glow", "Glow and glass", lm, false, ly.take(listOf(
+            Group("Cockpit glow and glass", "Glow and glass", lm, false, ly.take(listOf(
                 "sideGlow", "sideTextGlow", "sideGlowStrength", "sideGlass", "sideRefraction",
             )), show = side),
             Group("3D lyrics", "Font and colors", lm, false,
@@ -384,19 +405,25 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val island = Src(islandModule, fmts = mapOf("posX" to ::percent, "posY" to ::percent))
         val playback = player.take(listOf("volume", "originalAudio", "normalize", "playbackFades", "resumeSession"))
         val environment = player.take(listOf("envAudio", "envRain", "envStrength", "envRays"))
-        val looks = player.take(listOf("uiStyle", "language"))
-        val advanced = player.take(listOf("audioOutput", "audioBuffer"))
-        val music = listOf(
-            Group("Player", "Playback", module, false, playback),
+        val looks = player.take(listOf("uiStyle", "language", "songCommentsEnabled"))
+        val advanced = player.take(listOf("audioOutput", "audioBuffer")) + listOf(
+            Row("Open cache folder", "Open the NetEase audio cache location", CacheAction.OPEN, Ctl.CACHE, null, { "" }),
+            Row("Clear cache", "Remove downloaded NetEase audio from disk", CacheAction.CLEAR, Ctl.CACHE, null, { "" }),
+        )
+        val playbackGroups = listOf(
+            Group("Player", "Playback", module, false, playback, collapsible = false, fullWidth = true),
             Group("Environment audio", "Sound around you", module, false, environment,
                 dim = { original.get() }, note = { if (original.get()) "Off while Original audio is on" else null }),
+            Group("Advanced", "Output and buffering", module, false, advanced),
+        )
+        val interfaceGroups = listOf(
+            Group("Interface", "Look and language", module, false, looks, collapsible = false, fullWidth = true),
             Group("Dynamic Island", "Overlay", islandModule, true, island.take(listOf(
                 "islandLayout", "glass", "scale", "posX", "posY",
             )) + island.take()),
-            Group("Interface", "Look and language", module, false, looks),
-            Group("Advanced", "Output and buffering", module, false, advanced),
-            Group("Hotkeys", "Click, then press a key · Backspace clears", module, false, player.take()),
         )
+        val hotkeys = listOf(Group("Hotkeys", "Click, then press a key · Backspace clears",
+            module, false, player.take(), collapsible = false, fullWidth = true))
 
         // ---------------------------------------------------------------- 多人
         val nearbyModule = mm.get(NearbyModule::class.java)
@@ -405,19 +432,16 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val nearby = Src(nearbyModule,
             deps = mapOf("resumeAfterGroup" to "groupTakeover"),
             // 音质对附近共享和听歌房共享都有效，两个都关着时收起
-            shows = mapOf("shareQuality" to { shareMusic.get() || shareGroup.get() }),
-            // 驾驶舱歌词和 3D 投影互斥：只用驾驶舱时不投影自己的歌词；用驾驶舱时别人的歌词显示在自己的列表里
-            conds = mapOf("shareLyrics" to { style.value != 1 }, "seeLyrics" to { !side() && style.value != 3 }))
+            shows = mapOf("shareQuality" to { shareMusic.get() || shareGroup.get() }))
         val nearbyGroups = mutableListOf(
             Group("Nearby music", "Players within the server radius", nearbyModule, false,
-                nearby.take(listOf("shareMusic", "shareQuality", "hearNearby"))),
+                nearby.take(listOf("shareMusic", "shareQuality", "hearNearby")), collapsible = false, fullWidth = true),
             Group("Nearby lyrics", "Line projection over the host", nearbyModule, false,
                 nearby.take(listOf("shareLyrics", "seeLyrics")),
                 note = {
-                    when (style.value) {
-                        1 -> "Cockpit lyrics: yours aren't projected, others' show in your list"
-                        2 -> "Others' lyrics show in your cockpit list"
-                        3 -> "Lyric style is set to Hidden"
+                    when {
+                        style.value == 3 -> "Lyric style is set to Hidden"
+                        side() -> "Others' lyrics show in your cockpit list"
                         else -> null
                     }
                 }),
@@ -427,52 +451,53 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         // 收听听歌房由进出房间决定，不再单独给开关；“在房间里放歌时共享”只在这里保留一份（听歌房页面不再重复）
         nearby.left.remove("hearGroup")
         nearby.take().let { if (it.isNotEmpty()) nearbyGroups += Group("Other", "More", nearbyModule, false, it) }
-        return listOf(lyrics, music, nearbyGroups)
+        return listOf(playbackGroups, lyrics, interfaceGroups, hotkeys, nearbyGroups)
     }
 
     // ---------------------------------------------------------------- 绘制
 
     fun draw(page: LayoutBounds) {
+        val names = Tab.values().map { I18n.text(it.label) }
+        val preferredTabWidth = names.maxOf { ui.width(it, 12f, Theme.FONT_SEMIBOLD) } + 24f
+        val tabsPerRow = (page.width / preferredTabWidth).toInt().coerceIn(1, names.size)
+        val tabRows = (names.size + tabsPerRow - 1) / tabsPerRow
+        val tabTop = page.y + 48f
+        val top = tabTop + tabRows * 36f + 6f
         ui.headerAnim {
-            ui.text(I18n.text("Settings"), page.x, page.y, 22f, Theme.TEXT_PRIMARY, Theme.FONT_DISPLAY)
-            ui.text(I18n.text("Changes apply instantly and are saved automatically"), page.x, page.y + 30f, 11f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
-            drawTabs(page)
-            drawResetButton(page)
+            val resetLabel = I18n.text(if (System.currentTimeMillis() < resetArmedUntil) "Click again to confirm" else "Reset all settings")
+            val resetWidth = (ui.width(resetLabel, 11f, Theme.FONT_SEMIBOLD) + 22f).coerceAtMost(page.width * 0.52f)
+            val title = ui.trim(I18n.text("Settings"), page.width - resetWidth - 12f, 22f, Theme.FONT_DISPLAY)
+            ui.text(title, page.x, page.y, 22f, Theme.TEXT_PRIMARY, Theme.FONT_DISPLAY)
+            val subtitle = ui.trim(I18n.text("Changes apply instantly and are saved automatically"), page.width, 11f, Theme.FONT_SEMIBOLD)
+            ui.text(subtitle, page.x, page.y + 30f, 11f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+            drawResetButton(LayoutBounds(page.right - resetWidth, page.y + 2f, resetWidth, 24f), resetLabel)
+            drawTabs(page, tabTop, names, tabsPerRow)
         }
 
-        val top = page.y + 54f
-        val view = LayoutBounds(page.x, top, page.width, page.bottom - top)
+        val view = LayoutBounds(page.x, top, page.width, (page.bottom - top).coerceAtLeast(0f))
         area = view
-        val tab = ScreenState.settingsTab.coerceIn(0, tabs.size - 1)
-        val contentH = layoutHeight(tabs[tab], view)
+        val placed = place(tabs[selectedTab.ordinal], view)
+        val contentH = placed.maxOfOrNull { it.y + it.h } ?: 0f
         maxScroll = max(0f, contentH + ui.bottomInset - view.height)
         target = target.coerceIn(0f, maxScroll)
         pos = pos.coerceIn(0f, maxScroll)
 
-        // 切标签：旧内容往一边滑走淡出，新内容从另一边滑进来淡入（弹簧，略带回弹）
-        val t = tabFade.tick(1f)
-        val from = tabFrom
         ui.beginClip(view)
-        if (from >= 0 && from != tab && t < 0.999f) {
-            val dir = if (tab > from) 1f else -1f
-            val out = (1f - t * 1.6f).coerceIn(0f, 1f)
-            if (out > 0.01f) {
-                // 旧内容只是画出来，点击区域不保留
-                val keep = ui.hits.size
-                ui.shifted(-dir * 36f * t.coerceIn(0f, 1f), 0f, out) { drawTab(tabs[from], view, tabFromPos, animate = false) }
-                while (ui.hits.size > keep) ui.hits.removeAt(ui.hits.size - 1)
+        ui.shifted(0f, 0f, tabFade.tick(1f).coerceIn(0f, 1f)) {
+            placed.forEachIndexed { index, p ->
+                val bounds = LayoutBounds(view.x + p.x, view.y + p.y - pos, p.width, p.h)
+                if (p.vis >= 0.02f && bounds.bottom > view.y && bounds.y < view.bottom) {
+                    ui.itemAnim(index) { drawGroup(bounds, p, view) }
+                }
             }
-            ui.shifted(dir * 36f * (1f - t), 0f, t.coerceIn(0f, 1f)) { drawTab(tabs[tab], view, pos, animate = false) }
-        } else {
-            tabFrom = -1
-            drawTab(tabs[tab], view, pos, animate = true)
         }
         ui.endClip()
 
         // 滚动条（只显示位置）
         if (maxScroll > 0f && contentH > 0f) {
-            val th = max(30f, view.height * view.height / contentH)
-            val ty = view.y + (view.height - th) * (pos / maxScroll)
+            val trackHeight = (view.height - ui.bottomInset).coerceAtLeast(0f)
+            val th = max(30f, trackHeight * trackHeight / contentH).coerceAtMost(trackHeight)
+            val ty = view.y + (trackHeight - th) * (pos / maxScroll)
             ui.ctx.drawShape(LayoutBounds(view.right - 4f, ty, 4f, th), ShapeStyle(Color(1f, 1f, 1f, 0.30f), 2f))
         }
         drawResetNotice(page, top)
@@ -653,102 +678,67 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         ui.hits.addAll(0, hits)
     }
 
-    // 两列瀑布流：每组放进当前较矮的一列。组 / 行收起、展开，以及因此换列、上下挪动，都用弹簧过渡
     private val gap = 14f
     private val rowH = 40f
     private val headH = 36f
 
-    /** 一组这一帧的位置：col 是列号（过渡时是小数），y 相对内容顶部，vis 是整组的显示程度 */
-    private class Placed(val g: Group, val col: Float, val y: Float, val h: Float, val vis: Float)
+    private class Placed(val g: Group, val x: Float, val y: Float, val width: Float, val h: Float, val vis: Float)
 
     private val groupVis = HashMap<Group, Spring>()
-    private val groupCol = HashMap<Group, Spring>()
-    private val groupY = HashMap<Group, Spring>()
     private val rowVis = HashMap<Row, Spring>()
 
     private fun place(groups: List<Group>, view: LayoutBounds): List<Placed> {
-        val cols = if (view.width >= 560f) 2 else 1
-        val colY = FloatArray(cols)
-        return groups.map { g ->
+        val columns = if (view.width >= 560f) 2 else 1
+        val fullWidth = (view.width - 12f).coerceAtLeast(0f)
+        val colWidth = (fullWidth - gap * (columns - 1)) / columns
+        val heights = FloatArray(columns)
+        var columnIndex = 0
+        return groups.mapNotNull { g ->
             val shown = g.show?.invoke() != false
-            val vis = groupVis.getOrPut(g) { Spring(240f, 28f, if (shown) 1f else 0f) }.tick(if (shown) 1f else 0f)
+            val vis = groupVis.getOrPut(g) { Spring(240f, 28f, if (shown) 1f else 0f) }
+                .tick(if (shown) 1f else 0f).coerceIn(0f, 1f)
+            val expanded = shown && (!g.collapsible || g in expandedGroups)
             var rows = 0f
-            var targetRows = 0
             for (r in g.rows) {
-                val on = shown && r.show?.invoke() != false
-                if (on) targetRows++
-                rows += rowVis.getOrPut(r) { Spring(260f, 30f, if (on) 1f else 0f) }.tick(if (on) 1f else 0f)
+                val on = expanded && r.show?.invoke() != false
+                rows += rowVis.getOrPut(r) { Spring(260f, 30f, if (on) 1f else 0f) }
+                    .tick(if (on) 1f else 0f).coerceIn(0f, 1f)
             }
-            val h = (headH + 6f) * vis + rows * rowH
-            val colS = groupCol.getOrPut(g) { Spring(200f, 26f) }
-            val yS = groupY.getOrPut(g) { Spring(200f, 26f) }
-            if (shown) {
-                // 按收起 / 展开之后的高度排，不按过渡中的高度排：排列不会跟着动画来回跳
-                var c = 0
-                for (i in 1 until cols) if (colY[i] < colY[c] - 0.5f) c = i
-                val ty = colY[c]
-                colY[c] += headH + 6f + targetRows * rowH + gap
-                if (vis < 0.02f) {
-                    // 从完全收起的状态出现：直接在新位置出现，不从别处飞过来
-                    colS.x = c.toFloat(); colS.v = 0f
-                    yS.x = ty; yS.v = 0f
-                }
-                Placed(g, colS.tick(c.toFloat()), yS.tick(ty), h, vis)
-            } else {
-                // 收起中：原地淡出
-                Placed(g, colS.tick(colS.x), yS.tick(yS.x), h, vis)
-            }
+            val col = if (g.fullWidth) 0 else columnIndex++ % columns
+            if (vis < 0.02f && rows < 0.02f) return@mapNotNull null
+            val height = (headH + 6f) * vis + rows * rowH
+            val y = if (g.fullWidth) heights.maxOrNull() ?: 0f else heights[col]
+            if (g.fullWidth) heights.fill(y + height + gap * vis) else heights[col] += height + gap * vis
+            Placed(g, col * (colWidth + gap), y, if (g.fullWidth) fullWidth else colWidth, height, vis)
         }
     }
 
-    private fun layoutHeight(groups: List<Group>, view: LayoutBounds): Float =
-        max(0f, place(groups, view).maxOfOrNull { if (it.vis > 0.02f) it.y + it.h else 0f } ?: 0f)
-
-    /** 画一个标签的全部分组；[animate] 时每组按进页面的时间依次升起 */
-    private fun drawTab(groups: List<Group>, view: LayoutBounds, scroll: Float, animate: Boolean) {
-        val cols = if (view.width >= 560f) 2 else 1
-        val colW = (view.width - 12f - gap * (cols - 1)) / cols
-        val placed = place(groups, view)
-        placed.forEachIndexed { gi, p ->
-            if (p.vis < 0.02f) return@forEachIndexed
-            val b = LayoutBounds(view.x + p.col * (colW + gap), view.y + p.y - scroll, colW, p.h)
-            if (b.bottom < view.y || b.y > view.bottom) return@forEachIndexed
-            if (animate) ui.itemAnim(gi) { drawGroup(b, p, view) } else drawGroup(b, p, view)
-        }
-    }
-
-    /** 标签：Lyrics / Music & HUD。红色选中块用弹簧滑过去，滑动时被拉长一点；文字颜色跟着渐变 */
-    private fun drawTabs(page: LayoutBounds) {
-        val names = listOf(I18n.text("Lyrics"), I18n.text("Music & HUD"), I18n.text("Multiplayer"))
-        val tabW = 96f
-        val bar = LayoutBounds(page.right - tabW * names.size - 8f, page.y + 2f, tabW * names.size + 8f, 32f)
-        ui.card(bar, Theme.CARD, 11f)
-        val p = tabPill.tick(ScreenState.settingsTab.toFloat())
-        names.forEachIndexed { i, _ ->
-            val b = LayoutBounds(bar.x + 4f + i * tabW, bar.y + 4f, tabW, 24f)
-            if (i != ScreenState.settingsTab && ui.hover(b)) ui.card(b, Theme.CARD_HOVER, 8f)
-        }
-        val stretch = kotlin.math.min(18f, kotlin.math.abs(tabPill.v) * 6f)
-        val px = bar.x + 4f + p.coerceIn(-0.06f, names.size - 0.94f) * tabW - (if (tabPill.v > 0f) stretch else 0f)
-        ui.ctx.drawShape(LayoutBounds(px, bar.y + 4f, tabW + stretch, 24f), ShapeStyle(RED, 8f))
-        names.forEachIndexed { i, n ->
-            val b = LayoutBounds(bar.x + 4f + i * tabW, bar.y + 4f, tabW, 24f)
-            val on = (1f - kotlin.math.abs(p - i)).coerceIn(0f, 1f)
-            val w = ui.width(n, 12f, Theme.FONT_SEMIBOLD)
-            ui.text(n, b.x + (b.width - w) / 2f, b.y + 12f - 12f * 0.39f - 0.5f, 12f,
-                mixColor(Theme.TEXT_SECONDARY, Theme.TEXT_PRIMARY, on), Theme.FONT_SEMIBOLD)
-            ui.hits += b to {
-                if (ScreenState.settingsTab != i) {
-                    commitEdit()
-                    tabFrom = ScreenState.settingsTab
-                    tabFromPos = pos
-                    tabFade.x = 0f
-                    tabFade.v = 0f
-                    ScreenState.settingsTab = i
-                    resetScroll()
-                    bindingKey = null
-                    closeFontListNow()
-                    closePicker()
+    private fun drawTabs(page: LayoutBounds, top: Float, names: List<String>, perRow: Int) {
+        for ((row, labels) in names.chunked(perRow).withIndex()) {
+            val bar = LayoutBounds(page.x, top + row * 36f, page.width, 32f)
+            ui.card(bar, Theme.CARD, 11f)
+            val width = (bar.width - 8f) / labels.size
+            labels.forEachIndexed { column, name ->
+                val index = row * perRow + column
+                val b = LayoutBounds(bar.x + 4f + column * width, bar.y + 4f, width, 24f)
+                val active = index == selectedTab.ordinal
+                if (active || ui.hover(b)) ui.card(b, if (active) RED else Theme.CARD_HOVER, 8f)
+                val label = ui.trim(name, b.width - 10f, 12f, Theme.FONT_SEMIBOLD)
+                val labelWidth = ui.width(label, 12f, Theme.FONT_SEMIBOLD)
+                ui.text(label, b.x + (b.width - labelWidth) / 2f, b.y + 7f, 12f,
+                    if (active) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+                ui.hits += b to {
+                    if (!active) {
+                        commitEdit()
+                        clearCacheUntil = 0L
+                        ScreenState.settingsTab = index
+                        tabFade.x = 0f
+                        tabFade.v = 0f
+                        resetScroll()
+                        bindingKey = null
+                        closeFontListNow()
+                        closePicker()
+                    }
                 }
             }
         }
@@ -770,14 +760,39 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
             ui.text(title, x, b.y + 13f, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
             // 有说明（比如“已合并进灵动岛”）时代替副标题，说明这组为什么用不上
             val note = g.note?.invoke()
-            val subW = iw - titleW - 8f - (if (g.toggle) ui.switchWidth + 10f else 0f)
+            val arrowWidth = if (g.collapsible) 24f else 0f
+            val switchWidth = if (g.toggle) ui.switchWidth + 10f else 0f
+            val subW = iw - titleW - 8f - arrowWidth - switchWidth
             if (subW > 20f) {
                 ui.text(ui.trim(I18n.text(note ?: g.sub), subW, 10f), x + titleW + 8f, b.y + 14.5f, 10f,
                     if (note != null) Theme.TEXT_SECONDARY else Theme.TEXT_TERTIARY)
             }
-            if (g.toggle) {
+            val visible = g.show?.invoke() != false
+            if (g.toggle && visible) {
                 val m = g.owner
-                ui.toggleSwitch(LayoutBounds(b.right - 14f - ui.switchWidth, b.y + 9f, ui.switchWidth, 20f), m.enabled, clip, key = m) { m.enabled = !m.enabled }
+                ui.toggleSwitch(LayoutBounds(b.right - 20f - arrowWidth - ui.switchWidth, b.y + 9f, ui.switchWidth, 20f),
+                    m.enabled, clip, key = m) { m.enabled = !m.enabled }
+            }
+            if (g.collapsible && visible) {
+                val arrow = LayoutBounds(b.right - 14f - arrowWidth, b.y + 7f, arrowWidth, 24f)
+                val header = LayoutBounds(b.x, b.y, b.width - arrowWidth - switchWidth - 14f, headH)
+                val open = g in expandedGroups
+                val action = {
+                    if (!expandedGroups.add(g)) {
+                        expandedGroups.remove(g)
+                        clearCacheUntil = 0L
+                        commitEdit()
+                        closeFontListNow()
+                        closePicker()
+                        stopDrag()
+                    }
+                    Unit
+                }
+                if (ui.hover(arrow) || ui.hover(header)) ui.card(arrow, Theme.CARD_HOVER, 7f)
+                Theme.drawChevron(ctx, arrow.x + arrow.width / 2f, arrow.y + arrow.height / 2f, 8f,
+                    if (open) 90f else 0f, Theme.TEXT_SECONDARY)
+                ui.hits += header.intersect(clip) to action
+                ui.hits += arrow.intersect(clip) to action
             }
             var y = b.y + headH
             val groupDim = !g.owner.enabled || g.dim?.invoke() == true
@@ -801,7 +816,9 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                     } finally {
                         if (faded) ctx.popOpacity()
                     }
-                    if (rv < 0.9f) while (ui.hits.size > keep) ui.hits.removeAt(ui.hits.size - 1)
+                    if (!visible || (g.collapsible && g !in expandedGroups) || r.show?.invoke() == false || rv < 0.9f) {
+                        while (ui.hits.size > keep) ui.hits.removeAt(ui.hits.size - 1)
+                    }
                 }
                 y += rowH * rv
             }
@@ -814,11 +831,11 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val ctlW = when (r.ctl) {
             Ctl.TOGGLE -> ui.switchWidth
             Ctl.SLIDER -> 166f
-            Ctl.KEY -> 130f
+            Ctl.KEY -> (b.width * 0.4f).coerceIn(130f, 260f)
             Ctl.LANGUAGE -> 142f
             Ctl.COLOR -> 92f
             Ctl.FONT -> 166f
-            Ctl.CHOICE -> 144f
+            Ctl.CHOICE, Ctl.CACHE -> 144f
         }
         val textW = b.width - ctlW - 14f
         ui.text(ui.trim(I18n.text(r.label), textW, 12f, Theme.FONT_MEDIUM), b.x, b.y + 8f, 12f, Theme.TEXT_PRIMARY, Theme.FONT_MEDIUM)
@@ -838,7 +855,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
                     v.setValue((current + delta).coerceIn(1, max))
                 }
             } else drawSlider(b, r, clip, cx, cy)
-            Ctl.KEY -> drawKeyButton(r.value as IntValue, clip, cx, cy)
+            Ctl.CACHE -> drawCacheButton(r.value as CacheAction, LayoutBounds(cx, cy - 12f, ctlW, 24f), clip)
+            Ctl.KEY -> drawKeyButton(r.value as IntValue, clip, cx, cy, ctlW - 58f)
             Ctl.COLOR -> {
                 // 颜色块 + 十六进制值，点一下弹出取色器
                 val v = r.value as ColorValue
@@ -1167,15 +1185,12 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
     private var resetArmedUntil = 0L
     private var resetNoticeAt: Long? = null
 
-    /** 页头右边（标签左侧）：恢复默认设置 */
-    private fun drawResetButton(page: LayoutBounds) {
-        val tabsX = page.right - 96f * 3 - 8f
+    private fun drawResetButton(b: LayoutBounds, label: String) {
         val armed = System.currentTimeMillis() < resetArmedUntil
-        val label = I18n.text(if (armed) "Click again to confirm" else "Reset to defaults")
-        val w = ui.width(label, 11f, Theme.FONT_SEMIBOLD) + 22f
-        val b = LayoutBounds(tabsX - w - 10f, page.y + 6f, w, 24f)
+        val shown = ui.trim(label, b.width - 12f, 11f, Theme.FONT_SEMIBOLD)
         ui.card(b, if (armed) RED else if (ui.hover(b)) Theme.CARD_HOVER else Theme.CARD, 8f)
-        ui.text(label, b.x + 11f, b.y + 12f - 11f * 0.39f - 0.5f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        ui.text(shown, b.x + (b.width - ui.width(shown, 11f, Theme.FONT_SEMIBOLD)) / 2f,
+            b.y + 12f - 11f * 0.39f - 0.5f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
         ui.hits += b to {
             if (System.currentTimeMillis() < resetArmedUntil) {
                 resetArmedUntil = 0L
@@ -1249,6 +1264,60 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         }
     }
 
+    private fun drawCacheButton(action: CacheAction, b: LayoutBounds, clip: LayoutBounds) {
+        val clear = action == CacheAction.CLEAR
+        val armed = clear && System.nanoTime() < clearCacheUntil
+        val busy = clear && clearingCache
+        val label = I18n.text(when {
+            busy -> "Clearing cache…"
+            armed -> "Click again to confirm"
+            clear -> "Clear cache"
+            else -> "Open folder"
+        })
+        val shown = ui.trim(label, b.width - 12f, 11f, Theme.FONT_SEMIBOLD)
+        ui.card(b, if (armed) RED else if (!busy && ui.hover(b)) Theme.CARD_HOVER else Theme.CARD, 7f)
+        ui.text(shown, b.x + (b.width - ui.width(shown, 11f, Theme.FONT_SEMIBOLD)) / 2f, b.y + 7f,
+            11f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        if (busy) return
+        ui.hits += b.intersect(clip) to {
+            if (!clear) {
+                clearCacheUntil = 0L
+                openCacheFolder()
+            } else if (System.nanoTime() >= clearCacheUntil) {
+                clearCacheUntil = System.nanoTime() + 3_000_000_000L
+            } else if (!clearingCache) {
+                clearCacheUntil = 0L
+                clearingCache = true
+                Thread({
+                    try {
+                        NeteaseDiskCache.clear()
+                        Library.showTemporaryStatus(I18n.text("NetEase cache cleared"), 3000)
+                    } catch (_: Exception) {
+                        Library.showTemporaryStatus(I18n.text("Could not clear the NetEase cache"), 3000)
+                    } finally {
+                        clearingCache = false
+                    }
+                }, "Dango-ClearCache").apply { isDaemon = true; start() }
+            }
+        }
+    }
+
+    private fun openCacheFolder() {
+        val directory = NeteaseDiskCache.directory
+        try {
+            java.nio.file.Files.createDirectories(directory)
+            val os = System.getProperty("os.name").orEmpty().lowercase()
+            val app = when {
+                os.startsWith("win") -> "explorer.exe"
+                os.startsWith("mac") -> "open"
+                else -> "xdg-open"
+            }
+            ProcessBuilder(app, directory.toAbsolutePath().toString()).start()
+        } catch (_: Exception) {
+            Library.showTemporaryStatus(I18n.text("Cache folder: ") + directory.toAbsolutePath(), 5000)
+        }
+    }
+
     private fun drawSlider(b: LayoutBounds, r: Row, clip: LayoutBounds, cx: Float, cy: Float) {
         val ctx = ui.ctx
         val track = LayoutBounds(cx + 2f, cy - 2f, 108f, 4f)
@@ -1288,8 +1357,8 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         }
     }
 
-    private fun drawKeyButton(v: IntValue, clip: LayoutBounds, cx: Float, cy: Float) {
-        val kb = LayoutBounds(cx, cy - 12f, 72f, 24f)
+    private fun drawKeyButton(v: IntValue, clip: LayoutBounds, cx: Float, cy: Float, keyWidth: Float) {
+        val kb = LayoutBounds(cx, cy - 12f, keyWidth, 24f)
         val binding = bindingKey === v
         ui.card(kb, if (binding) RED.copy(a = 0.22f) else if (ui.hover(kb)) Theme.CARD_HOVER else Theme.CARD, 7f)
         if (binding) ui.ctx.drawShape(kb, ShapeStyle(Color(0f, 0f, 0f, 0f), 7f, 1f, RED))

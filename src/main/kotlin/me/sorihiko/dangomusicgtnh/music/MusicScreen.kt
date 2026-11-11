@@ -12,6 +12,7 @@ import me.sorihiko.dangomusicgtnh.musicui.GroupPage
 import me.sorihiko.dangomusicgtnh.musicui.Library
 import me.sorihiko.dangomusicgtnh.musicui.LoginDialog
 import me.sorihiko.dangomusicgtnh.musicui.LyricsPage
+import me.sorihiko.dangomusicgtnh.musicui.SongComments
 import me.sorihiko.dangomusicgtnh.musicui.Page
 import me.sorihiko.dangomusicgtnh.musicui.PageSnapshot
 import me.sorihiko.dangomusicgtnh.musicui.PlayerBar
@@ -57,7 +58,8 @@ class MusicScreen(
     private val artistPage = ArtistPage(this)
     private val groupPage = GroupPage(this)
     private val settings = SettingsPage(this, module)
-    private val lyricsPage = LyricsPage(ui, module)
+    internal val songComments = SongComments(ui)
+    private val lyricsPage = LyricsPage(ui, module, songComments)
     private var lyricsOpen = false
     internal val canOpenLyrics get() = MusicSources.selected == MusicSource.NETEASE || MusicSources.selected == MusicSource.APPLE
 
@@ -238,7 +240,7 @@ class MusicScreen(
         } else {
             ScreenState.settingsBack = ScreenState.page
             ScreenState.page = Page.SETTINGS
-            settings.resetScroll()
+            settings.openPage()
         }
     }
 
@@ -257,6 +259,12 @@ class MusicScreen(
             blurTextFields()
             lyricsOpen = true
         }
+    }
+
+    internal fun openSongComments() {
+        if (!module.songCommentsEnabled.get()) return
+        if (!lyricsOpen) toggleLyrics()
+        if (lyricsOpen) lyricsPage.openComments()
     }
 
     private fun closeLyrics() {
@@ -487,7 +495,7 @@ class MusicScreen(
         if (lyricsOpen && !canOpenLyrics) closeLyrics()
         if (lyricsOpen) {
             barRect = LayoutBounds(win.x + pad, win.bottom - pad - barH, win.width - pad * 2f, barH)
-            lyricsPage.draw(LayoutBounds(win.x + pad, win.y + pad, win.width - pad * 2f, barRect.y - win.y - pad * 2f), ::closeLyrics)
+            lyricsPage.draw(LayoutBounds(win.x + pad, win.y + pad, win.width - pad * 2f, barRect.y - win.y - pad), barH, ::closeLyrics)
             return
         }
         val side = LayoutBounds(win.x + pad, win.y + pad, sideW, win.height - pad * 2)
@@ -513,7 +521,7 @@ class MusicScreen(
     private fun drawBar() {
         // 播放栏画在最上面，点击也要先轮到它（点到的是第一个命中的区域）
         val before = ui.hits.size
-        bar.draw(barRect)
+        bar.draw(barRect, lyricsOpen)
         val barHits = ui.hits.subList(before, ui.hits.size).toList()
         repeat(barHits.size) { ui.hits.removeAt(ui.hits.size - 1) }
         // 播放栏的空白处也要挡住点击，不然会点到底下那首歌
@@ -589,7 +597,7 @@ class MusicScreen(
         }
         if (mouseButton == 0 && beginWindowDrag(mx, my)) return
         // 快捷键的“重置”按钮可能滚到了播放栏底下：点在播放栏上时先交给播放栏（以前会把音质按钮的点击吃掉）
-        if (!lyricsOpen && mouseButton == 0 && !barRect.contains(mx, my) && settings.resetKeyAt(mx, my)) return
+        if (!lyricsOpen && mouseButton == 0 && !barRect.expand(0f, 8f).contains(mx, my) && settings.resetKeyAt(mx, my)) return
         if (!lyricsOpen && settings.bindMouse(mouseButton)) return
         val mouseKey = Keys.mouse(mouseButton)
         if (module.matchesOpenKey(mouseKey)) {
@@ -633,7 +641,7 @@ class MusicScreen(
             tracks.scrollbarDrag((platform.mouseY / ui.scale).toInt())
             return
         }
-        if (!login.visible) bar.mouseDrag(ui.mx, ui.my)
+        if (!login.visible) bar.mouseDrag((platform.mouseX / ui.scale).toInt(), (platform.mouseY / ui.scale).toInt())
     }
 
     fun mouseReleased() {

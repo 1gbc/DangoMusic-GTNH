@@ -19,7 +19,6 @@ object NearbyMedia {
     fun referer(source: MusicSource): String = when (source) {
         MusicSource.NETEASE -> "https://music.163.com/"
         MusicSource.QQ -> "https://y.qq.com/"
-        MusicSource.KUGOU -> "https://m.kugou.com/"
         MusicSource.APPLE -> "https://music.apple.com/"
     }
 
@@ -90,7 +89,6 @@ object NearbyMedia {
             host.endsWith(".music.163.com") ||
             host.endsWith(".qqmusic.qq.com") ||
             host.endsWith(".gtimg.cn") ||
-            host.endsWith(".kugou.com") ||
             host.endsWith(".kgstatic.com") ||
             host.endsWith(".kglink.com")
     }

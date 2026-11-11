@@ -37,15 +37,8 @@ object I18n {
         for (prefix in messagePrefixes) {
             if (source.startsWith(prefix)) return text(prefix) + source.substring(prefix.length)
         }
-        for ((pattern, template) in messagePatterns) {
-            val match = pattern.matchEntire(source) ?: continue
-            return format(template, match.groupValues[1])
-        }
         return source
     }
 
     private val messagePrefixes = listOf("加载失败：", "播放失败：", "Load failed: ", "Playback failed: ")
-    private val messagePatterns = listOf(
-        Regex("""Kugou rejected the login \(error (-?\d+)\)\. Refresh the QR code and try again\.""") to "Kugou rejected the login (error %s). Refresh the QR code and try again.",
-    )
 }

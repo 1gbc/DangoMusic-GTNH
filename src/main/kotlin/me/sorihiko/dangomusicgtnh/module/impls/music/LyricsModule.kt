@@ -201,7 +201,6 @@ class LyricsModule : Module() {
     internal fun prefersSideLyrics(): Boolean = enabled && sideVisible()
 
     /** 自己的歌词会以 3D 投影给别人看；只有“只用侧边列表”时不投影（其他情况保持原来的共享行为） */
-    internal fun projectsWorldLyrics(): Boolean = lyricStyle.value != STYLE_SIDE
 
     /** 快捷键"开关歌词"：在“不显示”和关之前的样式之间切换 */
     fun toggleLyrics() {
@@ -488,8 +487,6 @@ class LyricsModule : Module() {
     private fun nowPlaying(): NowPlaying? {
         val snap = PlaybackView.snapshot()
         val t = snap.track ?: return null
-        // When the listener opts out of the host's lyrics (or the host does not
-        // share them), use this client's own lyrics data and single-player style.
         if (snap.remote && !NearbyClient.shouldUseLocalLyrics()) return null
         return NowPlaying(t, snap.playing)
     }

@@ -107,7 +107,7 @@ object CoverCache {
             var ok = false
             var why = ""
             try {
-                // NetEase's resize parameter is not part of QQ/Kugou image URLs.
+                // NetEase's resize parameter is not part of QQ image URLs.
                 val imageHost = java.net.URI(url).host.orEmpty()
                 val full = if ("?" !in url && (imageHost.endsWith(".126.net") || imageHost.endsWith(".163.com"))) "$url?param=200y200" else url
                 val bytes = NeteaseApi.request(full, "image/jpeg,image/png,image/*;q=0.8")
@@ -137,6 +137,8 @@ object CoverCache {
     }
 
     fun track(t: NeteaseTrack) = get("t:${t.key}", t.coverUrl)
+
+    internal fun trackImage(track: NeteaseTrack): BufferedImage? = sources["t:${track.key}"]
 
     private const val ROUND_SUFFIX = "#r"
 

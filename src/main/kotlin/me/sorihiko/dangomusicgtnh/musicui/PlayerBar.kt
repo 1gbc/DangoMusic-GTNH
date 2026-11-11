@@ -4,6 +4,7 @@ import me.sorihiko.dangomusicgtnh.client.ClientMusic
 import me.sorihiko.dangomusicgtnh.i18n.I18n
 
 import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
+import me.sorihiko.dangomusicgtnh.music.CoverArt
 import me.sorihiko.dangomusicgtnh.music.CoverCache
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.music.PlaybackView
@@ -27,8 +28,10 @@ import kotlin.math.roundToInt
 internal class PlayerBar(private val screen: MusicScreen, private val module: NeteaseMusicModule) {
     private val ui = screen.ui
 
-    private var lastSubtitle = ""
-    private var subtitleAt = 0L
+    private var lastPlaybackNotice = ""
+    private var playbackNotice = ""
+    private var playbackNoticeUntil = 0L
+    private var progressHit = LayoutBounds()
     private var lastSkipNotice = 0L
     private var progRect = LayoutBounds()
     private var volRect = LayoutBounds()
@@ -40,8 +43,11 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private var qualityButton = LayoutBounds()
     private var qualityMenu = LayoutBounds()
     /** 正在拖进度条：拖的时候只移动显示的位置，松开才真正跳过去（拖动过程中不反复重新解码） */
-    private var seeking = false
+    private var seekTrack: String? = null
     private var seekFraction = 0f
+    private var showTimeUntil = 0L
+    private var progressCover: java.awt.image.BufferedImage? = null
+    private var progressColors = emptyList<Color>()
 
     /** 一个按钮的动画：悬停底圈渐显、点击先缩再弹回、开关类按钮的选中颜色渐变 */
     private class Anim {
@@ -58,7 +64,6 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     private val playA = Anim()
     private val nextA = Anim()
     private val queueA = Anim()
-    private val likeA = Anim()
     private val volumeA = Anim()
     private val modeMotion = PopupMotion()
     private val volumeMotion = PopupMotion()
@@ -69,48 +74,57 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     /** 进度条上的圆钮：鼠标移上去时渐显 */
     private val progKnob = Spring(300f, 26f)
 
-    fun draw(bar: LayoutBounds) {
+    fun draw(bar: LayoutBounds, lyricsOpen: Boolean) {
         val ctx = ui.ctx
         hitStart = ui.hits.size
         // 播放顺序 / 音量 / 音质菜单：两种界面风格用同一套弹出动画（外观见 PopupLook）
         modeMotion.step(modeOpen,ui.frameDt/1000f)
         volumeMotion.step(volumeOpen,ui.frameDt/1000f)
         qualityMotion.step(qualityOpen,ui.frameDt/1000f)
-        drawPanel(bar)
+        if (!lyricsOpen) drawPanel(bar)
         val snap = PlaybackView.snapshot()
         val t = snap.track
-        // 上面一排放封面、按钮和音量（中线在 [ry]），下面是横贯整条栏的进度条
-        val ry = bar.y + 34f
+        val ry = bar.y + bar.height / 2f + 3f
 
         // 左：封面 + 歌名 / 歌手
         val cs = 48f
         // Center the complete control group, including mode and stop buttons.
         val modeOffset = MODE_BUTTON_OFFSET
         val cx = bar.x + bar.width / 2f - (154f - modeOffset) / 2f
-        val canLike = t != null && t.source == MusicSource.NETEASE && NeteaseApi.loggedIn
+        val showHeart = t != null && t.source == MusicSource.NETEASE && !snap.remote
+        val hasComments = showHeart && module.songCommentsEnabled.get()
+        val canLike = showHeart && NeteaseApi.loggedIn
         val leftLimit = cx - modeOffset - 4f
         // 窄窗口里先把封面往左收，给标题、收藏和心动模式保留各自的点击范围。
-        val infoReserve = if (canLike) 84f else 48f
+        val buttonWidth = if (hasComments) 76f else if (showHeart) 31f else 0f
+        val infoReserve = if (showHeart) buttonWidth + 34f else 48f
         val coverInset = (leftLimit - bar.x - cs - 12f - infoReserve).coerceIn(12f, PROGRESS_INSET)
         val coverBox = LayoutBounds(bar.x + coverInset, ry - cs / 2f, cs, cs)
-        ui.drawCover(coverBox, t?.let { CoverCache.trackRounded(it, 0.27f) }, 13f)
-        ctx.drawShape(coverBox, ShapeStyle(Color.TRANSPARENT, 13f, 1f, Color(1f, 1f, 1f, 0.10f)))
-        if (screen.canOpenLyrics && !snap.remote) {
-            ui.hits += coverBox to screen::toggleLyrics
-            if (ui.hover(coverBox)) {
-                ui.card(coverBox, Color(0f, 0f, 0f, 0.47f), 13f)
-                ui.icon("♫", coverBox.x + cs / 2f, coverBox.y + cs / 2f, 23f, Theme.TEXT_PRIMARY)
+        val showCover = !lyricsOpen && (!showHeart || leftLimit - coverBox.right >= buttonWidth + 30f + if (snap.loading) 25f else 0f)
+        if (showCover) {
+            ui.drawCover(coverBox, t?.let { CoverCache.trackRounded(it, 0.27f) }, 13f)
+            ctx.drawShape(coverBox, ShapeStyle(Color.TRANSPARENT, 13f, 1f, Color(1f, 1f, 1f, 0.10f)))
+            if (screen.canOpenLyrics && !snap.remote) {
+                ui.hits += coverBox to screen::toggleLyrics
+                if (ui.hover(coverBox)) {
+                    ui.card(coverBox, Color(0f, 0f, 0f, 0.47f), 13f)
+                    ui.icon("♫", coverBox.x + cs / 2f, coverBox.y + cs / 2f, 23f, Theme.TEXT_PRIMARY)
+                }
             }
         }
-        val infoX = coverBox.right + 12f
+        val infoX = if (showCover) coverBox.right + 12f else bar.x + 14f
         // 窗口窄时歌名区跟着缩短，别压到中间的按钮上（红心也要留位置）
-        val likeShown = canLike && leftLimit - infoX >= 44f
-        val infoW = (leftLimit - infoX - (if (likeShown) 44f else 8f)).coerceIn(0f, 220f)
+        val actionWidth = buttonWidth + if (snap.loading) 25f else 0f
+        val infoW = (leftLimit - infoX - actionWidth - 8f).coerceIn(0f, 220f)
         val title = t?.name ?: I18n.text("Not playing")
-        ui.text(ui.trim(title, infoW, 13f, Theme.FONT_SEMIBOLD), infoX, coverBox.y + 9f, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        val shownTitle = ui.trim(title, infoW, 13f, Theme.FONT_SEMIBOLD)
+        val titleY = coverBox.y + 9f
+        val titleWidth = ui.width(shownTitle, 13f, Theme.FONT_SEMIBOLD)
+        val titleBounds = LayoutBounds(infoX, titleY - 2f, titleWidth.coerceAtMost(infoW), 18f)
+        ui.text(shownTitle, infoX, titleY, 13f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        if (lyricsOpen && titleBounds.width > 0f) ui.hits += titleBounds to screen::toggleLyrics
         val sub = when {
             t == null -> "-"
-            snap.message.isNotEmpty() -> I18n.message(snap.message)
             snap.remote -> snap.sourceLabel + " · " + t.artists.joinToString(" / ")
             else -> t.artists.joinToString(" / ")
         }
@@ -122,37 +136,52 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             if (skipAt != 0L && remaining > 0L) Library.showTemporaryStatus(
                 I18n.text("This song could not be played. Skipped to the next song."), remaining / 1_000_000L)
         }
-        if (sub != lastSubtitle) { lastSubtitle = sub; subtitleAt = System.nanoTime() }
-        val overflow = ui.width(sub, 11f) - infoW
-        if (snap.message.isNotEmpty() && overflow > 0f) {
-            val seconds = (System.nanoTime() - subtitleAt) / 1e9
-            val travel = overflow / 28.0
-            val phase = seconds % (travel * 2 + 3)
-            val offset = when {
-                phase < 1.5 -> 0f
-                phase < 1.5 + travel -> ((phase - 1.5) * 28).toFloat()
-                phase < 3 + travel -> overflow
-                else -> (overflow - (phase - 3 - travel) * 28).toFloat()
+        val notice = when {
+            snap.loading -> ""
+            !snap.remote && MusicPlayer.state == MusicPlayer.State.ERROR -> MusicPlayer.message
+            else -> snap.message
+        }
+        if (notice != lastPlaybackNotice) {
+            lastPlaybackNotice = notice
+            if (notice.isNotBlank()) {
+                playbackNotice = I18n.message(notice)
+                playbackNoticeUntil = System.nanoTime() + 3_500_000_000L
             }
-            ui.beginClip(LayoutBounds(infoX, coverBox.y + 23f, infoW, 20f))
-            ui.text(sub, infoX - offset, coverBox.y + 27f, 11f, Theme.TEXT_SECONDARY)
-            ui.endClip()
-        } else if (t != null && snap.message.isEmpty() && !snap.remote && t.source != MusicSource.APPLE) {
-            // 歌手名可以点，打开歌手页；远端曲目只显示来源，不提供歌手跳转
+        }
+        if (t != null && !snap.remote && t.source != MusicSource.APPLE) {
             drawArtistLinks(screen, t, infoX, coverBox.y + 27f, infoW, 11f, Theme.TEXT_SECONDARY)
         } else ui.text(ui.trim(sub, infoW, 11f), infoX, coverBox.y + 27f, 11f, Theme.TEXT_SECONDARY)
+        val artistWidth = ui.width(sub, 11f)
+        val actionX = infoX + maxOf(titleWidth, artistWidth).coerceAtMost(infoW) + 6f
 
-        // 网易云：红心（登录了才有）
-        if (t != null && likeShown) {
-            Library.ensureLiked()
-            val likeB = LayoutBounds(infoX + infoW + 8f, coverBox.y + cs / 2f - 14f, 28f, 28f)
-            val k = button(likeB, likeA)
-            val on = likeA.on.tick(if (NeteaseApi.isLiked(t.id)) 1f else 0f).coerceIn(0f, 1f)
-            val heartColor = mixColor(Theme.TEXT_SECONDARY, RED, on)
-            // 经典风格用矢量红心（字体里的 ♥ 小字号下显得细长）；连续圆角风格保持那边的设计
-            if (UiStyle.continuous) ui.icon("♥", likeB.x + 14f, likeB.y + 14f, 15f * k, heartColor)
-            else PlayerIcons.draw(ui.ctx, PlayerIcons.heart, likeB.x + 14f, likeB.y + 14f, 17f * k, heartColor)
-            ui.hits += likeB to { likeA.press.v -= 7f; Library.toggleLike(t) }
+        if (t != null && showHeart) {
+            val y = coverBox.y + 12f
+            if (canLike) Library.ensureLiked()
+            val liked = canLike && NeteaseApi.isLiked(t.id)
+            val heart = LayoutBounds(actionX, y, 30f, 26f)
+            val hover = ui.hover(heart)
+            val color = if (liked) RED else Theme.TEXT_SECONDARY
+            val outline = if (hover) PlayerIcons.heartBoldOutline else PlayerIcons.heartOutline
+            if (liked) PlayerIcons.draw(ctx, PlayerIcons.heart, heart.x + 13f, heart.y + 13f, 19f, color)
+            if (!liked || hover) PlayerIcons.draw(ctx, outline, heart.x + 13f, heart.y + 13f, 19f, color)
+            if (canLike) ui.hits += heart to { Library.toggleLike(t) }
+
+            if (hasComments) {
+                val comment = LayoutBounds(heart.right + 3f, y, 42f, 26f)
+                PlayerIcons.draw(ctx, PlayerIcons.comments, comment.x + 12f, comment.y + 13f, 18f,
+                    if (ui.hover(comment)) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY)
+                screen.songComments.count(t.id)?.let { count ->
+                    val label = if (count >= 10000) "${count / 10000}w+" else if (count > 999) "999+" else count.toString()
+                    ui.text(label, comment.x + 20f, comment.y + 1f, 8f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+                }
+                ui.hits += comment to screen::openSongComments
+            }
+        }
+
+        if (snap.loading) {
+            val ringX = actionX + buttonWidth + 11f
+            val percent = downloadPercent.find(snap.message)?.groupValues?.get(1)?.toIntOrNull()
+            PlayerIcons.loadingRing(ctx, ringX, coverBox.y + 25f, percent)
         }
 
         // 中：上一首 / 播放 / 下一首 / 队列。点击区域固定，动画只改画出来的样子
@@ -208,27 +237,14 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             }
         }
 
-        // 进度条：在栏的底部，两端上方标时间（当前时间亮一点）；鼠标移上去变粗、出现圆钮
-        val dur = snap.durationMs
-        val pos = snap.positionMs
-        // 两头各留一段，不贴着播放栏的圆角
-        progRect = LayoutBounds(bar.x + PROGRESS_INSET, bar.bottom - 11f, bar.width - PROGRESS_INSET * 2, 3f)
-        val kn = progKnob.tick(if (seeking || progRect.expand(0f, 6f).contains(ui.mx, ui.my)) 1f else 0f).coerceIn(0f, 1.2f)
-        val l = fmtTime(if (seeking && dur > 0) (seekFraction * dur).toLong() else pos)
-        val rgt = fmtTime(dur)
-        ui.text(l, progRect.x, progRect.y - 14f, 9.5f, Theme.TEXT_PRIMARY.copy(a = 0.9f), Theme.FONT_SEMIBOLD)
-        ui.text(rgt, progRect.right - ui.width(rgt, 9.5f, Theme.FONT_SEMIBOLD), progRect.y - 14f, 9.5f, Theme.TEXT_TERTIARY, Theme.FONT_SEMIBOLD)
-        val thick = 3f + 2f * kn.coerceAtMost(1f)
-        val lane = LayoutBounds(progRect.x, progRect.y + 1.5f - thick / 2f, progRect.width, thick)
-        ui.card(lane, Color(1f, 1f, 1f, 0.08f), thick / 2f)
-        if (dur > 0) {
-            val f = if (seeking) seekFraction else (pos.toDouble() / dur).coerceIn(0.0, 1.0).toFloat()
-            ui.card(LayoutBounds(lane.x, lane.y, max(thick, lane.width * f), lane.height), RED, thick / 2f)
-            if (kn > 0.01f) {
-                val kx = lane.x + lane.width * f
-                val ks = 12f * kn
-                ctx.drawShape(LayoutBounds(kx - ks / 2f, progRect.y + 1.5f - ks / 2f, ks, ks), ShapeStyle(RED, ks / 2f))
-            }
+        drawProgress(bar, snap, lyricsOpen)
+        if (System.nanoTime() < playbackNoticeUntil) {
+            val font = Theme.FONT_SEMIBOLD
+            val text = ui.trim(playbackNotice, (bar.width - 28f).coerceAtLeast(0f), 11f, font)
+            val w = ui.width(text, 11f, font) + 20f
+            val toast = LayoutBounds(bar.x + (bar.width - w) / 2f, bar.y - 58f, w, 24f)
+            ui.card(toast, Color(0.05f, 0.06f, 0.08f, 0.95f), 12f)
+            ui.text(text, toast.x + 10f, toast.y + 7f, 11f, Theme.TEXT_PRIMARY, font)
         }
 
         drawVolume(bar, ry)
@@ -300,13 +316,14 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             val cx = content.x + content.width / 2f
             val percent = "${(volume * 100f).roundToInt()}%"
             ui.text(percent, cx - ui.width(percent, 11f, Theme.FONT_SEMIBOLD) / 2f, content.y + 12f, 11f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
-            volRect = LayoutBounds(cx - 2.5f, content.y + 38f, 5f, content.height - 84f)
+            volRect = LayoutBounds(cx - 2.5f, content.y + 52f, 5f, content.height - 98f)
             ui.card(volRect, Color(1f, 1f, 1f, 0.22f), 2.5f)
             val fill = volRect.height * volume
             val y = volRect.bottom - fill
             if (fill > 0f) ui.card(LayoutBounds(volRect.x, y, volRect.width, max(5f, fill)), RED, 2.5f)
             ui.ctx.drawShape(LayoutBounds(cx - 7f, y - 7f, 14f, 14f), ShapeStyle(Theme.TEXT_PRIMARY, 7f, shadow = ShadowStyle(Color(0f, 0f, 0f, 0.25f), 4f, Vec2(0f, -1f))))
-            PlayerIcons.speaker(ui.ctx, cx + 1f, content.bottom - 17f, Theme.TEXT_SECONDARY, 0.62f, if (volume > 0.5f) 2 else 1, volume <= 0f)
+            drawVolumeEndpoint(cx, content.bottom - 17f, 0f, interactive, clip)
+            drawVolumeEndpoint(cx, content.y + 30f, 1f, interactive, clip)
             if (interactive) ui.hits += volRect.expand(16f, 8f).intersect(clip) to {
                 volumeDragging = true
                 setVolumeAt(ui.mx, ui.my)
@@ -365,8 +382,8 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
             ui.text(I18n.text("Volume"),content.x+14f,content.y+13f,12f,Theme.TEXT_PRIMARY,Theme.FONT_MEDIUM)
             ui.text(percent,content.right-14f-ui.width(percent,11f),content.y+14f,11f,Theme.TEXT_SECONDARY)
             val cy=content.y+57f
-            PlayerIcons.speaker(ui.ctx,content.x+20f,cy,Theme.TEXT_SECONDARY,0.75f,0)
-            PlayerIcons.speaker(ui.ctx,content.right-21f,cy,Theme.TEXT_SECONDARY,0.75f,2)
+            drawVolumeEndpoint(content.x + 20f, cy, 0f, interactive, clip)
+            drawVolumeEndpoint(content.right - 21f, cy, 1f, interactive, clip)
             volRect=LayoutBounds(content.x+42f,cy-2f,content.width-84f,4f)
             ui.card(volRect,Color(1f,1f,1f,0.18f),2f)
             val fill=volRect.width*volume
@@ -552,47 +569,127 @@ internal class PlayerBar(private val screen: MusicScreen, private val module: Ne
     }
 
 
-    /** 点在进度条 / 音量条上就处理掉，返回 true；按在进度条上开始拖动 */
-    fun mouseDown(mx: Int, my: Int): Boolean {
-        if (progRect.expand(0f, 6f).contains(mx, my)) {
-            val snap = PlaybackView.snapshot()
-            if (!snap.remote && snap.durationMs > 0) {
-                seeking = true
-                seekFraction = fractionAt(mx)
-            }
-            return true
+    private fun drawProgress(bar: LayoutBounds, snap: PlaybackView.Snapshot, lyricsOpen: Boolean) {
+        val duration = snap.durationMs
+        if (seekTrack != null && seekTrack != snap.track?.key) seekTrack = null
+        val seeking = seekTrack != null
+        val y = bar.y + 6f
+        val panel = bar.takeUnless { lyricsOpen }
+        val inset = if (panel != null) progressInset(bar) else 0f
+        progRect = LayoutBounds(bar.x + inset, y - 3f, bar.width - inset * 2f, 6f)
+        progressHit = LayoutBounds(bar.x, y - 9f, bar.width, 18f)
+        val hover = progressHit.contains(ui.mx, ui.my) && !menuContains(ui.mx, ui.my)
+        val show = duration > 0L && (seeking || hover || System.nanoTime() < showTimeUntil)
+        val knob = progKnob.tick(if (show) 1f else 0f).coerceIn(0f, 1f)
+        val height = 4f + 2f * knob
+        val lane = LayoutBounds(bar.x, y - height / 2f, bar.width, height)
+        ui.ctx.drawShape(lane, ShapeStyle(Color(1f, 1f, 1f, 0.34f), clipBounds = panel, clipRadius = BAR_GLASS.radius))
+        if (duration <= 0L) return
+
+        val position = if (seeking) (seekFraction.toDouble() * duration).toLong() else snap.positionMs.coerceIn(0L, duration)
+        val fraction = if (seeking) seekFraction else (position.toDouble() / duration).toFloat()
+        val progressKnobX = progRect.x + progRect.width * fraction
+        val fill = if (fraction >= 1f) lane.width else progressKnobX - lane.x
+        val image = if (lyricsOpen) snap.track?.let(CoverCache::trackImage) else null
+        if (image !== progressCover) {
+            progressCover = image
+            progressColors = image?.let(CoverArt::paletteOf).orEmpty().map(Color::fromARGB)
         }
-        return false
+        if (fraction > 0f && fill > 0f) {
+            val style = ShapeStyle(progressColors.firstOrNull() ?: RED, fillEndColor = progressColors.getOrNull(1),
+                clipBounds = panel, clipRadius = BAR_GLASS.radius)
+            ui.ctx.drawShape(LayoutBounds(lane.x, lane.y, fill, height), style)
+        }
+        if (knob <= 0.01f) return
+        val radius = 6f * knob
+        ui.ctx.drawShape(LayoutBounds(progressKnobX - radius, y - radius, radius * 2f, radius * 2f),
+            ShapeStyle(Theme.TEXT_PRIMARY, radius, clipBounds = panel ?: bar, clipRadius = if (panel != null) BAR_GLASS.radius else 0f))
+        val label = "${fmtTime(position)} / ${fmtTime(duration)}"
+        val font = Theme.FONT_SEMIBOLD
+        val labelWidth = ui.width(label, 10f, font)
+        val tooltipWidth = labelWidth + 18f
+        val tooltipX = (progressKnobX - tooltipWidth / 2f).coerceIn(bar.x, (bar.right - tooltipWidth).coerceAtLeast(bar.x))
+        val tooltip = LayoutBounds(tooltipX, y - 31f, tooltipWidth, 22f)
+        ui.ctx.pushOpacity(knob)
+        try {
+            ui.card(tooltip, Color(0.05f, 0.06f, 0.08f, 0.93f), 11f)
+            ui.text(label, tooltip.x + 9f, tooltip.y + 6f, 10f, Theme.TEXT_PRIMARY, font)
+        } finally {
+            ui.ctx.popOpacity()
+        }
     }
 
-    /** 按住拖动：拖进度条时跟着鼠标走（拖出条外也算），否则拖音量 */
+    private fun progressInset(bar: LayoutBounds): Float {
+        val radius = minOf(BAR_GLASS.radius, bar.width / 2f, bar.height / 2f)
+        val y = bar.height / 2f - 6f
+        if (!UiStyle.continuous) {
+            val dy = (radius - 6f).coerceAtLeast(0f)
+            return radius - kotlin.math.sqrt(radius * radius - dy * dy)
+        }
+        var left = 0f
+        var right = minOf(bar.width / 2f, radius * 1.5f)
+        repeat(12) {
+            val mid = (left + right) / 2f
+            if (me.sorihiko.dangomusicgtnh.music.ContinuousCorners.distance(
+                    (bar.width / 2f - mid).toDouble(), y.toDouble(),
+                    (bar.width / 2f).toDouble(), (bar.height / 2f).toDouble(), radius.toDouble()) > 0) left = mid
+            else right = mid
+        }
+        return right
+    }
+
+    /** 从按下的位置开始预览，拖动时更新，松手后只跳转一次。 */
+    fun mouseDown(mx: Int, my: Int): Boolean {
+        if (!progressHit.contains(mx, my)) return false
+        val snap = PlaybackView.snapshot()
+        if (!snap.remote && snap.durationMs > 0L && snap.track != null) {
+            seekTrack = snap.track.key
+            seekFraction = fractionAt(mx)
+            progKnob.x = 1f
+            progKnob.v = 0f
+        }
+        return true
+    }
+
     fun mouseDrag(mx: Int, my: Int) {
-        if (seeking) {
+        if (seekTrack != null) {
             seekFraction = fractionAt(mx)
             return
         }
         if (volumeOpen && volumeDragging) setVolumeAt(mx, my)
     }
 
-    /** 松开鼠标：拖进度条的话现在才跳过去 */
     fun mouseUp() {
         volumeDragging = false
-        if (!seeking) return
-        seeking = false
-        val dur = PlaybackView.snapshot().durationMs
-        if (dur > 0) {
-            val position = (seekFraction * dur).toLong()
-            PlaybackView.seek(position)
+        val key = seekTrack ?: return
+        seekTrack = null
+        val snap = PlaybackView.snapshot()
+        if (!snap.remote && snap.track?.key == key && snap.durationMs > 0L) {
+            showTimeUntil = System.nanoTime() + 900_000_000L
+            PlaybackView.seek((seekFraction.toDouble() * snap.durationMs).toLong())
         }
     }
 
     private fun fractionAt(x: Int): Float =
         if (progRect.width <= 0f) 0f else ((x - progRect.x) / progRect.width).coerceIn(0f, 1f)
 
+    private fun drawVolumeEndpoint(x: Float, y: Float, volume: Float, interactive: Boolean, clip: LayoutBounds) {
+        val bounds = LayoutBounds(x - 12f, y - 11f, 24f, 22f)
+        val hovered = interactive && ui.hover(bounds)
+        if (hovered) ui.card(bounds, PopupLook.hover, 7f)
+        PlayerIcons.speaker(ui.ctx, x, y, if (hovered) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY,
+            0.68f, if (volume == 0f) 0 else 2, volume == 0f)
+        if (interactive) ui.hits += bounds.intersect(clip) to { applyVolume(volume) }
+    }
+
     private fun setVolumeAt(x: Int, y: Int) {
         if (volRect.height <= 0f || volRect.width <= 0f) return
         val volume = if (UiStyle.continuous) ((x - volRect.x) / volRect.width).coerceIn(0f, 1f)
             else ((volRect.bottom - y) / volRect.height).coerceIn(0f, 1f)
+        applyVolume(volume)
+    }
+
+    private fun applyVolume(volume: Float) {
         module.setVolume(volume)
         PlaybackView.setVolume(volume)
     }
@@ -603,3 +700,5 @@ private val BAR_GLASS = Theme.GLASS_SIDEBAR.copy(radius = 28f, shadow = ShadowSt
 /** 进度条离播放栏左右两边的距离 */
 private const val PROGRESS_INSET = 72f
 private const val MODE_BUTTON_OFFSET = 116f
+
+private val downloadPercent = Regex("([0-9]{1,3})%")

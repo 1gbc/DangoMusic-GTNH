@@ -34,7 +34,10 @@ data class ShapeStyle(
     val radius: Float = 0f,
     val borderWidth: Float = 0f,
     val borderColor: Color = Color.TRANSPARENT,
-    val shadow: ShadowStyle = ShadowStyle()
+    val shadow: ShadowStyle = ShadowStyle(),
+    val fillEndColor: Color? = null,
+    val clipBounds: LayoutBounds? = null,
+    val clipRadius: Float = 0f
 )
 
 data class GlassStyle(

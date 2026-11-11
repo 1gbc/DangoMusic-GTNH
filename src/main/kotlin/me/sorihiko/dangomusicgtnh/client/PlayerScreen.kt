@@ -205,8 +205,7 @@ internal class PlayerScreen(private val parent: GuiScreen?) : GuiScreen() {
         drawString(fontRendererObj, "${source.label} QR login · $state", left, 54, 0xFFFFFF)
         if (state == NeteaseLogin.State.SUCCESS) return
         val size = (height - 143).coerceIn(32, 110)
-        drawQr("main", image, if (source == MusicSource.KUGOU) width / 2 - size - 8 else (width - size) / 2, 68, size)
-        if (source == MusicSource.KUGOU) drawQr("lite", NativeLogin.liteImage, width / 2 + 8, 68, size)
+        drawQr("main", image, (width - size) / 2, 68, size)
     }
 
     private fun drawQr(key: String, image: BufferedImage?, x: Int, y: Int, size: Int) {

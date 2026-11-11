@@ -6,7 +6,7 @@ plugins {
     id("com.gtnewhorizons.gtnhconvention")
 }
 
-version = "0.1.1-dev.11"
+version = "0.1.2-dev.8"
 
 dependencies {
     "shadowCompile"(project(":core"))

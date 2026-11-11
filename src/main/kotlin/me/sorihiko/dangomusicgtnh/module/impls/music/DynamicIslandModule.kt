@@ -13,9 +13,12 @@ import me.sorihiko.dangomusicgtnh.module.values.BooleanValue
 import me.sorihiko.dangomusicgtnh.module.values.FloatValue
 import me.sorihiko.dangomusicgtnh.module.values.IntValue
 import me.sorihiko.dangomusicgtnh.module.values.ModuleValue
+import me.sorihiko.dangomusicgtnh.music.CoverArt
 import me.sorihiko.dangomusicgtnh.music.CoverCache
 import me.sorihiko.dangomusicgtnh.music.PlaybackView
+import me.sorihiko.dangomusicgtnh.musicui.PlayerIcons
 import me.sorihiko.dangomusicgtnh.musicui.fmtTime
+import me.sorihiko.dangomusicgtnh.musicui.mixColor
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
@@ -24,11 +27,13 @@ import me.sorihiko.dangomusicgtnh.ui.UiStyle
 import me.sorihiko.dangomusicgtnh.ui.Vec2
 import me.sorihiko.dangomusicgtnh.utils.Color
 
+import java.awt.image.BufferedImage
 import java.text.SimpleDateFormat
 import java.util.Date
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.exp
+import kotlin.math.sin
 
 /** 播放 HUD：共用播放进度、封面和尺寸动画，空闲时显示游戏信息。 */
 @ModuleMeta(Category.MUSIC, "DynamicIsland")
@@ -67,6 +72,21 @@ class DynamicIslandModule : Module() {
     private var vh = 0f
     private var lastNanos = 0L
     private var cornerRadius = -1f
+    private var volumeUntil = 0L
+    private var targetVolume = 0f
+    private var animatedVolume = 0f
+    private var volumeReveal = 0f
+    private var waveActivity = 0f
+    private var wavePhase = 0f
+    private var waveImage: BufferedImage? = null
+    private var waveColors = emptyList<Int>()
+
+    internal fun showVolume(value: Float) {
+        if (!enabled) return
+        targetVolume = value.coerceIn(0f, 1f)
+        if (volumeReveal < 0.01f) animatedVolume = targetVolume
+        volumeUntil = System.nanoTime() + 2_000_000_000L
+    }
 
     private var dragOffset: Vec2? = null
     private var mouseWasDown = false
@@ -81,6 +101,12 @@ class DynamicIslandModule : Module() {
         contentAlpha = 0f
         lastNanos = 0L
         cornerRadius = -1f
+        volumeUntil = 0L
+        volumeReveal = 0f
+        waveActivity = 0f
+        wavePhase = 0f
+        waveImage = null
+        waveColors = emptyList()
         dragOffset = null
         mouseWasDown = false
     }
@@ -88,7 +114,7 @@ class DynamicIslandModule : Module() {
     private fun widthOf(kind: Kind, title: String, available: Float): Float {
         val preferred = if (kind == Kind.IDLE) 44f + idleWidth() else {
             val titleWidth = width(title, kind.titleSize, Theme.FONT_SEMIBOLD)
-            kind.coverSize + 34f + max(titleWidth, kind.minTextWidth)
+            kind.coverSize + 58f + max(titleWidth, kind.minTextWidth)
         }
         return min(preferred, available)
     }
@@ -122,12 +148,19 @@ class DynamicIslandModule : Module() {
     internal fun renderIsland(e: HudRenderEvent? = null) {
         if (!enabled) return
         val snap = PlaybackView.snapshot()
-        if (e == null && snap.track == null) return
+        val now = System.nanoTime()
+        if (e == null && snap.track == null && now >= volumeUntil && volumeReveal < 0.01f) return
         val platform = DangoClient.platform
         if (platform.windowWidth <= 0 || platform.windowHeight <= 0) return
-        val now = System.nanoTime()
         val dt = if (lastNanos == 0L) 0.016f else ((now - lastNanos) / 1e9f).coerceIn(0f, 0.05f)
         lastNanos = now
+        val volumeTarget = if (now < volumeUntil) 1f else 0f
+        volumeReveal += (volumeTarget - volumeReveal) * (1f - exp(-dt / 0.075f))
+        animatedVolume += (targetVolume - animatedVolume) * (1f - exp(-dt / 0.095f))
+        val playing = if (snap.playing) 1f else 0f
+        waveActivity += (playing - waveActivity) * (1f - exp(-dt / 0.12f))
+        wavePhase = (wavePhase + dt * 8f * waveActivity) % (Math.PI * 2).toFloat()
+        val extension = if (volumeReveal > 0.01f) 22f * volumeReveal else 0f
 
         val want = when {
             snap.track == null -> Kind.IDLE
@@ -157,7 +190,7 @@ class DynamicIslandModule : Module() {
 
         // 弹簧：略带回弹，接近 iOS 灵动岛的手感
         val tw = widthOf(want, title, available)
-        val th = want.height
+        val th = want.height + extension
         val stiff = 230f
         val damp = 24f
         vw += ((tw - w) * stiff - vw * damp) * dt
@@ -216,7 +249,8 @@ class DynamicIslandModule : Module() {
             // 内容按目标尺寸排版，在当前胶囊里居中，超出部分裁掉
             val cw = widthOf(shown, title, available)
             val ch = shown.height
-            val cb = LayoutBounds(pill.x + (w - cw) / 2f, pill.y + (h - ch) / 2f, cw, ch)
+            val visibleExtension = extension.coerceAtMost((h - ch).coerceAtLeast(0f))
+            val cb = LayoutBounds(pill.x + (w - cw) / 2f, pill.y + (h - ch - visibleExtension) / 2f, cw, ch)
             val scX = (pill.x * k).toInt()
             val scY = (platform.windowHeight - (pill.y + h) * k).toInt()
             ctx.scissor(scX, scY, (w * k).toInt() + 1, (h * k).toInt() + 1)
@@ -226,6 +260,12 @@ class DynamicIslandModule : Module() {
             ctx.pushOpacity(contentAlpha)
             if (shown == Kind.IDLE) drawIdle(ctx, cb) else drawSong(ctx, cb, r, shown, snap)
             ctx.popOpacity()
+            if (visibleExtension > 8f) {
+                ctx.pushOpacity(((visibleExtension - 8f) / 14f).coerceIn(0f, 1f))
+                val x = cb.x + if (shown == Kind.IDLE) 10f else shown.coverSize + 20f
+                drawVolume(ctx, x, cb.bottom + 9f)
+                ctx.popOpacity()
+            }
             ctx.popTransform()
             mt.flush(k)
             ctx.noScissor()
@@ -257,7 +297,8 @@ class DynamicIslandModule : Module() {
         val texture = if (UiStyle.continuous) CoverCache.track(track) else CoverCache.trackRounded(track) ?: CoverCache.track(track)
         drawCover(ctx, cover, texture, if (UiStyle.continuous) radius else cover.width * CoverCache.DEFAULT_CORNER_RATIO)
         val x = cover.right + 10f
-        val textWidth = b.right - 14f - x
+        drawWave(ctx, b.right - 24f, b.y + b.height / 2f, CoverCache.trackImage(track))
+        val textWidth = b.right - 38f - x
         val title = trim(track.name, textWidth, kind.titleSize, Theme.FONT_SEMIBOLD)
         text(ctx, title, x, b.y + (if (full) 12f else 9f), kind.titleSize, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
 
@@ -282,7 +323,7 @@ class DynamicIslandModule : Module() {
             val remaining = if (duration > 0L) "-${fmtTime(duration - position)}" else "--:--"
             val remainingWidth = width(remaining, 9f)
             text(ctx, elapsed, x, b.y + 49f, 9f, Theme.TEXT_SECONDARY)
-            text(ctx, remaining, b.right - 14f - remainingWidth, b.y + 49f, 9f, Theme.TEXT_SECONDARY)
+            text(ctx, remaining, b.right - 38f - remainingWidth, b.y + 49f, 9f, Theme.TEXT_SECONDARY)
             val inset = width(elapsed, 9f) + 7f
             barX += inset
             barWidth -= inset + remainingWidth + 7f
@@ -293,6 +334,32 @@ class DynamicIslandModule : Module() {
         if (position > 0L) {
             val fill = (bar.width * (position.toDouble() / duration)).toFloat()
             ctx.drawShape(LayoutBounds(bar.x, bar.y, fill, bar.height), ShapeStyle(Theme.TEXT_PRIMARY, min(1.5f, fill / 2f)))
+        }
+    }
+
+    private fun drawVolume(ctx: GuiCanvas, x: Float, y: Float) {
+        PlayerIcons.speaker(ctx, x + 10f, y, Theme.TEXT_PRIMARY, 0.64f,
+            if (targetVolume > 0.5f) 2 else 1, targetVolume <= 0f)
+        val bar = LayoutBounds(x + 23f, y - 2f, 61f, 4f)
+        ctx.drawShape(bar, ShapeStyle(Theme.TRACK, 2f))
+        val fill = bar.width * animatedVolume
+        if (fill > 0f) {
+            ctx.drawShape(LayoutBounds(bar.x, bar.y, fill, bar.height), ShapeStyle(Theme.TEXT_PRIMARY, min(2f, fill / 2f)))
+        }
+    }
+
+    private fun drawWave(ctx: GuiCanvas, x: Float, y: Float, image: BufferedImage?) {
+        if (image !== waveImage) {
+            waveImage = image
+            waveColors = image?.let(CoverArt::paletteOf).orEmpty()
+        }
+        val first = Color.fromARGB(waveColors.firstOrNull() ?: CoverArt.DEFAULT_ACCENT)
+        val last = waveColors.getOrNull(1)?.let(Color::fromARGB) ?: mixColor(first, Theme.TEXT_PRIMARY, 0.65f)
+        for (bar in 0..4) {
+            val pulse = 0.5f + 0.5f * sin(wavePhase + bar * 1.45f)
+            val height = 2f + waveActivity * pulse * (14f - kotlin.math.abs(bar - 2) * 3f)
+            val color = mixColor(first, last, bar / 4f)
+            ctx.drawShape(LayoutBounds(x + (bar - 2) * 3.8f - 1f, y - height / 2f, 2f, height), ShapeStyle(color, 1f))
         }
     }
 

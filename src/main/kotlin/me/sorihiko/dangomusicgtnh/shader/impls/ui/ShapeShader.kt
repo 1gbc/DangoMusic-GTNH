@@ -22,6 +22,9 @@ class ShapeShader : GlShader(
             "u_Radius",
             "u_Continuous",
             "u_FillColor",
+            "u_FillEndColor",
+            "u_ClipBounds",
+            "u_ClipRadius",
             "u_BorderWidth",
             "u_BorderColor",
             "u_ShadowColor",
@@ -49,6 +52,10 @@ class ShapeShader : GlShader(
         setUniform1f("u_Radius", style.radius)
         setUniform1f("u_Continuous", if (me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous) 1f else 0f)
         setUniformColor("u_FillColor", style.fillColor)
+        setUniformColor("u_FillEndColor", style.fillEndColor ?: style.fillColor)
+        val clip = style.clipBounds
+        setUniform4f("u_ClipBounds", clip?.x ?: 0f, clip?.y ?: 0f, clip?.width ?: 0f, clip?.height ?: 0f)
+        setUniform1f("u_ClipRadius", style.clipRadius)
         setUniform1f("u_BorderWidth", style.borderWidth)
         setUniformColor("u_BorderColor", style.borderColor)
         setUniformColor("u_ShadowColor", style.shadow.color)

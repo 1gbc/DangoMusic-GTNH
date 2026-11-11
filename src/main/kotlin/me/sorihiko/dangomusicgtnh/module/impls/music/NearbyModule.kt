@@ -45,7 +45,7 @@ class NearbyModule : Module() {
     @ModuleValue("Share my lyrics", "Let nearby players and group members see your current line")
     internal val shareLyrics = BooleanValue(false)
 
-    @ModuleValue("See nearby lyrics", "Show the current line above nearby hosts")
+    @ModuleValue("See nearby lyrics", "Show lyrics for nearby and group playback")
     internal val seeLyrics = BooleanValue(true)
 
     @ModuleValue("Hear group", "Follow the group speaker regardless of distance")

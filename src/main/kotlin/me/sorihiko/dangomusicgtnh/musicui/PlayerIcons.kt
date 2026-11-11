@@ -3,6 +3,7 @@ package me.sorihiko.dangomusicgtnh.musicui
 import me.sorihiko.dangomusicgtnh.music.MusicPlayer
 import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.RenderContext
+import me.sorihiko.dangomusicgtnh.ui.Theme
 import me.sorihiko.dangomusicgtnh.ui.VectorIcon
 import me.sorihiko.dangomusicgtnh.utils.Color
 
@@ -54,11 +55,22 @@ internal object PlayerIcons {
     }
     private val speakers = arrayOf(speakerPath(0,false),speakerPath(1,false),speakerPath(2,false),speakerPath(0,true))
     /** 红心（和侧栏“我喜欢”同一个形状，宽一点，小字号下也饱满） */
-    val heart = VectorIcon.path(filled = true) {
+    private fun heartPath(filled: Boolean, strokeWidth: Float = VectorIcon.STROKE) = VectorIcon.path(filled, strokeWidth) {
         move(12.0,21.0); curve(9.5,18.0,2.0,13.8,2.0,8.2)
         curve(2.0,4.6,4.6,2.5,7.4,2.5); curve(9.4,2.5,11.0,3.7,12.0,5.4)
         curve(13.0,3.7,14.6,2.5,16.6,2.5); curve(19.4,2.5,22.0,4.6,22.0,8.2)
         curve(22.0,13.8,14.5,18.0,12.0,21.0); close()
+    }
+    val heart = heartPath(true)
+    val heartOutline = heartPath(false)
+    val heartBoldOutline = heartPath(false, 2.8f)
+    val comments = VectorIcon.path {
+        move(6.0,18.5); line(3.0,21.0); line(4.0,15.8)
+        curve(-0.5,8.0,6.0,2.2,12.0,2.5)
+        curve(25.0,2.5,25.0,19.5,12.0,19.5)
+        curve(10.0,19.5,8.0,19.2,6.0,18.5); close()
+        move(8.0,9.0); line(16.0,9.0)
+        move(8.0,13.0); line(14.0,13.0)
     }
     /** 小箭头（设置里的 ◀ ▶、下拉按钮），描边和其它图标一样粗 */
     val chevronLeft = VectorIcon.path { move(15.0,5.0); line(8.0,12.0); line(15.0,19.0) }
@@ -73,6 +85,31 @@ internal object PlayerIcons {
         curve(4.5,7.9,7.9,4.5,12.0,4.5); curve(14.3,4.5,16.3,5.5,17.7,7.1)
         move(18.2,2.8); line(18.2,7.6); line(13.4,7.6)
     }
+    private fun ringArc(percent: Int) = VectorIcon.path {
+        val steps = ((percent * 40 + 99) / 100).coerceAtLeast(1)
+        for (index in 0..steps) {
+            val angle = (index.toDouble() / steps) * (Math.PI * 2 * percent / 100) - Math.PI / 2
+            val x = 12 + kotlin.math.cos(angle) * 8
+            val y = 12 + kotlin.math.sin(angle) * 8
+            if (index == 0) move(x, y) else line(x, y)
+        }
+    }
+    private val loadingArcs = Array(101) { ringArc(it) }
+
+    fun loadingRing(ctx: RenderContext, x: Float, y: Float, percent: Int?) {
+        draw(ctx, loadingArcs[100], x, y, 18f, Theme.TEXT_TERTIARY)
+        if (percent != null) {
+            val step = percent.coerceIn(0, 100)
+            if (step > 0) draw(ctx, loadingArcs[step], x, y, 18f, Theme.TEXT_PRIMARY)
+        } else {
+            ctx.pushTranslate(x, y, 0f)
+            ctx.pushRotate((System.nanoTime() % 900_000_000L) / 2_500_000f, 0f, 0f, 1f)
+            draw(ctx, loadingArcs[30], 0f, 0f, 18f, Theme.TEXT_PRIMARY)
+            ctx.popTransform()
+            ctx.popTransform()
+        }
+    }
+
     fun draw(ctx: RenderContext, icon: VectorIcon, cx: Float, cy: Float, size: Float, color: Color) =
         ctx.drawIcon(LayoutBounds(cx-size/2f,cy-size/2f,size,size),icon,color)
     fun mode(ctx: RenderContext, mode: MusicPlayer.Mode, cx: Float, cy: Float, size: Float, color: Color) =

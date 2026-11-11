@@ -3,6 +3,9 @@
 uniform vec4 u_Bounds;// x y width height
 uniform float u_Radius;
 uniform vec4 u_FillColor;
+uniform vec4 u_FillEndColor;
+uniform vec4 u_ClipBounds;
+uniform float u_ClipRadius;
 
 uniform float u_BorderWidth;
 uniform vec4 u_BorderColor;
@@ -60,7 +63,8 @@ void main() {
     float aa = fwidth(fillDist);
     float fillAlpha = 1.0 - smoothstep(-aa, 0.0, fillDist);
 
-    vec4 shapeColor = u_FillColor * fillAlpha;
+    vec4 fillColor = mix(u_FillColor, u_FillEndColor, clamp(local.x / max(u_Bounds.z, 0.001), 0.0, 1.0));
+    vec4 shapeColor = fillColor * fillAlpha;
     // 形状（含边框）外缘的距离：光晕只画外面时用
     float shapeDist = fillDist;
 
@@ -72,7 +76,7 @@ void main() {
 
         shapeDist = outerDist;
         float outerAlpha = 1.0 - smoothstep(-aa, 0.0, outerDist);
-        vec4 rawColor = mix(u_BorderColor, u_FillColor, fillAlpha);
+        vec4 rawColor = mix(u_BorderColor, fillColor, fillAlpha);
         shapeColor = rawColor * outerAlpha;
     }
 
@@ -91,5 +95,10 @@ void main() {
     }
 
     vec4 color = shapeColor + shadowColor * (1.0 - shapeColor.a);
+    if (u_ClipBounds.z > 0.0) {
+        vec2 clipHalf = u_ClipBounds.zw * 0.5;
+        float clipDist = sdRoundBox(v_Position - u_ClipBounds.xy - clipHalf, clipHalf, u_ClipRadius);
+        color.a *= 1.0 - smoothstep(-max(fwidth(clipDist), 0.001), 0.0, clipDist);
+    }
     gl_FragColor = vec4(color.rgb, color.a * u_Opacity);
 }

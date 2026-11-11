@@ -24,7 +24,7 @@ class NeteaseTrack @JvmOverloads constructor(
     var cloudId: Long = 0
     /** 歌手 ID（音源自己的，QQ 是 mid），和 [artists] 一一对应；拿不到的是 ""，点进歌手页时再按名字找 */
     var artistIds: List<String> = emptyList()
-    val key: String get() = "${source.key}:$nativeId" + if (source == MusicSource.KUGOU && cloud) ":cloud" else ""
+    val key: String get() = "${source.key}:$nativeId"
     companion object {
         /** 解析网易云接口返回的歌曲 JSON（新旧两种字段名都认：artists/ar、duration/dt、album/al） */
         fun parse(raw: JsonObject): NeteaseTrack? {

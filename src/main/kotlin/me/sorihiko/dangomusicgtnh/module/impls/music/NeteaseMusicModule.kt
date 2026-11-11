@@ -39,11 +39,11 @@ import me.sorihiko.dangomusicgtnh.platform.PlayerKeyBinding
 class NeteaseMusicModule : Module() {
 
     @ModuleValue("Music source", "Select a music provider")
-    private val musicSource = IntValue(0, MusicSource.values().lastIndex, 0)
+    private val musicSource = IntValue(0, 3, 0)
 
     fun selectSource(source: MusicSource) {
         if (source != MusicSources.selected && (source == MusicSource.APPLE || MusicSources.selected == MusicSource.APPLE)) MusicPlayer.stop(clearResume = false)
-        musicSource.setValue(source.ordinal)
+        musicSource.setValue(source.configId)
         MusicSources.selected = source
     }
 
@@ -81,6 +81,9 @@ class NeteaseMusicModule : Module() {
     internal val lyricsPageTranslation = BooleanValue(true)
     @ModuleValue("Lyrics page romanization", "")
     internal val lyricsPageRomanization = BooleanValue(false)
+
+    @ModuleValue("Song comments", "Show the NetEase comments button and allow scrolling to comments")
+    internal val songCommentsEnabled = BooleanValue(true)
 
     /** 玩家拖过的窗口位置大小 [x, y, 宽, 高]（占屏幕比例）；没拖过是 null */
     fun windowFrame(): FloatArray? =
@@ -257,7 +260,7 @@ class NeteaseMusicModule : Module() {
             log.info("Resume last session skipped: module={} setting={}", enabled, resumeSession.get())
             return
         }
-        if (MusicSource.values().getOrNull(musicSource.value) == MusicSource.APPLE) {
+        if (MusicSource.fromConfig(musicSource.value) == MusicSource.APPLE) {
             log.info("Resume last session skipped: Apple Music is the selected source")
             return
         }
@@ -279,7 +282,8 @@ class NeteaseMusicModule : Module() {
 
     private fun changeVolume(d: Float) {
         volume.setValue((volume.value + d).coerceIn(0f, 1f))
-        MusicPlayer.volume = volume.value
+        PlaybackView.setVolume(volume.value)
+        DangoMusic.instance.moduleManager.get(DynamicIslandModule::class.java).showVolume(volume.value)
         me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.tick()
         val appleAuthorized = MusicSources.selected == MusicSource.APPLE && me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.authorized
         if (appleAuthorized != appleWasAuthorized) {
@@ -411,7 +415,7 @@ class NeteaseMusicModule : Module() {
         // 即使播放器被关闭，也要初始化并保存界面语言。
         applyLanguage()
         me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous = uiStyle.value == 1
-        MusicSources.selected = MusicSource.values()[musicSource.value]
+        MusicSources.selected = MusicSource.fromConfig(musicSource.value)
         DangoMusic.instance.platform.syncKeyBindings(keyBindings.values)
         if (!enabled) return
         // 歌词模块一直开着（显示与否由 3D lyrics 控制）；等配置读回之后再检查

@@ -14,7 +14,7 @@ import me.sorihiko.dangomusicgtnh.ui.Theme
 import me.sorihiko.dangomusicgtnh.utils.Color
 
 /** 网易云唱片与歌词页。保留原来浏览页的状态，也不改动游戏内歌词的设置。 */
-internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicModule) {
+internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicModule, private val comments: SongComments) {
     private enum class Menu { SIZE, MORE }
 
     private data class Row(val top: Float, val text: List<String>, val phonetic: List<String>, val translation: List<String>, val height: Float) {
@@ -53,18 +53,69 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         return true
     }
 
+    private var commentsOpen = false
+    private var commentsProgress = 0f
+    private var pageArea = LayoutBounds()
+    private var shortcutArea = LayoutBounds()
+    private var popupArea: LayoutBounds? = null
+    private var shortcutOpacity = 0f
+
+    fun openComments() {
+        if (!module.songCommentsEnabled.get()) return
+        dismissMenu()
+        commentsOpen = true
+    }
+
     fun reset() {
+        commentsOpen = false
+        commentsProgress = 0f
+        shortcutOpacity = 0f
+        popupArea = null
         menu = null
         manualPosition = null
     }
 
     fun scroll(wheel: Int, x: Int, y: Int) {
-        if (menu != null || rows.isEmpty() || !lyricArea.contains(x, y)) return
-        manualPosition = (manualPosition ?: scrollPosition).plus(if (wheel > 0) -80f else 80f)
-            .coerceIn(0f, rows.last().center)
+        if (!pageArea.contains(x, y)) return
+        if (commentsOpen && module.songCommentsEnabled.get()) {
+            comments.scroll(wheel) { commentsOpen = false }
+            return
+        }
+        if (inLyricsModule(x, y)) {
+            val end = rows.lastOrNull()?.center ?: return
+            val position = manualPosition ?: scrollPosition
+            manualPosition = (position + if (wheel > 0) -80f else 80f).coerceIn(0f, end)
+        } else if (wheel < 0 && MusicPlayer.current?.source == MusicSource.NETEASE) {
+            openComments()
+        }
     }
 
-    fun draw(area: LayoutBounds, close: () -> Unit) {
+    private fun inLyricsModule(x: Int, y: Int): Boolean =
+        lyricArea.contains(x, y) || shortcutArea.contains(x, y) || popupArea?.contains(x, y) == true
+
+    fun draw(area: LayoutBounds, controlsHeight: Float, close: () -> Unit) {
+        pageArea = area
+        ui.card(LayoutBounds(area.x, area.y, area.width, area.height + controlsHeight), Color.fromHex("#382122"), 22f)
+        val song = MusicPlayer.current?.takeIf { it.source == MusicSource.NETEASE }
+        if (song == null || !module.songCommentsEnabled.get()) {
+            commentsOpen = false
+            commentsProgress = 0f
+        }
+        val destination = if (commentsOpen) 1f else 0f
+        commentsProgress = ui.approach(commentsProgress, destination, 65f)
+        if (kotlin.math.abs(commentsProgress - destination) < 0.02f) commentsProgress = destination
+        val showComments = song != null && commentsProgress >= 0.5f
+        val alpha = kotlin.math.abs(commentsProgress * 2f - 1f)
+        val before = ui.hits.size
+        ui.shifted(0f, if (showComments) (1f - alpha) * 16f else (alpha - 1f) * 16f, alpha) {
+            if (showComments && song != null) {
+                comments.draw(area, song) { commentsOpen = false }
+            } else drawLyricsContent(area, close)
+        }
+        if (alpha < 0.99f) while (ui.hits.size > before) ui.hits.removeAt(ui.hits.lastIndex)
+    }
+
+    private fun drawLyricsContent(area: LayoutBounds, close: () -> Unit) {
         val song = MusicPlayer.current?.takeIf { it.source == MusicSource.NETEASE }
         if (song?.key != track?.key) {
             manualPosition = null
@@ -76,7 +127,6 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         val loading = song != null && lyricModule?.isLoadingLyrics(song) == true
         val size = module.lyricsPageSize.value.toFloat()
 
-        ui.card(area, Color.fromHex("#382122"), 22f)
         val collapse = LayoutBounds(area.x + 18f, area.y + 16f, 36f, 36f)
         button(collapse, "⌄", I18n.text("Collapse lyrics"), action = close)
 
@@ -111,6 +161,12 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             val height = if (it == Menu.SIZE) 82f else 216f
             LayoutBounds(railX - 246f, railY + 260f - height, 232f, height)
         }
+        shortcutArea = LayoutBounds(lyricArea.right, minOf(lyricArea.y, railY),
+            railX + 34f - lyricArea.right, maxOf(lyricArea.bottom, railY + 258f) - minOf(lyricArea.y, railY))
+        popupArea = popup
+        val hovered = inLyricsModule(ui.mx, ui.my)
+        shortcutOpacity = ui.approach(shortcutOpacity, if (hovered) 1f else 0f, 75f)
+        if (!hovered && shortcutOpacity < 0.02f) dismissMenu()
         if (rows.isEmpty()) {
             val message = when {
                 song == null -> "Play a NetEase song to view lyrics"
@@ -123,8 +179,14 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
             scrollPosition = ui.approach(scrollPosition, target, 95f)
             drawLyrics(active, size, popup)
         }
-        drawShortcuts(railX, railY, song)
-        if (popup != null) drawMenu(popup)
+        if (shortcutOpacity >= 0.02f) {
+            val firstHit = ui.hits.size
+            ui.shifted(0f, 0f, shortcutOpacity) {
+                drawShortcuts(railX, railY, song)
+                if (popup != null) drawMenu(popup)
+            }
+            if (!hovered) while (ui.hits.size > firstHit) ui.hits.removeAt(ui.hits.lastIndex)
+        }
     }
 
     private fun layout(newLines: List<LyricLine>, width: Float, size: Float) {
@@ -197,16 +259,6 @@ internal class LyricsPage(private val ui: Ui, private val module: NeteaseMusicMo
         ui.drawCover(cover, song?.let { CoverCache.trackRounded(it, 0.5f) }, cover.width / 2f)
         if (song == null) ui.icon("♫", cx, cy, diameter * 0.19f, white.copy(a = 0.55f))
 
-        val pivot = diameter * 0.10f
-        val arm = diameter * 0.26f
-        val ctx = ui.ctx
-        ctx.pushTranslate(cx + diameter * 0.26f, disc.y - diameter * 0.11f, 0f)
-        ctx.pushRotate(if (MusicPlayer.state == MusicPlayer.State.PLAYING && song != null) 143f else 38f, 0f, 0f, 1f)
-        ui.card(LayoutBounds(-pivot / 2f, -pivot / 2f, pivot, pivot), Color.fromHex("#e0c8c2"), pivot / 2f)
-        ui.card(LayoutBounds(0f, -2.5f, arm, 5f), white, 2.5f)
-        ui.card(LayoutBounds(arm - 4f, -5f, 18f, 10f), Color.fromHex("#f6e6e0"), 3f)
-        ctx.popTransform()
-        ctx.popTransform()
     }
 
     private fun drawShortcuts(x: Float, y: Float, song: NeteaseTrack?) {

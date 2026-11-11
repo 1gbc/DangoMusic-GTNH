@@ -572,23 +572,19 @@ object MusicPlayer {
             val ready = if (track.source == MusicSource.NETEASE) takePrepared(track, quality) else null
             // 这首正在预取但还没好：停掉预取，免得两份下载抢带宽
             if (ready == null && prefetchKey == track.key) prefetchKey = null
-            val kugou = if (track.source == MusicSource.KUGOU) KugouMusicSource.loadAudio(track) { gen == generation } else null
-            val url = ready?.url ?: when (track.source) {
-                MusicSource.KUGOU -> kugou?.info
-                MusicSource.NETEASE -> NeteaseApi.songUrl(track, quality) { gen == generation }
-                else -> MusicSources.api(track.source).songUrl(track)
-            }
+            val downloaded = if (ready == null && track.source == MusicSource.NETEASE) {
+                message = "正在获取网易云音源…"
+                NeteaseApi.downloadTrack(track, quality, { gen == generation }) { percent ->
+                    if (gen == generation) message = "正在下载网易云音源 $percent%"
+                }
+            } else null
+            val url = ready?.url ?: downloaded?.first
+                ?: if (track.source == MusicSource.NETEASE) null else MusicSources.api(track.source).songUrl(track)
             if (gen != generation) return
             if (url == null) return fail(gen, if (track.source == MusicSource.NETEASE) "拿不到播放地址"
                 else if (NativeAccounts.get(track.source) != null) "No playable MP3. Your login may have expired, or this song is restricted by membership or region."
                 else "No guest MP3 available. Login, payment or regional restrictions may apply.")
-            if (track.source == MusicSource.NETEASE && ready == null) message = "正在下载网易云音源…"
-            val bytes = ready?.bytes ?: kugou?.bytes ?: if (track.source == MusicSource.NETEASE) {
-                NeteaseApi.requestAudio(url.url, { gen == generation }) { percent ->
-                    if (gen == generation) message = "正在下载网易云音源 $percent%"
-                }
-            }
-                else SourceHttp.bytes(url.url, if (track.source == MusicSource.QQ) "https://y.qq.com/" else "https://m.kugou.com/")
+            val bytes = ready?.bytes ?: downloaded?.second ?: SourceHttp.bytes(url.url, "https://y.qq.com/")
             if (gen != generation) return
             if (bytes == null || bytes.isEmpty() || (!track.cloud && bytes.size < 10_000)) {
                 return fail(gen, if (track.source != MusicSource.NETEASE) "Unable to download this guest MP3. Try another song."
@@ -677,8 +673,7 @@ object MusicPlayer {
                 // 让当前这首先稳定播放几秒，再开始占带宽
                 Thread.sleep(5_000L)
                 if (!alive()) return@execute
-                val url = NeteaseApi.songUrl(next, quality, alive) ?: return@execute
-                val bytes = NeteaseApi.requestAudio(url.url, alive, PREFETCH_TIMEOUT_SECONDS) { } ?: return@execute
+                val (url, bytes) = NeteaseApi.downloadTrack(next, quality, alive, PREFETCH_TIMEOUT_SECONDS) { } ?: return@execute
                 if (!alive() || bytes.isEmpty() || (!next.cloud && bytes.size < 10_000)) return@execute
                 val duration = if (next.cloud) AudioAnalysis.duration(bytes, alive) else 0L
                 val gain = if (norm) AudioAnalysis.gain(bytes, alive) else null
