@@ -12,6 +12,7 @@ DangoMusic GTNH Edition 是 [DangoMusic](https://github.com/Sorihiko/DangoMusic)
 |---|---|
 | 运行 Gradle 的 JDK | **JDK 25**（`.java-version`） |
 | 编译 toolchain | **JDK 8** |
+| 内置 Apple Music 组件 | **.NET 8 SDK**，`dotnet` 可从 PATH 调用 |
 | Gradle | wrapper 9.7.1（已随仓库提供） |
 | 构建插件 | GTNHGradle 2.0.33 / RetroFuturaGradle |
 | Minecraft / Forge | 1.7.10 / 10.13.4.1614，MCP `stable_12` |

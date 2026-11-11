@@ -48,7 +48,7 @@
 | 音质与音效 | 以官方网页实际能力为准 | 不保证无损、Hi-Res、空间音频、Java 均衡器或全部淡入淡出效果 |
 | 一起听 | 未完成独立账号的 Apple 同步播放路线 | 开发中；不提供 Apple 音频 URL 转发或 DRM 音频下载 |
 
-证据：[5.36 真实播放记录](docs/APPLE_5_36_LOCAL.md)、[5.37 时钟与最近播放记录](docs/APPLE_5_37_LOCAL.md)、[当前安装指南](docs/INSTALL.md)。`0.1.0` Release 提供单独的 **Apple Windows x64 可选组件 ZIP**，需安装 .NET 8 Desktop Runtime 和 WebView2；仅装 JAR 不会启用 Apple 完整播放。
+新版 JAR 内置 Windows x64 播放组件，首次切换到 Apple Music 时自动安装并启动。Windows 仍需 .NET 8 Desktop Runtime x64 和 WebView2 Evergreen Runtime。旧版 `0.1.0` 使用同页的配套组件 ZIP。[安装指南](docs/INSTALL.md#apple-music-可选组件)
 
 ## 运行环境
 
@@ -65,7 +65,7 @@ GTNH 官方提供不同 Java 发行包，见[官方下载历史](https://www.gtn
 <details>
 <summary>开发者构建环境</summary>
 
-使用 **JDK 25 运行 Gradle**、**JDK 8 编译 toolchain**，Gradle wrapper **9.7.1**、GTNHGradle **2.0.33**。执行 `./gradlew build`，Windows 执行 `gradlew.bat build`；首次构建需联网获取依赖。产物在 `build/libs/`。完整步骤和 PR 规范见 [CONTRIBUTING](CONTRIBUTING.md)。
+使用 **JDK 25 运行 Gradle**、**JDK 8 编译 toolchain**，并安装 **.NET 8 SDK** 以构建内置播放组件。执行 `./gradlew build`，Windows 执行 `gradlew.bat build`。首次构建需联网获取依赖，产物在 `build/libs/`。[贡献指南](CONTRIBUTING.md)
 
 </details>
 

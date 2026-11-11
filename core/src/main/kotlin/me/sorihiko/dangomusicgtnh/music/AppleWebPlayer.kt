@@ -35,10 +35,14 @@ object AppleWebPlayer {
             nativeMode = true
             startupFailure = ""
             if (nativeRunning && connected) { command("show"); return@execute }
-            val directory = DangoMusic.instance.clientDir.resolve("apple-player").toFile()
-            val executable = directory.resolve("DangoApplePlayer.exe")
-            if (!executable.isFile) { startupFailure = "Install the Apple Music playback component in config/dangomusicgtnh/apple-player"; message = startupFailure; return@execute }
             if (!System.getProperty("os.name", "").startsWith("Windows")) { startupFailure = "The embedded Apple player currently requires Windows"; message = startupFailure; return@execute }
+            val executable = try {
+                BundledApplePlayer.install(DangoMusic.instance.clientDir.resolve("apple-player")).toFile()
+            } catch (_: Exception) {
+                startupFailure = "Unable to install the bundled Apple Music player; check the mod JAR and config directory permissions"
+                message = startupFailure
+                return@execute
+            }
             try {
                 val profile = DangoMusic.instance.accountsDir.resolve("apple-webview")
                 command("stop")
@@ -49,7 +53,7 @@ object AppleWebPlayer {
                 if (server == null) return@execute
                 val endpoint = server ?: return@execute
                 val expectedEpoch = connectionEpoch
-                val child = ProcessBuilder(executable.absolutePath).directory(directory).start()
+                val child = ProcessBuilder(executable.absolutePath).directory(executable.parentFile).start()
                 synchronized(this) {
                     if (connectionEpoch != expectedEpoch) { child.destroy(); return@execute }
                     nativeProcess = child

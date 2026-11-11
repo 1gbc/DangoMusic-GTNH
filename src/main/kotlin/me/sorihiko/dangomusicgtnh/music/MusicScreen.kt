@@ -114,6 +114,7 @@ class MusicScreen(
     internal fun selectSource(source: MusicSource) {
         if (source == MusicSources.selected) return
         module.selectSource(source)
+        if (source == MusicSource.APPLE) AppleWebPlayer.restoreNativeIfNeeded()
         NativeAccounts.refreshProfile(source)
         sidebar.searchText = ""
         sidebar.searchFocused = false
