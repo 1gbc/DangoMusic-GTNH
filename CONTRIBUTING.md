@@ -113,7 +113,28 @@ PR 保持在可评审的规模；超过约 1000 行时建议拆分。评审开�
 
 ## CHANGELOG
 
-`CHANGELOG.md` 顶部有“未发布”区。用户可见的新功能、修复和行为变化先加到“未发布”，发布时再移动到对应版本号下。不要重写历史版本条目。
+用户可见的变更写在 `CHANGELOG.md` 顶部的 `## 未发布` 下。自动升版时，工作流把该区已有的说明和触发升版的提交摘要写入新开发版本，并保留历史条目。
+
+## 合并后的开发构建
+
+`Build` 工作流在 PR 阶段使用当前 Gradle 版本编译。GitHub 合并一个 PR 到 `port/gtnh-1.7.10` 后，工作流按该次分支更新落地的提交消息选择最高升级级别：
+
+| 提交消息 | 从 `0.1.2-dev.8` 升级到 |
+|---|---|
+| `feat(api)!: ...`、`BREAKING CHANGE: ...` 或 `BREAKING-CHANGE: ...` | `1.0.0-dev.1` |
+| `feat: ...` | `0.2.0-dev.1` |
+| `fix: ...` 或 `perf: ...` | `0.1.3-dev.1` |
+| 其他提交 | `0.1.2-dev.8`，仅构建 |
+
+使用 **Create a merge commit** 或 **Rebase and merge** 时，工作流读取落地的各条提交。使用 **Squash and merge** 时，请把最高升级级别和必要的破坏性变更 footer 写进最终的 squash 提交消息。PR 标题只有写入落地提交消息时才参与判定。直接推送也会构建，升版由 GitHub 关联的 PR 合并触发。
+
+每次升版都将新版本写入 `build.gradle.kts`，将其与 `CHANGELOG.md` 一起提交，再从该提交构建。JAR 在该次 `Build` 运行的 **Artifacts → dangomusicgtnh-jars** 中下载。版本提交排队处理，连续合并时构建可能包含已先落地的其他 PR。重跑同一合并事件会复用已推送的版本提交。如果升版成功后构建失败，可在同一次运行中重跑失败任务。正式 Release 资产仍通过 `Stage release assets` 手动准备。
+
+### Actions 权限
+
+在仓库 **Settings → Actions → General** 中允许运行 GitHub Actions，并允许本工作流使用的 Actions。工作流已为升版任务声明 `contents: write` 和 `pull-requests: read`，PR 和 Gradle 构建任务使用只读权限。确认仓库或组织策略允许升版任务的写入权限。
+
+分支规则必须允许该工作流的 `GITHUB_TOKEN` 将版本提交直接推到 `port/gtnh-1.7.10`。如果启用了强制 PR、签名、必需状态检查或推送限制，请核对规则是否允许这个自动化写入，再重跑合并后的 `Build`。默认令牌不会因版本提交再次触发 `push` 工作流。
 
 ## 安全与敏感数据
 
