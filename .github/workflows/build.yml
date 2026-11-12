@@ -12,13 +12,43 @@ permissions:
   contents: read
 
 jobs:
+  prepare-development-build:
+    if: github.event_name == 'push' && !github.event.deleted && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: development-version-port-gtnh-1.7.10
+      queue: max
+    outputs:
+      revision: ${{ steps.prepare.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare development version
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/ci/development_version.py
+
   build:
+    needs: prepare-development-build
+    if: >-
+      ${{ !cancelled() && (github.event_name == 'pull_request' ||
+          needs.prepare-development-build.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-development-build.outputs.revision }}
+          persist-credentials: false
 
       - name: Set up JDK 8 (compile toolchain)
         uses: actions/setup-java@v4
@@ -48,4 +78,4 @@ jobs:
         with:
           name: dangomusicgtnh-jars
           path: build/libs/*.jar
-          if-no-files-found: warn
+          if-no-files-found: error
