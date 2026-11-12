@@ -1,6 +1,6 @@
 # Apple Music Windows 组件
 
-当前安装与组件分发状态见 [INSTALL](../../docs/INSTALL.md#apple-music-可选组件)，依赖许可见 [THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES.md#apple-播放组件)。0.1.0 提供 framework-dependent Windows x64 组件 ZIP，需另装 .NET 8 Desktop Runtime 与 WebView2，见发行说明。
+新版模组 JAR 内置 Windows x64 组件，首次使用 Apple Music 时自动解包。运行需要 .NET 8 Desktop Runtime x64 和 WebView2 Evergreen Runtime。[安装指南](../../docs/INSTALL.md#apple-music-可选组件) · [第三方许可](../../THIRD_PARTY_NOTICES.md#apple-播放组件)
 
 下文保留各阶段历史记录；其中“当前”“待验证”等字样仅描述该阶段。现状以以上指南和 5.36/5.37 验证记录为准，不按旧版安装文件名操作。
 

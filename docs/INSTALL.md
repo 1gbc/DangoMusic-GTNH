@@ -25,7 +25,7 @@ L1 使用听众自己账号；L2 转交主机短期 URL；L3 可选服务端下�
 
 ### 当前分发状态
 
-0.1.0 同页提供 `dangomusicgtnh-apple-player-0.1.0-windows-x64.zip`，与该版 JAR 配套。此附件为框架依赖发布，**不捆绑 .NET 或完整 WebView2 Runtime**，需要另装以下微软运行时。旧 5.38 只有 JAR，不能用旧条目拼装本次组件。
+新版 JAR 已内置 Windows x64 播放组件。首次使用 Apple Music 时，模组自动把组件解包到 `config/dangomusicgtnh/apple-player/bundled-<校验值>/`。更换 JAR 时会自动使用新版附带的组件，登录资料仍从原有本机账号目录读取。旧版 0.1.0 的独立组件 ZIP 见[对应发行说明](RELEASE_0_1_0.md)。
 
 ### 组件工作方式
 
@@ -33,31 +33,17 @@ L1 使用听众自己账号；L2 转交主机短期 URL；L3 可选服务端下�
 
 已有真实账号验证包含实际出声、跳至 90 秒后继续出声、正常退出重启后恢复授权；没有完整覆盖全曲、所有地区、长期后台和全部异常恢复。证据见 [5.36](APPLE_5_36_LOCAL.md) 和 [5.37](APPLE_5_37_LOCAL.md)。
 
-### 安装配套组件
+### 首次使用
 
-1. 当前仅 Windows x64，需要 [WebView2 Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)，由微软单独安装更新。
-2. 确认组件包类型：自包含包附带 .NET；框架依赖包（项目默认 `SelfContained=false`）另需 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。以包内运行配置和发布说明为准，不将本地自包含测试包的结论套用于所有构建。
-3. 退出游戏，将 **apple-player 文件夹**放入实例 `config/dangomusicgtnh/`，最终路径为：
-
-   ```text
-   .minecraft/config/dangomusicgtnh/apple-player/DangoApplePlayer.exe
-   ```
-
-   同级 DLL、运行配置和许可证一起保留，不多套一层 ZIP 文件夹。只更新 `apple-player`，本机登录资料位于系统用户目录。
-4. 按 M 选择 Apple Music 并进入账号入口。组件自动启动和本机配对；首次在官方 Apple 弹窗亲自登录。没有验证过跨设备扫码登录。
-5. 在游戏搜索、打开媒体库/歌单并播放。主窗口 × / Alt+F4 隐藏组件，游戏退出时结束组件。Apple 会话有效时可恢复，撤销或过期仍须重新登录。
+1. Windows x64 需具备 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) 和 [WebView2 Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)。
+2. 把新版模组 JAR 放入 `mods/`，进游戏按 M 选择 Apple Music。组件会自动解包、启动并与游戏配对。首次使用时在 Apple 官方窗口登录。
+3. 在游戏内搜索或打开媒体库、歌单播放。主窗口 × / Alt+F4 隐藏组件，游戏退出时结束组件。Apple 会话有效时可恢复，撤销或过期仍须重新登录。
 
 需要相应 Apple Music 订阅及地区播放权限。不提取或分发解密音频，不保证无损、空间音频或网易云 Java 音效可用于 Apple。
 
 ### 开发构建
 
-另装 .NET 8 SDK：
-
-```powershell
-dotnet publish tools/apple-native-player/AppleNativePlayer.csproj -c Release -r win-x64 --self-contained false -o out/apple-player
-```
-
-这是框架依赖包。自包含发布须显式使用 `--self-contained true` 并核对随包 .NET LICENSE / ThirdPartyNotices。WebView2 SDK 锁定 `1.0.4314.35`；发布前按[第三方许可](../THIRD_PARTY_NOTICES.md)准备许可、对应源码与完整文件清单。`dotnet publish` 成功不代表材料齐备。
+安装 .NET 8 SDK 后执行 `./gradlew build`（Windows 用 `gradlew.bat build`）。Gradle 会发布 Windows x64 组件，并将运行文件和许可证打入模组 JAR。[第三方许可](../THIRD_PARTY_NOTICES.md)
 
 ## 配置与缓存位置
 
