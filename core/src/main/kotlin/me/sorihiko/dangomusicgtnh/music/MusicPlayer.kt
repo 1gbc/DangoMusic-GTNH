@@ -155,7 +155,7 @@ object MusicPlayer {
         heartMode = false
         shuffle = mode == Mode.SHUFFLE
         repeatOne = mode == Mode.REPEAT_ONE
-        if (repeatOne || radio != null || originalQueue.isEmpty()) return
+        if (repeatOne || radio != null || AppleWebPlayer.stationActive || originalQueue.isEmpty()) return
 
         if (shuffle && selected != null) {
             val remaining = originalQueue.toMutableList()
@@ -360,7 +360,10 @@ object MusicPlayer {
     }
 
     @Synchronized fun next() {
-        if (MusicSources.selected == MusicSource.APPLE && queue.none { it.source == MusicSource.APPLE }) { AppleWebPlayer.command("next"); return }
+        if (MusicSources.selected == MusicSource.APPLE && (AppleWebPlayer.stationActive || queue.none { it.source == MusicSource.APPLE })) {
+            AppleWebPlayer.command("next")
+            return
+        }
         val q = queue
         if (q.isEmpty()) return
         // 电台按顺序往下放；放到最后一首时先要几首新的再切
@@ -374,7 +377,7 @@ object MusicPlayer {
 
     @Synchronized fun prev() {
         if (MusicSources.selected == MusicSource.APPLE) {
-            if (queue.none { it.source == MusicSource.APPLE }) AppleWebPlayer.command("previous")
+            if (AppleWebPlayer.stationActive || queue.none { it.source == MusicSource.APPLE }) AppleWebPlayer.command("previous")
             else if (mode != Mode.SHUFFLE && positionMs > 3000) AppleWebPlayer.command("seek", 0.0)
             else playIndex(index - 1)
             return
@@ -535,7 +538,7 @@ object MusicPlayer {
 
     @Volatile private var applePosition = 0L
 
-    @Synchronized fun acceptAppleState(track: NeteaseTrack, position: Long, playing: Boolean) {
+    @JvmOverloads @Synchronized fun acceptAppleState(track: NeteaseTrack, position: Long, playing: Boolean, stationQueue: List<NeteaseTrack>? = null) {
         if (MusicSources.selected != MusicSource.APPLE) return
         if (current?.source != MusicSource.APPLE) {
             ++generation
@@ -543,7 +546,10 @@ object MusicPlayer {
             audio = null
             neteaseStream = null
         }
-        if (queue.none { it.key == track.key }) { queue = listOf(track); originalQueue = queue }
+        if (stationQueue != null) {
+            val items = if (stationQueue.none { it.key == track.key }) listOf(track) else stationQueue.distinctBy { it.key }
+            if (queue != items) { queue = items; originalQueue = items }
+        } else if (queue.none { it.key == track.key }) { queue = listOf(track); originalQueue = queue }
         if (queue.getOrNull(index)?.key != track.key) index = queue.indexOfFirst { it.key == track.key }
         current = track
         applePosition = position
@@ -553,7 +559,7 @@ object MusicPlayer {
     }
 
     @Synchronized fun finishAppleTrack() {
-        if (current?.source != MusicSource.APPLE || queue.isEmpty()) return
+        if (AppleWebPlayer.stationActive || current?.source != MusicSource.APPLE || queue.isEmpty()) return
         playIndex(if (repeatOne) index else index + 1)
     }
 

@@ -65,12 +65,12 @@ class LegacyMusicScreen(
     }
 
     override fun mouseClickMove(mouseX: Int, mouseY: Int, clickedMouseButton: Int, timeSinceLastClick: Long) {
-        screen.mouseDragged()
+        screen.mouseDragged(clickedMouseButton)
     }
 
     override fun mouseMovedOrUp(mouseX: Int, mouseY: Int, state: Int) {
         super.mouseMovedOrUp(mouseX, mouseY, state)
-        if (state >= 0) screen.mouseReleased()
+        if (state >= 0) screen.mouseReleased(state)
     }
 
     override fun handleMouseInput() {

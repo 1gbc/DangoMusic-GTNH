@@ -89,7 +89,9 @@ object CoverCache {
     }
 
     /** 取封面；还没有就去下载，先返回 null（画占位） */
-    fun get(key: String, url: String): Texture? {
+    fun get(key: String, url: String): Texture? = get(key, url, 128, 128)
+
+    private fun get(key: String, url: String, width: Int, height: Int): Texture? {
         textures[key]?.let {
             lastUsed[key] = now
             return it
@@ -118,7 +120,7 @@ object CoverCache {
                     if (img == null) {
                         why = "unreadable image (${bytes.size} bytes)"
                     } else {
-                        ready.add(key to square(img, 128))
+                        ready.add(key to crop(img, width, height))
                         failedAt.remove(key)
                         ok = true
                     }
@@ -198,15 +200,18 @@ object CoverCache {
     }
     fun playlist(p: NeteasePlaylist) = get("p:${p.id}", p.coverUrl)
     fun playlistRounded(p: NeteasePlaylist, ratio: Float = DEFAULT_CORNER_RATIO) = rounded("p:${p.id}", p.coverUrl, ratio)
+    fun featuredPlaylist(p: NeteasePlaylist, artwork: String) =
+        get("featured:${p.id}", artwork.ifEmpty { p.coverUrl }, 640, 360)
 
-    private fun square(src: BufferedImage, size: Int): BufferedImage {
-        val side = min(src.width, src.height)
-        val x = (src.width - side) / 2
-        val y = (src.height - side) / 2
-        val out = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+    private fun crop(src: BufferedImage, width: Int, height: Int): BufferedImage {
+        val cropWidth = min(src.width, (src.height.toLong() * width / height).toInt()).coerceAtLeast(1)
+        val cropHeight = min(src.height, (src.width.toLong() * height / width).toInt()).coerceAtLeast(1)
+        val x = (src.width - cropWidth) / 2
+        val y = (src.height - cropHeight) / 2
+        val out = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
         val g = out.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
-        g.drawImage(src, 0, 0, size, size, x, y, x + side, y + side, null)
+        g.drawImage(src, 0, 0, width, height, x, y, x + cropWidth, y + cropHeight, null)
         g.dispose()
         return out
     }

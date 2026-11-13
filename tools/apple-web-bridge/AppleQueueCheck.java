@@ -47,6 +47,24 @@ public class AppleQueueCheck {
             AppleWebPlayer.INSTANCE.tick();
             load=GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+"}",200).getAsJsonObject("command");
             check(p.getCurrent()==b&&load.getAsJsonObject("value").get("id").getAsString().equals("456"),"Repeat reloads the same song after completion");
+            ack=load.get("id").getAsLong();
+            NeteaseTrack station=new NeteaseTrack(-3,"Pop Radio",Collections.emptyList(),0,"",MusicSource.APPLE,"ra.test","station:ra.test");
+            p.playQueue(Collections.singletonList(station),0);
+            load=GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+"}",200).getAsJsonObject("command");
+            check(load.getAsJsonObject("value").get("id").getAsString().equals("station:ra.test"),"Radio uses the station descriptor");
+            ack=load.get("id").getAsLong();
+            String stationQueue=",\"stationQueue\":[{\"id\":\"123\",\"title\":\"One\"},{\"id\":\"456\",\"title\":\"Two\"}]}";
+            GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+",\"state\":"+state.replace("}",stationQueue)+"}",200);
+            AppleWebPlayer.INSTANCE.tick();
+            check(p.getQueue().size()==2&&p.getCurrent().getNativeId().equals("123"),"The game displays MusicKit's upcoming station track");
+            GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+",\"state\":"+ended+"}",200);
+            AppleWebPlayer.INSTANCE.tick();
+            check(GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+"}",200).get("command").isJsonNull(),"Station completion must not reload a song in repeat mode");
+            GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+",\"state\":"+second.replace("}",stationQueue)+"}",200);
+            AppleWebPlayer.INSTANCE.tick();
+            check(p.getCurrent().getNativeId().equals("456")&&p.getIndex()==1,"The next station track becomes current");
+            p.next();
+            check(GameBridgeCheck.post(s,"/sync",key,"{\"ack\":"+ack+"}",200).getAsJsonObject("command").get("name").getAsString().equals("next"),"Manual station skip stays in MusicKit");
             p.stop();AppleWebPlayer.INSTANCE.tick();check(!p.getActive()&&p.getCurrent()==null,"Stop remains idle after tick");
             System.out.println("Apple game queue/mode/stop checks passed");
         }finally{field.set(null,null);s.close();}

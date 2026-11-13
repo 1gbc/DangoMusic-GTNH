@@ -141,7 +141,14 @@ internal class TracksPage(private val screen: MusicScreen) {
 
     /** 播放：队列始终是完整歌单（筛选只影响显示），从点的那首开始 */
     private fun playFrom(all: List<NeteaseTrack>, index: Int) {
-        if (ScreenState.page == Page.QUEUE) ClientMusic.control { MusicPlayer.playIndex(index) }
+        if (ScreenState.page == Page.QUEUE) ClientMusic.control {
+            if (me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.stationActive) {
+                when (index - MusicPlayer.index) {
+                    -1 -> MusicPlayer.prev()
+                    1 -> MusicPlayer.next()
+                }
+            } else MusicPlayer.playIndex(index)
+        }
         else {
             val continuation = radio()
             ClientMusic.control { MusicPlayer.playQueue(all, index, continuation) }
@@ -310,6 +317,7 @@ internal class TracksPage(private val screen: MusicScreen) {
             state.page == Page.SEARCH && Library.searching -> I18n.text("Searching...")
             state.page == Page.SEARCH && tracks.isNullOrEmpty() ->
                 if (Library.searchError.isNotEmpty()) I18n.text("Search failed: ") + I18n.message(Library.searchError) else I18n.text("No results")
+            state.page == Page.QUEUE && me.sorihiko.dangomusicgtnh.music.AppleWebPlayer.stationActive -> I18n.text("Apple Music radio · Updates as it plays")
             state.page == Page.QUEUE && tracks.isNullOrEmpty() -> I18n.text("Nothing in the queue yet")
             tracks == null || partiallyLoaded() -> loadingProgress()?.takeIf { it[1] > 0 }?.let { I18n.format("Loaded %d of %d songs", it[0], it[1]) } ?: I18n.text("Loading...")
             filterText.isNotEmpty() -> I18n.format("%d of %d songs", shown(tracks).size, tracks.size)

@@ -8,6 +8,7 @@ import me.sorihiko.dangomusicgtnh.module.impls.music.NeteaseMusicModule
 import me.sorihiko.dangomusicgtnh.musicui.ArtistPage
 import me.sorihiko.dangomusicgtnh.musicui.ArtistRef
 import me.sorihiko.dangomusicgtnh.musicui.GridPage
+import me.sorihiko.dangomusicgtnh.musicui.AppleDiscoverPage
 import me.sorihiko.dangomusicgtnh.musicui.GroupPage
 import me.sorihiko.dangomusicgtnh.musicui.Library
 import me.sorihiko.dangomusicgtnh.musicui.LoginDialog
@@ -51,10 +52,11 @@ class MusicScreen(
     private val platform get() = DangoClient.platform
 
     internal val ui = Ui()
-    internal val sidebar = Sidebar(this)
+    internal val sidebar = Sidebar(this, module.appleLibraryHidden)
     internal val tracks = TracksPage(this)
     internal val login = LoginDialog(this)
     internal val grid = GridPage(this)
+    private val discover = AppleDiscoverPage(this)
     private val artistPage = ArtistPage(this)
     private val groupPage = GroupPage(this)
     private val settings = SettingsPage(this, module)
@@ -94,6 +96,7 @@ class MusicScreen(
     }
 
     private fun close() {
+        libraryPull = null
         if (closingAt != 0L || closed) return
         val now = System.currentTimeMillis()
         closingAlpha = opacity(now)
@@ -125,6 +128,8 @@ class MusicScreen(
     }
 
     internal fun go(p: Page) {
+        libraryPull = null
+        libraryPullOffset = 0f
         groupPage.clearFocus()
         closeLyrics()
         tracks.clearFilter()
@@ -134,6 +139,7 @@ class MusicScreen(
         ScreenState.artist = null
         tracks.resetScroll()
         grid.resetScroll()
+        discover.resetScroll()
         when (p) {
             Page.HOME -> Library.loadRecommend()
             Page.CHARTS -> Library.loadCharts()
@@ -148,7 +154,7 @@ class MusicScreen(
             return
         }
         if (ScreenState.page == Page.SETTINGS) {
-            ScreenState.page = ScreenState.settingsBack
+            leaveSettings()
             return
         }
         if (ScreenState.page == Page.GROUP) {
@@ -221,6 +227,11 @@ class MusicScreen(
     internal fun doSearch() {
         val q = sidebar.searchText.trim()
         if (q.isEmpty()) return
+        if (appleNavigation) {
+            appleSearchHistory.remove(q)
+            appleSearchHistory.add(0, q)
+            if (appleSearchHistory.size > 8) appleSearchHistory.removeAt(8)
+        }
         sidebar.searchFocused = false
         tracks.clearFilter()
         if (ScreenState.page != Page.SEARCH) ScreenState.backPage = ScreenState.page
@@ -228,7 +239,37 @@ class MusicScreen(
         tracks.resetScroll()
         tracks.resetCoverflow()
         ScreenState.lastQuery = q
-        Library.search(q)
+        Library.search(q, appleNavigation && ScreenState.appleLibrarySearch)
+    }
+
+    internal val appleNavigation get() = UiStyle.continuous && MusicSources.selected == MusicSource.APPLE
+    private val appleSearchHistory = mutableListOf<String>()
+
+    internal fun openAppleSearch() {
+        if (ScreenState.page != Page.SEARCH) {
+            go(Page.SEARCH)
+            ScreenState.lastQuery = ""
+            sidebar.searchText = ""
+        }
+        sidebar.searchFocused = true
+        Library.loadCatalogGenres()
+    }
+
+    internal fun openAppleSection(section: AppleMusicSource.Section) {
+        ScreenState.appleSection = section
+        go(Page.APPLE_BROWSE)
+        Library.loadApplePage(section)
+    }
+
+    internal fun openGridCard(playlist: NeteasePlaylist) {
+        val station = if (appleNavigation) AppleMusicSource.stationTrack(playlist.id) else null
+        if (station != null) ClientMusic.control { MusicPlayer.playQueue(listOf(station), 0) }
+        else openPlaylist(playlist, ScreenState.page)
+    }
+
+    internal fun openAppleWebsite(url: String) {
+        runCatching { java.awt.Desktop.getDesktop().browse(java.net.URI(url)) }
+            .onFailure { Library.showTemporaryStatus(I18n.text("Could not open the browser"), 3500) }
     }
 
     internal fun toggleSettings() {
@@ -237,12 +278,18 @@ class MusicScreen(
         blurTextFields()
         settings.bindingKey = null
         if (ScreenState.page == Page.SETTINGS) {
-            ScreenState.page = ScreenState.settingsBack
+            leaveSettings()
         } else {
             ScreenState.settingsBack = ScreenState.page
             ScreenState.page = Page.SETTINGS
             settings.openPage()
         }
+    }
+
+    private fun leaveSettings() {
+        val page = ScreenState.settingsBack
+        if (page == Page.APPLE_BROWSE && !appleNavigation) go(Page.HOME)
+        else ScreenState.page = page
     }
 
     internal fun toggleCoverView() {
@@ -518,6 +565,16 @@ class MusicScreen(
 
     /** 这一帧播放栏的位置（[drawWindow] 里算好，内容画完之后再画播放栏） */
     private var barRect = LayoutBounds()
+    private class LibraryPull(val x: Int, val y: Int, val click: (() -> Unit)?) {
+        var moved = false
+        var distance = 0f
+    }
+
+    private var libraryPull: LibraryPull? = null
+    private var libraryPullOffset = 0f
+    private val libraryPullThreshold = 48f
+    private fun canPullLibrary() = UiStyle.continuous && MusicSources.selected == MusicSource.APPLE &&
+        ScreenState.page == Page.HOME && !lyricsOpen && !login.visible && grid.atTop
 
     private fun drawBar() {
         // 播放栏画在最上面，点击也要先轮到它（点到的是第一个命中的区域）
@@ -539,6 +596,7 @@ class MusicScreen(
         val body = LayoutBounds(area.x, area.y, area.width, area.height - (if (foot.isNotEmpty()) 18f else 4f))
         // 滚轮区域：哪一页画了，哪一页才有
         grid.area = LayoutBounds()
+        discover.hide()
         tracks.area = LayoutBounds()
         settings.area = LayoutBounds()
         artistPage.area = LayoutBounds()
@@ -560,10 +618,22 @@ class MusicScreen(
                 val items = if (rec.isNullOrEmpty()) Library.playlists else rec
                 val label = if (rec.isNullOrEmpty()) I18n.text("Your playlists") else I18n.text("Recommended playlists")
                 val apple = MusicSources.selected == MusicSource.APPLE
-                grid.draw(body, if (apple) "Apple Music" else I18n.text("Welcome to Dango Music!"),
-                    if (apple) me.sorihiko.dangomusicgtnh.music.AppleMusicSource.homeWarning.ifEmpty { "最近播放、推荐歌单与专辑" } else "$label · ${items.size}", items, Library.recommendLoading && items.isEmpty(),
-                    if (apple) me.sorihiko.dangomusicgtnh.music.AppleMusicSource::homeSection else null)
-                if (apple && body.width > 280f) {
+                val pull = apple && UiStyle.continuous
+                if (pull) {
+                    val distance = libraryPull?.distance
+                    libraryPullOffset = distance ?: ui.approach(libraryPullOffset, 0f, 85f)
+                    if (libraryPullOffset < 0.5f) libraryPullOffset = 0f
+                }
+                grid.draw(body, if (pull) I18n.text("Home") else if (apple) "Apple Music" else I18n.text("Welcome to Dango Music!"),
+                    if (apple) AppleMusicSource.homeWarning.ifEmpty { if (pull) "" else "最近播放、推荐歌单与专辑" } else "$label · ${items.size}", items, Library.recommendLoading && items.isEmpty(),
+                    if (apple) me.sorihiko.dangomusicgtnh.music.AppleMusicSource::homeSection else null,
+                    if (pull) libraryPullOffset else 0f)
+                if (pull && libraryPullOffset > 18f) {
+                    val label = I18n.text(if (Library.recommendLoading) "Loading..."
+                        else if (libraryPullOffset >= libraryPullThreshold) "Release to refresh" else "Pull to refresh")
+                    ui.text(label, body.x + (body.width - ui.width(label, 11f)) / 2f,
+                        grid.area.y + (libraryPullOffset - 11f) / 2f, 11f, Theme.TEXT_SECONDARY)
+                } else if (apple && !pull && body.width > 280f) {
                     val refresh = LayoutBounds(body.right - 110f, body.y, 106f, 28f)
                     ui.card(refresh, Theme.CARD, 9f)
                     ui.text(I18n.text("Refresh library"), refresh.x + 10f, refresh.y + 9f, 11f, Theme.TEXT_PRIMARY)
@@ -574,10 +644,75 @@ class MusicScreen(
                 val c = Library.charts ?: emptyList()
                 grid.draw(body, I18n.text("Charts"), I18n.format("%d charts", c.size), c, Library.chartsLoading)
             }
+            Page.APPLE_BROWSE -> {
+                val section = s.appleSection
+                val items = Library.applePage(section).orEmpty()
+                val loading = Library.applePageLoading(section)
+                val editorial = Library.appleEditorial(section)
+                if (editorial != null) discover.drawEditorial(body, section.label, editorial)
+                else if (section == AppleMusicSource.Section.DISCOVER) discover.draw(body, items, loading)
+                else grid.draw(body, I18n.text(section.label), if (items.isEmpty()) I18n.text("No items") else "",
+                    items, loading, categoryTiles = section == AppleMusicSource.Section.GENRES,
+                    wideCards = section == AppleMusicSource.Section.RADIO)
+            }
+            Page.SEARCH -> if (appleNavigation) drawAppleSearch(body) else tracks.draw(body)
             Page.SETTINGS -> settings.draw(body)
             Page.ARTIST -> artistPage.draw(body)
             Page.GROUP -> groupPage.draw(body)
             else -> tracks.draw(body)
+        }
+    }
+
+    private fun drawAppleSearch(body: LayoutBounds) {
+        val scopeWidth = minOf(230f, body.width * 0.44f)
+        val search = LayoutBounds(body.x, body.y, body.width - scopeWidth - 12f, 36f)
+        sidebar.drawAppleSearch(search)
+        val scope = LayoutBounds(search.right + 12f, body.y, scopeWidth, search.height)
+        ui.card(scope, Theme.CARD, scope.height / 2f)
+        for (library in listOf(false, true)) {
+            val tab = LayoutBounds(scope.x + (if (library) scope.width / 2f else 0f) + 3f,
+                scope.y + 3f, scope.width / 2f - 6f, scope.height - 6f)
+            val selected = ScreenState.appleLibrarySearch == library
+            if (selected) ui.card(tab, Theme.CARD_HOVER, tab.height / 2f)
+            val label = I18n.text(if (library) "LIBRARY" else "Apple Music")
+            ui.text(ui.trim(label, tab.width - 8f, 12f), tab.x + (tab.width - ui.width(label, 12f)) / 2f,
+                tab.y + 9f, 12f, if (selected) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+            ui.hits += tab to {
+                if (ScreenState.appleLibrarySearch != library) {
+                    ScreenState.appleLibrarySearch = library
+                    if (ScreenState.lastQuery.isNotBlank()) doSearch()
+                }
+            }
+        }
+        var y = search.bottom + 20f
+        if (ScreenState.lastQuery.isNotBlank()) {
+            tracks.draw(LayoutBounds(body.x, y, body.width, (body.bottom - y).coerceAtLeast(0f)))
+            return
+        }
+        if (appleSearchHistory.isNotEmpty()) {
+            val title = I18n.text("Recent searches")
+            ui.text(title, body.x, y, 17f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+            val clear = I18n.text("Clear search history")
+            val clearWidth = ui.width(clear, 11f) + 16f
+            val button = LayoutBounds(body.right - clearWidth, y, clearWidth, 22f)
+            ui.text(clear, button.x + 8f, button.y + 4f, 11f, RED)
+            ui.hits += button to { appleSearchHistory.clear() }
+            y += 26f
+            val count = minOf(4, appleSearchHistory.size, (body.width / 100f).toInt().coerceAtLeast(1))
+            val cardWidth = (body.width - (count - 1) * 8f) / count
+            for ((index, query) in appleSearchHistory.take(count).withIndex()) {
+                val card = LayoutBounds(body.x + index * (cardWidth + 8f), y, cardWidth, 32f)
+                ui.pill(card, if (ui.hover(card)) Theme.CARD_HOVER else Theme.CARD, ui.trim(query, card.width - 16f, 12f)) {
+                    sidebar.searchText = query
+                    doSearch()
+                }
+            }
+            y += 51f
+        }
+        if (!ScreenState.appleLibrarySearch) {
+            grid.draw(LayoutBounds(body.x, y, body.width, (body.bottom - y).coerceAtLeast(0f)),
+                I18n.text("Browse categories"), "", Library.catalogGenres.orEmpty(), Library.catalogGenresLoading,
+                categoryTiles = true)
         }
     }
 
@@ -628,12 +763,18 @@ class MusicScreen(
         if (hit == null || hit.first !== sidebar.searchRect) sidebar.searchFocused = false
         if (hit == null || !sidebar.isMenuHit(hit.first)) sidebar.menuOpen = false
         if (hit == null || hit.first !== tracks.filterRect) tracks.filterFocused = false
-        hit?.second?.invoke()
+        if (canPullLibrary() && grid.area.contains(mx, my) && !barRect.contains(mx, my)) {
+            libraryPull = LibraryPull(mx, my, hit?.second)
+        } else hit?.second?.invoke()
     }
 
     /** 按住鼠标拖动时调用 */
-    fun mouseDragged() {
+    fun mouseDragged(mouseButton: Int) {
         if (closingAt != 0L || closed) return
+        if (mouseButton == 0 && libraryPull != null) {
+            updateLibraryPull()
+            return
+        }
         if (grab != null) {
             dragWindow(ui.mx, ui.my)
             return
@@ -645,12 +786,29 @@ class MusicScreen(
         if (!login.visible) bar.mouseDrag((platform.mouseX / ui.scale).toInt(), (platform.mouseY / ui.scale).toInt())
     }
 
-    fun mouseReleased() {
+    private fun updateLibraryPull() {
+        val pull = libraryPull ?: return
+        val dx = platform.mouseX / ui.scale - pull.x
+        val dy = platform.mouseY / ui.scale - pull.y
+        if (kotlin.math.abs(dx) > 5f || kotlin.math.abs(dy) > 5f) pull.moved = true
+        pull.distance = if (canPullLibrary() && dy > kotlin.math.abs(dx)) (dy * 0.65f).coerceAtMost(68f) else 0f
+    }
+
+    fun mouseReleased(mouseButton: Int) {
         if (module.openKey.value < 0) openKeyHeld = false
         endWindowDrag()
         bar.mouseUp()
         tracks.scrollbarUp()
         settings.stopDrag()
+        if (mouseButton == 0) {
+            updateLibraryPull()
+            val pull = libraryPull ?: return
+            libraryPull = null
+            if (closingAt != 0L || closed || !canPullLibrary()) return
+            if (pull.distance >= libraryPullThreshold && !Library.recommendLoading && !Library.playlistsLoading) {
+                Library.refreshAll()
+            } else if (!pull.moved) pull.click?.invoke()
+        }
     }
 
     /** 滚轮：[wheel] 正数向上；(x, y) 是滚动时鼠标的窗口像素位置 */
@@ -669,6 +827,7 @@ class MusicScreen(
         when {
             settings.area.contains(lx, ly) -> settings.scroll(wheel)
             sidebar.listArea.contains(lx, ly) -> sidebar.scrollBy(step)
+            discover.area.contains(lx, ly) -> discover.scroll(wheel)
             grid.area.contains(lx, ly) -> grid.scroll(wheel)
             artistPage.area.contains(lx, ly) -> artistPage.scroll(wheel)
             groupPage.area.contains(lx, ly) -> groupPage.scrollBy(wheel)
