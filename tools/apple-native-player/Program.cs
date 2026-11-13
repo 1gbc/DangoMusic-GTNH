@@ -273,7 +273,7 @@ internal sealed class PlayerWindow : Form
                     try{outcome=await Evaluate(command);}catch{outcome=new JsonObject{["error"]="Apple Music operation timed out; check the login window"};}
                     if(name=="login")OfficialAuthSurface(outcome);
                     if(name=="query"){outcome["id"]=command["id"]!.GetValue<long>();commandResult=outcome;}
-                    if(outcome["error"] is JsonNode error)commandError=error.GetValue<string>();
+                    if(name!="query"&&outcome["error"] is JsonNode error)commandError=error.GetValue<string>();
                 }
                 ack=command["id"]!.GetValue<long>();
                 RecordDiagnostic(name=="query"?"query:"+command["value"]?["op"]?.GetValue<string>():name,commandError,state);

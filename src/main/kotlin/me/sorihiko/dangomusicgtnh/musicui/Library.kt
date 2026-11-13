@@ -4,6 +4,8 @@ import me.sorihiko.dangomusicgtnh.client.ClientMusic
 import me.sorihiko.dangomusicgtnh.music.TrackLoadProgress
 import me.sorihiko.dangomusicgtnh.gfx.GuiCanvas
 import me.sorihiko.dangomusicgtnh.i18n.I18n
+import me.sorihiko.dangomusicgtnh.music.AppleMusicSource
+import me.sorihiko.dangomusicgtnh.music.AppleWebPlayer
 import me.sorihiko.dangomusicgtnh.music.NeteaseApi
 import me.sorihiko.dangomusicgtnh.music.NeteasePlaylist
 import me.sorihiko.dangomusicgtnh.music.NeteaseTrack
@@ -17,7 +19,7 @@ import me.sorihiko.dangomusicgtnh.music.SourceArtist
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-internal enum class Page { HOME, CHARTS, PLAYLIST, SEARCH, QUEUE, SETTINGS, ARTIST, GROUP }
+internal enum class Page { HOME, CHARTS, PLAYLIST, SEARCH, APPLE_BROWSE, QUEUE, SETTINGS, ARTIST, GROUP }
 
 /** 点进歌手页、从歌手页点进专辑之前的界面，返回时一层层退回去 */
 internal class PageSnapshot(
@@ -39,6 +41,8 @@ internal object ScreenState {
     /** 歌单页显示方式：false = 列表，true = 封面墙 */
     var coverView = false
     var lastQuery = ""
+    var appleSection = AppleMusicSource.Section.DISCOVER
+    var appleLibrarySearch = false
     /** 歌手页显示的歌手 */
     var artist: ArtistRef? = null
     /** 进歌手页 / 从歌手页进专辑时记下来的上一层（最多记 20 层） */
@@ -85,6 +89,93 @@ internal object Library {
     private var source = MusicSources.selected
     private var generation = 0
     private var searchSerial = 0
+    private val applePages = ConcurrentHashMap<AppleMusicSource.Section, List<NeteasePlaylist>>()
+    private val appleEditorial = ConcurrentHashMap<AppleMusicSource.Section, List<AppleMusicSource.EditorialSection>>()
+    private val appleLoading = ConcurrentHashMap.newKeySet<AppleMusicSource.Section>()
+    @Volatile var catalogGenres: List<NeteasePlaylist>? = null
+        private set
+    @Volatile var catalogGenresLoading = false
+        private set
+
+    fun applePage(section: AppleMusicSource.Section) = applePages[section]
+    fun appleEditorial(section: AppleMusicSource.Section) = appleEditorial[section]
+    fun applePageLoading(section: AppleMusicSource.Section) = section in appleLoading
+
+    @Synchronized fun loadApplePage(section: AppleMusicSource.Section) {
+        if (source != MusicSource.APPLE) return
+        if (section in applePages.keys || !appleLoading.add(section)) return
+        val request = request()
+        worker.execute {
+            val editorial = if (section == AppleMusicSource.Section.DISCOVER || section == AppleMusicSource.Section.RADIO)
+                runCatching { AppleMusicSource.editorial(section) }.getOrNull()?.takeIf { it.isNotEmpty() }
+            else null
+            val result = runCatching { if (editorial != null) emptyList() else AppleMusicSource.browse(section) }
+            publish(request) {
+                appleLoading.remove(section)
+                if (editorial != null) appleEditorial[section] = editorial
+                else if (section == AppleMusicSource.Section.DISCOVER) loadTracks(AppleMusicSource.chartEntry().id)
+                result.onSuccess { applePages[section] = it }
+                    .onFailure { status = publicError(it as? Exception ?: IllegalStateException()) }
+            }
+        }
+    }
+
+    @Synchronized fun loadCatalogGenres() {
+        if (source != MusicSource.APPLE || catalogGenres != null || catalogGenresLoading) return
+        val request = request()
+        catalogGenresLoading = true
+        worker.execute {
+            val result = runCatching { AppleMusicSource.catalogGenres() }
+            publish(request) {
+                catalogGenresLoading = false
+                result.onSuccess { catalogGenres = it }
+                    .onFailure { status = publicError(it as? Exception ?: IllegalStateException()) }
+            }
+        }
+    }
+
+    data class AppleFavorite(val key: String, val selected: Boolean?, val pending: Boolean, val error: String = "")
+    @Volatile private var appleFavorite: AppleFavorite? = null
+    private var favoriteCheckedAt = 0L
+
+    @Synchronized fun favoriteState(track: NeteaseTrack): AppleFavorite? {
+        if (!AppleWebPlayer.authorized) return null
+        val current = appleFavorite
+        if (current?.pending == true) return current.takeIf { it.key == track.key }
+        if (current?.key != track.key || System.nanoTime() - favoriteCheckedAt >= 20_000_000_000L) requestFavorite(track, null)
+        return appleFavorite?.takeIf { it.key == track.key }
+    }
+
+    @Synchronized fun toggleAppleFavorite(track: NeteaseTrack) {
+        val current = appleFavorite ?: return
+        if (current.key == track.key && !current.pending && AppleWebPlayer.authorized)
+            current.selected?.let { requestFavorite(track, !it) }
+    }
+
+    private fun requestFavorite(track: NeteaseTrack, desired: Boolean?) {
+        val request = request()
+        val previous = appleFavorite?.takeIf { it.key == track.key }?.selected
+        appleFavorite = AppleFavorite(track.key, desired ?: previous, true)
+        worker.execute {
+            val result = runCatching { AppleMusicSource.favorite(track, desired) }
+            publish(request) {
+                favoriteCheckedAt = System.nanoTime()
+                val selected = result.getOrNull()
+                val error = when {
+                    result.isFailure -> "Apple Music favorite request failed"
+                    desired != null && desired != selected -> "Apple Music has not confirmed the change yet"
+                    else -> ""
+                }
+                appleFavorite = AppleFavorite(track.key, selected ?: previous, false, error)
+                if (desired != null && error.isNotEmpty()) showTemporaryStatus(I18n.text(error), 3500)
+                if (desired != null && selected == desired) {
+                    val id = AppleMusicSource.favoritesEntry().id
+                    tracksCache.remove(id)
+                    if (ScreenState.page == Page.PLAYLIST && ScreenState.opened?.id == id) loadTracks(id)
+                }
+            }
+        }
+    }
     val stale: Boolean get() = System.currentTimeMillis() - lastLoadAt > 5 * 60_000L
     fun tracks(playlistId: Long): List<NeteaseTrack>? = tracksCache[playlistId]
 
@@ -120,10 +211,13 @@ internal object Library {
     @Synchronized fun loadRecommend() {
         if (recommend != null || recommendLoading) return
         val request = request()
+        val personalAppleHome = request.api == AppleMusicSource && me.sorihiko.dangomusicgtnh.ui.UiStyle.continuous
         recommendLoading = true
         worker.execute {
             var error = ""
-            val result = try { request.api.recommend() } catch (e: Exception) { error = publicError(e); emptyList() }
+            val result = try {
+                if (personalAppleHome) AppleMusicSource.recommend(includePersonalSections = true) else request.api.recommend()
+            } catch (e: Exception) { error = publicError(e); emptyList() }
             publish(request) { recommend = if (error.isEmpty()) result else null; recommendLoading = false; if (error.isNotEmpty()) status = error }
         }
     }
@@ -166,7 +260,7 @@ internal object Library {
     /** 这个歌单是不是还在加载（可能已经先显示了一部分） */
     fun loadingTracks(playlistId: Long): Boolean = tracksLoading.contains(playlistId)
 
-    @Synchronized fun search(q: String) {
+    @Synchronized fun search(q: String, appleLibrary: Boolean = false) {
         val request = request()
         val serial = ++searchSerial
         searching = true
@@ -175,7 +269,8 @@ internal object Library {
         worker.execute {
             var error = ""
             val result = try {
-                request.api.search(q).also {
+                    (if (appleLibrary && request.api.source == MusicSource.APPLE) AppleMusicSource.searchLibrary(q)
+                     else request.api.search(q)).also {
                     if (request.api.source == MusicSource.NETEASE) error = NeteaseApi.lastSearchError
                 }
             } catch (e: Exception) {
@@ -209,11 +304,15 @@ internal object Library {
         playlists = emptyList(); playlistsLoading = false
         tracksCache.clear(); tracksLoading.clear(); tracksFailed.clear(); trackProgress.clear()
         recommend = null; recommendLoading = false
+        applePages.clear(); appleEditorial.clear(); appleLoading.clear(); catalogGenres = null; catalogGenresLoading = false
+        appleFavorite = null
         charts = null; chartsLoading = false
         searchResults = null; searching = false; searchError = ""; status = ""
         reloadPlaylists()
         loadRecommend()
         if (ScreenState.page == Page.CHARTS) loadCharts()
+        if (ScreenState.page == Page.APPLE_BROWSE) loadApplePage(ScreenState.appleSection)
+        if (ScreenState.page == Page.SEARCH && source == MusicSource.APPLE) loadCatalogGenres()
     }
 
     fun showStatus(message: String) { status = message }

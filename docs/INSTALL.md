@@ -37,6 +37,8 @@ L1 使用听众自己账号；L2 转交主机短期 URL；L3 可选服务端下�
 
 1. Windows x64 需具备 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) 和 [WebView2 Evergreen Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)。
 2. 把新版模组 JAR 放入 `mods/`，进游戏按 M 选择 Apple Music。组件会自动解包、启动并与游戏配对。首次使用时在 Apple 官方窗口登录。
+
+连续圆角模式下，侧栏可进入「主页」「新发现」和「广播」。点击「资料库」旁的「编辑」可选择显示哪些条目。在主页顶部向下拖动可刷新。播放电台时，「正在播放」会随 Apple Music 的队列更新。歌曲旁的星标会将收藏同步到 Apple Music。
 3. 在游戏内搜索或打开媒体库、歌单播放。主窗口 × / Alt+F4 隐藏组件，游戏退出时结束组件。Apple 会话有效时可恢复，撤销或过期仍须重新登录。
 
 需要相应 Apple Music 订阅及地区播放权限。不提取或分发解密音频，不保证无损、空间音频或网易云 Java 音效可用于 Apple。

@@ -36,28 +36,44 @@ public final class AppleWebServer implements AutoCloseable {
     public synchronized boolean authorized(){return connected()&&authorized;}
     public synchronized String authState(){return connected()?authState:"disconnected";}
     private void cancelRequests(){for(CompletableFuture<JsonObject> f:requests.values())f.completeExceptionally(new IOException("Apple Music request cancelled"));requests.clear();}
+    private void clearPlaybackCommands(){
+        // A favorite write belongs to the account even if the user changes songs.
+        for(Iterator<JsonObject> it=commands.iterator();it.hasNext();){
+            JsonObject command=it.next();
+            long id=command.get("id").getAsLong();
+            if("query".equals(command.get("name").getAsString())&&requests.containsKey(id)){
+                String operation=command.getAsJsonObject("value").get("op").getAsString();
+                if("favoriteAdd".equals(operation)||"favoriteRemove".equals(operation))continue;
+            }
+            it.remove();
+            CompletableFuture<JsonObject> request=requests.remove(id);
+            if(request!=null)request.completeExceptionally(new IOException("Apple Music request cancelled"));
+        }
+    }
     public synchronized void reconnect(){cancelRequests();session=null;owner=null;state=null;commands.clear();authorized=false;authState="restoring";stopped=false;pairing=random();born=System.nanoTime();lastAck=sequence;error="";}
     public JsonObject request(String op,String value,int offset)throws Exception{
-        if(!Arrays.asList("search","charts","songs","playlists","playlistTracks","recent","recommend","resourceTracks").contains(op)||value==null||value.length()>200||offset<0||offset>10000)throw new IllegalArgumentException("Invalid browse request");
+        if(!Arrays.asList("search","charts","songs","playlists","playlistTracks","recent","recommend","resourceTracks",
+            "librarySearch","discover","genres","genreCharts","radio","liveRadio","webDiscover","webRadio","recentlyAdded","libraryAlbums","favoriteSongs",
+            "favoriteState","favoriteAdd","favoriteRemove","heavyRotation").contains(op)||value==null||value.length()>200||offset<0||offset>10000)throw new IllegalArgumentException("Invalid browse request");
         CompletableFuture<JsonObject> future=new CompletableFuture<>();long id;
         synchronized(this){
             if(!connected())throw new IOException("Apple player disconnected");
             if(commands.size()>=16)throw new IOException("Apple controls busy");
-            JsonObject c=new JsonObject(),v=new JsonObject();id=++sequence;c.addProperty("id",id);c.addProperty("name","query");v.addProperty("op",op);v.addProperty(op.equals("search")?"term":"id",value);v.addProperty("offset",offset);c.add("value",v);commands.add(c);requests.put(id,future);
+            JsonObject c=new JsonObject(),v=new JsonObject();id=++sequence;c.addProperty("id",id);c.addProperty("name","query");v.addProperty("op",op);v.addProperty(op.equals("search")||op.equals("librarySearch")?"term":"id",value);v.addProperty("offset",offset);c.add("value",v);commands.add(c);requests.put(id,future);
         }
         try{return future.get(20,TimeUnit.SECONDS);}finally{synchronized(this){requests.remove(id);}}
     }
     public synchronized void playSong(String id,boolean library){
         if(id==null||!id.matches("[A-Za-z0-9._:-]{1,100}"))throw new IllegalArgumentException("Invalid song ID");
         if(!connected())return;
-        cancelRequests();commands.clear();stopped=false;state=null;
+        clearPlaybackCommands();stopped=false;state=null;
         JsonObject c=new JsonObject(),v=new JsonObject();c.addProperty("id",++sequence);c.addProperty("name","load");v.addProperty("id",id);v.addProperty("library",library);c.add("value",v);commands.add(c);
     }
     public synchronized void command(String name,Double value){
         if(!Arrays.asList("play","pause","stop","next","previous","seek","volume","show","hide","login","shutdown").contains(name))throw new IllegalArgumentException("Unsupported control");
         if((name.equals("seek")||name.equals("volume"))&&(value==null||Double.isNaN(value)||Double.isInfinite(value)||value<0||value>(name.equals("volume")?1:86400)))throw new IllegalArgumentException("Invalid control value");
         if(!connected())return;
-        if(name.equals("stop")){stopped=true;state=null;commands.clear();cancelRequests();}
+        if(name.equals("stop")){stopped=true;state=null;clearPlaybackCommands();}
         if(commands.size()>=16){error="Apple Music controls are waiting for the browser";return;}
         if(Arrays.asList("play","next","previous").contains(name))stopped=false;
         JsonObject c=new JsonObject();c.addProperty("id",++sequence);c.addProperty("name",name);if(value!=null)c.addProperty("value",value);commands.add(c);
@@ -85,8 +101,21 @@ public final class AppleWebServer implements AutoCloseable {
                     JsonObject result=report.getAsJsonObject("commandResult");long id=result.get("id").getAsLong();
                     CompletableFuture<JsonObject> f=requests.get(id);
                     if(f!=null&&id==lastAck){JsonObject cleaned=new JsonObject();JsonArray items=new JsonArray();
-                        if(result.has("items")&&result.get("items").isJsonArray())for(JsonElement item:result.getAsJsonArray("items")){if(items.size()>=25)break;if(!item.isJsonObject())continue;JsonObject raw=item.getAsJsonObject(),row=sanitize(raw);row.addProperty("playId",text(raw,"playId",100));row.addProperty("library",raw.has("library")&&raw.get("library").getAsBoolean());items.add(row);}
+                        if(result.has("items")&&result.get("items").isJsonArray())for(JsonElement item:result.getAsJsonArray("items")){if(items.size()>=40)break;if(!item.isJsonObject())continue;JsonObject raw=item.getAsJsonObject(),row=sanitize(raw);row.addProperty("playId",text(raw,"playId",100));row.addProperty("genre",text(raw,"genre",100));for(String k:Arrays.asList("library","compilation","favoriteList"))row.addProperty(k,raw.has(k)&&raw.get(k).getAsBoolean());
+                            if(raw.has("featuredCover"))row.addProperty("featuredCover",artwork(raw,"featuredCover"));
+                            if(raw.has("releaseDate"))row.addProperty("releaseDate",text(raw,"releaseDate",10));
+                            if(raw.has("sectionTitle"))row.addProperty("sectionTitle",text(raw,"sectionTitle",300));
+                            if(raw.has("sectionIndex")){
+                                int index=raw.get("sectionIndex").getAsInt();
+                                if(index<0||index>=30)continue;
+                                row.addProperty("sectionIndex",index);
+                                for(String key:Arrays.asList("layout","heading"))row.addProperty(key,text(raw,key,300));
+                                row.addProperty("link",appleLink(raw));
+                            }
+                            items.add(row);}
                         if(result.has("nextOffset")){int next=result.get("nextOffset").getAsInt();if(next>=0&&next<=10025)cleaned.addProperty("nextOffset",next);}
+                        if(result.has("favorite")&&result.get("favorite").isJsonPrimitive()&&result.getAsJsonPrimitive("favorite").isBoolean())
+                            cleaned.add("favorite",result.get("favorite"));
                         cleaned.add("items",items);cleaned.addProperty("hasMore",result.has("hasMore")&&result.get("hasMore").getAsBoolean());cleaned.addProperty("error",text(result,"error",300));f.complete(cleaned);
                     }
                 }
@@ -94,7 +123,20 @@ public final class AppleWebServer implements AutoCloseable {
                 if(report.has("state")&&report.get("state").isJsonObject()){
                     JsonObject incoming=report.getAsJsonObject("state");authorized=incoming.has("authorized")&&incoming.get("authorized").getAsBoolean();
                     String status=text(incoming,"authState",24);authState=Arrays.asList("ready","login","restoring","unavailable").contains(status)?status:(authorized?"ready":"restoring");
-                    if(!stopped&&!changing)state=sanitize(incoming);
+                    if(!stopped&&!changing){
+                        state=sanitize(incoming);
+                        if(incoming.has("stationQueue")&&incoming.get("stationQueue").isJsonArray()){
+                            JsonArray queue=new JsonArray();
+                            for(JsonElement item:incoming.getAsJsonArray("stationQueue")){
+                                if(queue.size()>=40)break;
+                                if(!item.isJsonObject())continue;
+                                JsonObject row=item.getAsJsonObject();
+                                if(!text(row,"id",101).matches("[A-Za-z0-9._:-]{1,100}")||text(row,"title",300).isEmpty())continue;
+                                queue.add(sanitize(row));
+                            }
+                            state.add("stationQueue",queue);
+                        }
+                    }
                 }
                 error=text(report,"commandError",300);
                 if(error.isEmpty()&&state!=null)error=text(state,"error",300);
@@ -107,8 +149,23 @@ public final class AppleWebServer implements AutoCloseable {
         JsonObject r=new JsonObject();for(String k:Arrays.asList("title","artist","album","id","kind","error"))r.addProperty(k,text(source,k,300));
         for(String k:Arrays.asList("positionMs","durationMs")){double v=source.has(k)?source.get(k).getAsDouble():0;r.addProperty(k,Double.isNaN(v)||Double.isInfinite(v)?0:Math.max(0,Math.min(v,86400000)));}
         for(String k:Arrays.asList("playing","available","authorized","ended"))r.addProperty(k,source.has(k)&&source.get(k).getAsBoolean());
-        String cover="";try{URI u=URI.create(text(source,"cover",2048));if("https".equals(u.getScheme())&&u.getHost()!=null&&(u.getHost().equals("mzstatic.com")||u.getHost().endsWith(".mzstatic.com"))&&u.getUserInfo()==null)cover=u.toString();}catch(Exception ignored){}
-        r.addProperty("cover",cover);return r;
+        r.addProperty("cover",artwork(source,"cover"));return r;
+    }
+    private static String artwork(JsonObject source,String field){
+        try {
+            URI url=URI.create(text(source,field,2048));
+            String host=url.getHost();
+            if("https".equals(url.getScheme())&&host!=null&&(host.equals("mzstatic.com")||host.endsWith(".mzstatic.com"))&&url.getUserInfo()==null)return url.toString();
+        }catch(IllegalArgumentException ignored){}
+        return "";
+    }
+    private static String appleLink(JsonObject source){
+        try {
+            URI url=URI.create(text(source,"link",700));
+            if("https".equals(url.getScheme())&&"music.apple.com".equals(url.getHost())&&url.getUserInfo()==null&&
+                (url.getPort()==-1||url.getPort()==443)&&url.getPath().matches("/[a-z]{2}/.+"))return url.toString();
+        }catch(IllegalArgumentException ignored){}
+        return "";
     }
     public static String text(JsonObject o,String k,int max){JsonElement e=o.get(k);if(e==null||!e.isJsonPrimitive())return "";String v=e.getAsString();return v.substring(0,Math.min(v.length(),max));}
     private static void reply(HttpExchange x,int code,String value)throws IOException{byte[] b=value.getBytes(StandardCharsets.UTF_8);x.getResponseHeaders().set("Content-Type","application/json");x.getResponseHeaders().set("Cache-Control","no-store");x.sendResponseHeaders(code,b.length);x.getResponseBody().write(b);}

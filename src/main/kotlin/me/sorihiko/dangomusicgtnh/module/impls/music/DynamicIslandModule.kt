@@ -58,6 +58,7 @@ class DynamicIslandModule : Module() {
         IDLE(32f, 0f, 12f, 0f),
         FULL(68f, 48f, 14f, 128f),
         COMPACT(42f, 26f, 12f, 68f),
+        MINI(32f, 22f, 12f, 0f),
     }
 
     private var context: GuiCanvas? = null
@@ -82,7 +83,7 @@ class DynamicIslandModule : Module() {
     private var waveColors = emptyList<Int>()
 
     internal fun showVolume(value: Float) {
-        if (!enabled) return
+        if (!enabled || UiStyle.continuous) return
         targetVolume = value.coerceIn(0f, 1f)
         if (volumeReveal < 0.01f) animatedVolume = targetVolume
         volumeUntil = System.nanoTime() + 2_000_000_000L
@@ -90,6 +91,9 @@ class DynamicIslandModule : Module() {
 
     private var dragOffset: Vec2? = null
     private var mouseWasDown = false
+    private var lastTrackKey: String? = null
+    private var lastPlaying = false
+    private var songNoticeUntil = 0L
 
     private val clock = SimpleDateFormat("HH:mm")
 
@@ -109,12 +113,21 @@ class DynamicIslandModule : Module() {
         waveColors = emptyList()
         dragOffset = null
         mouseWasDown = false
+        val snap = PlaybackView.snapshot()
+        lastTrackKey = snap.track?.key
+        lastPlaying = snap.playing
+        songNoticeUntil = 0L
     }
 
-    private fun widthOf(kind: Kind, title: String, available: Float): Float {
-        val preferred = if (kind == Kind.IDLE) 44f + idleWidth() else {
-            val titleWidth = width(title, kind.titleSize, Theme.FONT_SEMIBOLD)
-            kind.coverSize + 58f + max(titleWidth, kind.minTextWidth)
+    private fun widthOf(kind: Kind, snap: PlaybackView.Snapshot, available: Float): Float {
+        val title = snap.track?.name.orEmpty()
+        val preferred = when {
+            kind == Kind.IDLE -> 44f + idleWidth()
+            kind == Kind.MINI -> 78f + width(miniTitle(snap), 12f, Theme.FONT_SEMIBOLD).coerceAtMost(240f)
+            UiStyle.continuous && kind == Kind.FULL -> 120f + maxOf(150f,
+                width(title, 14f, Theme.FONT_SEMIBOLD).coerceAtMost(260f),
+                width(snap.track?.artists.orEmpty().joinToString(" / "), 11f).coerceAtMost(220f))
+            else -> kind.coverSize + 58f + max(width(title, kind.titleSize, Theme.FONT_SEMIBOLD), kind.minTextWidth)
         }
         return min(preferred, available)
     }
@@ -149,6 +162,15 @@ class DynamicIslandModule : Module() {
         if (!enabled) return
         val snap = PlaybackView.snapshot()
         val now = System.nanoTime()
+        val continuous = UiStyle.continuous
+        val trackKey = snap.track?.key
+        if (continuous) {
+            if (trackKey == null) songNoticeUntil = 0L
+            else if (trackKey != lastTrackKey) songNoticeUntil = now + 3_500_000_000L
+            else if (snap.playing != lastPlaying) songNoticeUntil = maxOf(songNoticeUntil, now + 1_500_000_000L)
+        }
+        lastTrackKey = trackKey
+        lastPlaying = snap.playing
         if (e == null && snap.track == null && now >= volumeUntil && volumeReveal < 0.01f) return
         val platform = DangoClient.platform
         if (platform.windowWidth <= 0 || platform.windowHeight <= 0) return
@@ -160,14 +182,15 @@ class DynamicIslandModule : Module() {
         val playing = if (snap.playing) 1f else 0f
         waveActivity += (playing - waveActivity) * (1f - exp(-dt / 0.12f))
         wavePhase = (wavePhase + dt * 8f * waveActivity) % (Math.PI * 2).toFloat()
-        val extension = if (volumeReveal > 0.01f) 22f * volumeReveal else 0f
+        val extension = if (!continuous && volumeReveal > 0.01f) 22f * volumeReveal else 0f
 
         val want = when {
             snap.track == null -> Kind.IDLE
+            continuous && islandLayout.value == 1 && now >= songNoticeUntil -> Kind.MINI
+            continuous -> Kind.FULL
             islandLayout.value == 1 -> Kind.COMPACT
             else -> Kind.FULL
         }
-        val title = snap.track?.name.orEmpty()
         val uiScale = min(platform.windowWidth / 1280f, platform.windowHeight / 800f).coerceAtLeast(0.5f)
         val requestedScale = uiScale * scale.value
         // 小窗口先缩放 HUD，长歌名则在可用宽度内截断。
@@ -189,7 +212,7 @@ class DynamicIslandModule : Module() {
         }
 
         // 弹簧：略带回弹，接近 iOS 灵动岛的手感
-        val tw = widthOf(want, title, available)
+        val tw = widthOf(want, snap, available)
         val th = want.height + extension
         val stiff = 230f
         val damp = 24f
@@ -247,7 +270,7 @@ class DynamicIslandModule : Module() {
             }
 
             // 内容按目标尺寸排版，在当前胶囊里居中，超出部分裁掉
-            val cw = widthOf(shown, title, available)
+            val cw = widthOf(shown, snap, available)
             val ch = shown.height
             val visibleExtension = extension.coerceAtMost((h - ch).coerceAtLeast(0f))
             val cb = LayoutBounds(pill.x + (w - cw) / 2f, pill.y + (h - ch - visibleExtension) / 2f, cw, ch)
@@ -258,7 +281,12 @@ class DynamicIslandModule : Module() {
             mt.clear()
             mt.clip = pill
             ctx.pushOpacity(contentAlpha)
-            if (shown == Kind.IDLE) drawIdle(ctx, cb) else drawSong(ctx, cb, r, shown, snap)
+            when {
+                shown == Kind.IDLE -> drawIdle(ctx, cb)
+                shown == Kind.MINI -> drawMini(ctx, cb, r, snap)
+                continuous && shown == Kind.FULL -> drawDev6Song(ctx, cb, r, snap)
+                else -> drawSong(ctx, cb, r, shown, snap)
+            }
             ctx.popOpacity()
             if (visibleExtension > 8f) {
                 ctx.pushOpacity(((visibleExtension - 8f) / 14f).coerceIn(0f, 1f))
@@ -288,6 +316,54 @@ class DynamicIslandModule : Module() {
             text(ctx, s, x, ty, 12f, c, font)
             x += width(s, 12f, font)
         }
+    }
+
+    private fun miniTitle(snap: PlaybackView.Snapshot): String {
+        val name = snap.track?.name.orEmpty()
+        return if (snap.sourceLabel.isBlank()) name else "$name · ${snap.sourceLabel}"
+    }
+
+    private fun drawMini(ctx: GuiCanvas, b: LayoutBounds, radius: Float, snap: PlaybackView.Snapshot) {
+        val track = snap.track ?: return
+        val cover = LayoutBounds(b.x + 9f, b.y + 5f, 22f, 22f)
+        drawCover(ctx, cover, CoverCache.track(track), radius)
+        val x = cover.right + 9f
+        val title = trim(miniTitle(snap), (b.right - x - 29f).coerceAtLeast(0f), 12f, Theme.FONT_SEMIBOLD)
+        text(ctx, title, x, b.y + 11.3f, 12f,
+            if (snap.playing) Theme.TEXT_PRIMARY else Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+        val time = System.nanoTime() / 1e9
+        for (i in 0 until 4) {
+            val pulse = 0.5f + 0.5f * sin(time * (5.5 + i * 1.9) + i * 1.3).toFloat()
+            val height = if (snap.playing) 3f + 8f * pulse else 3f
+            ctx.drawShape(LayoutBounds(b.right - 26f + i * 3.6f, b.y + 22f - height, 2.2f, height),
+                ShapeStyle(if (snap.playing) Theme.TEXT_PRIMARY else Theme.TEXT_TERTIARY, 1.1f))
+        }
+    }
+
+    private fun drawDev6Song(ctx: GuiCanvas, b: LayoutBounds, radius: Float, snap: PlaybackView.Snapshot) {
+        val track = snap.track ?: return
+        val cover = LayoutBounds(b.x + 10f, b.y + 10f, 48f, 48f)
+        drawCover(ctx, cover, CoverCache.track(track), radius)
+        val x = cover.right + 10f
+        val right = b.right - 14f
+        val textWidth = right - x
+        val source = trim(snap.sourceLabel, minOf(110f, textWidth * 0.55f), 9f)
+        val sourceWidth = width(source, 9f)
+        text(ctx, trim(track.name, textWidth - 4f, 14f, Theme.FONT_SEMIBOLD),
+            x, b.y + 12f, 14f, Theme.TEXT_PRIMARY, Theme.FONT_SEMIBOLD)
+        text(ctx, trim(track.artists.joinToString(" / "), (textWidth - sourceWidth - 6f).coerceAtLeast(0f), 11f),
+            x, b.y + 31f, 11f, Theme.TEXT_SECONDARY)
+        if (source.isNotEmpty()) text(ctx, source, right - sourceWidth, b.y + 33f, 9f, Theme.TEXT_TERTIARY)
+
+        val duration = snap.durationMs.coerceAtLeast(0L)
+        val position = snap.positionMs.coerceIn(0L, duration)
+        val elapsed = fmtTime(position)
+        val remaining = if (duration > 0L) "-${fmtTime(duration - position)}" else "--:--"
+        val timeX = right - width(remaining, 9f)
+        text(ctx, elapsed, x, b.y + 49f, 9f, Theme.TEXT_SECONDARY)
+        text(ctx, remaining, timeX, b.y + 49f, 9f, Theme.TEXT_SECONDARY)
+        val barX = x + width(elapsed, 9f) + 7f
+        drawSongProgress(ctx, barX, b.y + 52f, timeX - 7f - barX, position, duration)
     }
 
     private fun drawSong(ctx: GuiCanvas, b: LayoutBounds, radius: Float, kind: Kind, snap: PlaybackView.Snapshot) {
@@ -328,8 +404,12 @@ class DynamicIslandModule : Module() {
             barX += inset
             barWidth -= inset + remainingWidth + 7f
         }
-        if (barWidth <= 0f) return
-        val bar = LayoutBounds(barX, b.y + (if (full) 52f else 28f), barWidth, 3f)
+        drawSongProgress(ctx, barX, b.y + (if (full) 52f else 28f), barWidth, position, duration)
+    }
+
+    private fun drawSongProgress(ctx: GuiCanvas, x: Float, y: Float, width: Float, position: Long, duration: Long) {
+        if (width <= 0f) return
+        val bar = LayoutBounds(x, y, width, 3f)
         ctx.drawShape(bar, ShapeStyle(Theme.TRACK, 1.5f))
         if (position > 0L) {
             val fill = (bar.width * (position.toDouble() / duration)).toFloat()

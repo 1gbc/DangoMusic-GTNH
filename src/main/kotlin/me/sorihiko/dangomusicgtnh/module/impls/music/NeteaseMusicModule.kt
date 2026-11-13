@@ -41,6 +41,9 @@ class NeteaseMusicModule : Module() {
     @ModuleValue("Music source", "Select a music provider")
     private val musicSource = IntValue(0, 3, 0)
 
+    @ModuleValue("Apple library hidden entries", "")
+    internal val appleLibraryHidden = IntValue(0, 4095, 0)
+
     fun selectSource(source: MusicSource) {
         if (source != MusicSources.selected && (source == MusicSource.APPLE || MusicSources.selected == MusicSource.APPLE)) MusicPlayer.stop(clearResume = false)
         musicSource.setValue(source.configId)

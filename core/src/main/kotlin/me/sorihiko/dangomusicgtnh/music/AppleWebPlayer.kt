@@ -4,12 +4,14 @@ import com.google.gson.JsonObject
 import me.sorihiko.dangomusicgtnh.DangoMusic
 import java.util.concurrent.Executors
 
-/** The browser plays the current song. MusicPlayer owns the in-game queue. */
+/** MusicPlayer owns song queues. MusicKit owns the queue during Apple Music radio. */
 object AppleWebPlayer {
     @Volatile private var server: AppleWebServer? = null
     @Volatile var message = ""
         private set
     @Volatile private var selected = false
+    @Volatile var stationActive = false
+        private set
     private var lastVolume = -1f
     @Volatile private var loadStartedAt = 0L
     private var endedOnce = false
@@ -90,6 +92,7 @@ object AppleWebPlayer {
     @Synchronized fun connect() {
         try {
             ++connectionEpoch
+            stationActive = false
             AppleMusicSource.clear()
             nativeMode = false
             startupFailure = ""
@@ -100,7 +103,7 @@ object AppleWebPlayer {
     }
     fun request(op: String, value: String, offset: Int): JsonObject {
         if (!connected) throw SourceAccessException("Apple Music player is disconnected")
-        if (op !in listOf("search", "charts") && !authorized) throw SourceAccessException(when (authState) {
+        if (op !in listOf("search", "charts", "discover", "genres", "genreCharts", "liveRadio", "webDiscover", "webRadio") && !authorized) throw SourceAccessException(when (authState) {
             "restoring" -> "Restoring Apple Music session; library access is not ready"
             "unavailable" -> "Apple Music library interface is unavailable; check the player window"
             else -> "Apple Music website sign-in is not yet authorized for library access"
@@ -121,13 +124,15 @@ object AppleWebPlayer {
         playbackFailure = ""
         if (!authorized) { message = "Sign in to Apple Music in the login window"; return false }
         return try {
-            server?.playSong(track.mediaId.removePrefix("library:"), track.mediaId.startsWith("library:"))
+            val endpoint = server ?: return false
+            endpoint.playSong(track.mediaId.removePrefix("library:"), track.mediaId.startsWith("library:"))
             loadStartedAt = System.nanoTime()
+            stationActive = track.mediaId.startsWith("station:")
             true
         } catch (_: Exception) { message = "Apple Music could not load this song"; false }
     }
     fun command(name: String, value: Double? = null) {
-        if (name == "stop") { loadStartedAt = 0L; playbackFailure = "" }
+        if (name == "stop") { loadStartedAt = 0L; stationActive = false; playbackFailure = "" }
         try { server?.command(name, value) } catch (_: Exception) { message = "Apple Music control failed" }
     }
     fun tick() {
@@ -159,6 +164,7 @@ object AppleWebPlayer {
         val current = MusicPlayer.current
         val reportedId = str("id")
         if (s?.get("ended")?.asBoolean == true) {
+            if (stationActive && connected) return
             // Older companions can report an end without an item ID. A pending load
             // is a barrier in either case, including when repeating the same song.
             if (!endedOnce && loadStartedAt == 0L && current?.source == MusicSource.APPLE &&
@@ -170,8 +176,12 @@ object AppleWebPlayer {
         }
         endedOnce = false
         if (s == null || !s.get("available").asBoolean || s.get("title").asString.isEmpty()) {
-            if (loadStartedAt != 0L && System.nanoTime() - loadStartedAt < 65_000_000_000L && server?.error().isNullOrEmpty()) return
+            if (connected && playbackFailure.isEmpty() && server?.error().isNullOrEmpty()) {
+                if (loadStartedAt != 0L && System.nanoTime() - loadStartedAt < 65_000_000_000L) return
+                if (stationActive && loadStartedAt == 0L) return
+            }
             loadStartedAt = 0L
+            stationActive = false
             MusicPlayer.clearAppleState()
             return
         }
@@ -184,7 +194,21 @@ object AppleWebPlayer {
         val duration = s.get("durationMs").asLong
         if (duration > 0) track.durationMs = duration
         if (str("cover").isNotEmpty()) track.coverUrl = str("cover")
-        MusicPlayer.acceptAppleState(track, s.get("positionMs").asLong, s.get("playing").asBoolean)
+        val stationQueue = if (stationActive) s.getAsJsonArray("stationQueue")?.map { entry ->
+            val row = entry.asJsonObject
+            val itemId = row.get("id").asString
+            val artwork = row.get("cover").asString
+            val length = row.get("durationMs").asLong
+            val item = track.takeIf { it.matchesAppleId(itemId) }
+                ?: MusicPlayer.queue.firstOrNull { it.matchesAppleId(itemId) }
+                ?: NeteaseTrack(MusicSources.stableId(MusicSource.APPLE, itemId), row.get("title").asString,
+                    listOf(row.get("artist").asString), length, artwork, MusicSource.APPLE, itemId)
+                    .apply { albumName = row.get("album").asString }
+            if (length > 0 && item.durationMs <= 0) item.durationMs = length
+            if (artwork.isNotEmpty() && item.coverUrl.isEmpty()) item.coverUrl = artwork
+            item
+        }.orEmpty() else null
+        MusicPlayer.acceptAppleState(track, s.get("positionMs").asLong, s.get("playing").asBoolean, stationQueue)
     }
     private fun NeteaseTrack.matchesAppleId(id: String) =
         source == MusicSource.APPLE && (nativeId == id || mediaId.removePrefix("library:") == id)
@@ -193,6 +217,7 @@ object AppleWebPlayer {
             ++connectionEpoch
             AppleMusicSource.clear()
             loadStartedAt = 0L
+            stationActive = false
             val old = server to nativeProcess
             server = null
             nativeProcess = null

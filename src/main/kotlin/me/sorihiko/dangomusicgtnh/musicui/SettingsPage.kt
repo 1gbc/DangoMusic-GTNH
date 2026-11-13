@@ -24,6 +24,7 @@ import me.sorihiko.dangomusicgtnh.ui.LayoutBounds
 import me.sorihiko.dangomusicgtnh.ui.ShadowStyle
 import me.sorihiko.dangomusicgtnh.ui.ShapeStyle
 import me.sorihiko.dangomusicgtnh.ui.Theme
+import me.sorihiko.dangomusicgtnh.ui.UiStyle
 import me.sorihiko.dangomusicgtnh.ui.Vec2
 import me.sorihiko.dangomusicgtnh.utils.Color
 
@@ -396,6 +397,7 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         player.left.remove("shuffle")   // 随机播放用播放栏上的按钮就够了，设置页不再显示（状态照样保存）
         player.left.remove("repeatOne") // 单曲循环同样通过播放栏控制
         player.left.remove("musicSource") // 音源通过侧栏切换。
+        player.left.remove("appleLibraryHidden")
         player.left.remove("audioQuality") // 网易云音质从底部播放栏选择。
         for (k in listOf("windowX", "windowY", "windowW", "windowH", "lyricsPageSize", "lyricsPageTranslation", "lyricsPageRomanization")) {
             player.left.remove(k) // 在窗口或歌词页内调整。
@@ -461,15 +463,17 @@ internal class SettingsPage(private val screen: MusicScreen, private val module:
         val preferredTabWidth = names.maxOf { ui.width(it, 12f, Theme.FONT_SEMIBOLD) } + 24f
         val tabsPerRow = (page.width / preferredTabWidth).toInt().coerceIn(1, names.size)
         val tabRows = (names.size + tabsPerRow - 1) / tabsPerRow
-        val tabTop = page.y + 48f
+        val tabTop = page.y + if (UiStyle.continuous) 34f else 48f
         val top = tabTop + tabRows * 36f + 6f
         ui.headerAnim {
             val resetLabel = I18n.text(if (System.currentTimeMillis() < resetArmedUntil) "Click again to confirm" else "Reset all settings")
             val resetWidth = (ui.width(resetLabel, 11f, Theme.FONT_SEMIBOLD) + 22f).coerceAtMost(page.width * 0.52f)
             val title = ui.trim(I18n.text("Settings"), page.width - resetWidth - 12f, 22f, Theme.FONT_DISPLAY)
             ui.text(title, page.x, page.y, 22f, Theme.TEXT_PRIMARY, Theme.FONT_DISPLAY)
-            val subtitle = ui.trim(I18n.text("Changes apply instantly and are saved automatically"), page.width, 11f, Theme.FONT_SEMIBOLD)
-            ui.text(subtitle, page.x, page.y + 30f, 11f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+            if (!UiStyle.continuous) {
+                val subtitle = ui.trim(I18n.text("Changes apply instantly and are saved automatically"), page.width, 11f, Theme.FONT_SEMIBOLD)
+                ui.text(subtitle, page.x, page.y + 30f, 11f, Theme.TEXT_SECONDARY, Theme.FONT_SEMIBOLD)
+            }
             drawResetButton(LayoutBounds(page.right - resetWidth, page.y + 2f, resetWidth, 24f), resetLabel)
             drawTabs(page, tabTop, names, tabsPerRow)
         }

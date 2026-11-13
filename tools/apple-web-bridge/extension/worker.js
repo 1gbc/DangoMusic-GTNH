@@ -40,8 +40,8 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
       config.commandResult=null;
       config.commandError='';
       if(response.command&&response.command.id>config.ack){
-        try{const outcome=await run(config.tabId,response.command);if(response.command.name==='query')config.commandResult={...outcome,id:response.command.id};if(outcome.error)config.commandError=outcome.error;}
-        catch{config.commandError='Official player rejected control: '+response.command.name;if(response.command.name==='query')config.commandResult={id:response.command.id,error:config.commandError};}
+        try{const outcome=await run(config.tabId,response.command);if(response.command.name==='query')config.commandResult={...outcome,id:response.command.id};else if(outcome.error)config.commandError=outcome.error;}
+        catch{const error='Official player rejected control: '+response.command.name;if(response.command.name==='query')config.commandResult={id:response.command.id,error};else config.commandError=error;}
         config.ack=response.command.id;
       }
       config.lastOk=Date.now();config.error=state.error||config.commandError||'';

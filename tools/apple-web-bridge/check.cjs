@@ -33,7 +33,11 @@ test('home cards preserve resource types and playback errors remain useful witho
       assert.equal(params.types,'albums,library-albums,playlists,library-playlists,stations','The recent resources types parameter is required');
       return {data:{data:[{id:'123',type:'albums',attributes:{name:'Recent album'}}]}};
     }
-    if(path==='/v1/me/recommendations')return {data:{data:[{relationships:{contents:{data:[{id:'pl.abc',type:'playlists',attributes:{name:'For you'}}]}}}]}};
+    if(path==='/v1/me/recommendations')return {data:{data:[{attributes:{title:{stringForDisplay:'For you'}},relationships:{contents:{data:[{id:'pl.abc',type:'playlists',attributes:{name:'For you'}}]}}}]}};
+    if(path==='/v1/me/history/heavy-rotation'){
+      assert.equal(params.limit,10);
+      return {data:{data:[{id:'234',type:'library-albums',attributes:{name:'Most played'},relationships:{catalog:{data:[{attributes:{artwork:{url:'https://is1-ssl.mzstatic.com/art/{w}x{h}{c}.{f}'}}}]}}}]}};
+    }
     if(path.endsWith('/tracks'))return {data:{data:[{id:'456',type:'songs',attributes:{name:'Song'}}]}};
     throw {status:403,developerToken:'SECRET'};
   }},setQueue:async()=>{},play:async()=>{const e=Error('PRIVATE RESPONSE');e.name='NotAllowedError';throw e;}};
@@ -42,6 +46,9 @@ test('home cards preserve resource types and playback errors remain useful witho
   const query=op=>context.appleAdapter({name:'query',value:{op,offset:0}});
   const recent=await query('recent');assert.equal(recent.items[0].kind,'albums');
   const recommend=await query('recommend');assert.equal(recommend.items[0].id,'pl.abc');
+  assert.equal(recommend.items[0].sectionTitle,'For you');
+  const rotation=await query('heavyRotation');
+  assert.equal(rotation.items[0].cover,'https://is1-ssl.mzstatic.com/art/256x256bb.jpg');
   const tracks=await context.appleAdapter({name:'query',value:{op:'resourceTracks',id:'albums:123',offset:0}});
   assert.equal(tracks.items[0].id,'456');assert.ok(paths.includes('/v1/catalog/cn/albums/123/tracks'));
   const denied=await query('songs');assert.match(denied.error,/HTTP 403/);assert.ok(!JSON.stringify(denied).includes('SECRET'));
@@ -155,6 +162,96 @@ test('catalog browsing returns only metadata and a stopped pending load never st
   const cancelledBeforeQueue=context.appleAdapter({name:'load',value:{id:'123',library:false}});
   await context.appleAdapter({name:'stop'});await cancelledBeforeQueue;
   assert.equal(plays,0,'Stop during the authorization await must cancel the load too');
+});
+test('editorial shelves preserve their order and playable catalog IDs across bridge pages', async()=>{
+  const vm=require('node:vm');
+  let reads=0;
+  const song=id=>({title:'Track '+id,contentDescriptor:{kind:'song',identifiers:{storeAdamID:String(id)}}});
+  const data={data:[{data:{sections:[
+    {itemKind:'flowcaseLockup',items:[{title:'Feature',heading:'Editorial',
+      artwork:{cropStyle:'sr',dictionary:{url:'https://is1-ssl.mzstatic.com/{w}x{h}{c}.{f}'}},
+      segue:{destination:{intent:{contentDescriptor:{kind:'multiroom',url:'/cn/multi-room/123'}}}}}]},
+    ...[0,1].map(i=>({itemKind:'trackLockup',header:{item:{titleLink:{title:'Section '+i}}},
+      items:Array.from({length:25},(_,j)=>song(100+i*25+j))})),
+    {itemKind:'linkComponentModel',items:[{title:'External',url:'https://example.org/'}]}
+  ]}}]};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},document:{documentElement:{lang:'zh-CN'}},
+    URL,AbortSignal,setTimeout,clearTimeout,MusicKit:{getInstance:()=>({storefrontId:'cn'})},
+    fetch:async(path,options)=>{
+      reads++;
+      assert.equal(path,'/cn/new?l=zh-CN');
+      assert.equal(options.credentials,'omit');
+      return {ok:true,text:async()=>`<script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`};
+    }});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const browse=offset=>context.appleAdapter({name:'query',value:{op:'webDiscover',offset}});
+  const first=await browse(0);
+  const last=await browse(first.nextOffset);
+  assert.equal(reads,1);
+  assert.equal(first.items[0].link,'https://music.apple.com/cn/multi-room/123');
+  assert.match(first.items[0].featuredCover,/768x432sr\.jpg$/);
+  assert.equal(first.items[1].sectionTitle,'Section 0');
+  assert.equal(last.items[0].sectionTitle,'Section 1');
+  assert.equal(first.items.length+last.items.length,51);
+  assert.equal(last.hasMore,false);
+});
+test('discovery albums include separate artwork for the featured rail and release dates', async()=>{
+  const vm=require('node:vm');
+  const player={isAuthorized:true,storefrontId:'cn',api:{music:async(path,params)=>{
+    assert.equal(path,'/v1/catalog/cn/charts');
+    assert.equal(params.types,'albums');
+    return {data:{results:{albums:[{data:[{type:'albums',id:'123',attributes:{
+      name:'Album',artistName:'Artist',releaseDate:'2026-11-10',artwork:{url:'https://is1-ssl.mzstatic.com/{w}x{h}.jpg'}
+    }}]}]}}};
+  }}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},URL,setTimeout,clearTimeout,
+    MusicKit:{getInstance:()=>player}});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const result=await context.appleAdapter({name:'query',value:{op:'discover'}});
+  assert.match(result.items[0].cover,/256x256/);
+  assert.match(result.items[0].featuredCover,/768x768/);
+  assert.equal(result.items[0].releaseDate,'2026-11-10');
+});
+test('library search, live radio and favorites use the Apple account APIs', async()=>{
+  const vm=require('node:vm');
+  let favorite=false, rejectRemoval=false;
+  const player={isAuthorized:true,storefrontId:'cn',api:{music:async(path,params,options)=>{
+    if(path==='/v1/me/library/search'){
+      assert.equal(params.term,'Lover');
+      assert.equal(params.types,'library-songs');
+      return {data:{results:{'library-songs':{data:[{id:'i.song',type:'library-songs',
+        attributes:{name:'Lover',playParams:{catalogId:'123'}}}]}}}};
+    }
+    if(path==='/v1/catalog/cn/stations'){
+      assert.equal(params['filter[featured]'],'apple-music-live-radio');
+      return {data:{data:[{id:'ra.123',type:'stations',attributes:{name:'Live'}}]}};
+    }
+    if(path==='/v1/me/favorites'){
+      assert.equal(params['ids[songs]'],'123');
+      assert.equal(params.platform,'web');
+      assert.equal(options.url,'https://amp-api.music.apple.com/v1/me/favorites');
+      assert.equal(options.method,options.fetchOptions.method);
+      if(options.fetchOptions.method==='DELETE'&&rejectRemoval)throw {status:403};
+      favorite=options.fetchOptions.method==='POST';
+      return {};
+    }
+    assert.equal(path,'/v1/catalog/cn/songs/123');
+    assert.equal(params.extend,'inFavorites');
+    return {data:{data:[{id:'123',attributes:{inFavorites:favorite}}]}};
+  }}};
+  const context=vm.createContext({location:{origin:'https://music.apple.com'},URL,setTimeout,clearTimeout,
+    MusicKit:{getInstance:()=>player}});
+  vm.runInContext(fs.readFileSync(__dirname+'/extension/adapter.js','utf8'),context);
+  const query=(op,value={})=>context.appleAdapter({name:'query',value:{op,...value}});
+  assert.equal((await query('librarySearch',{term:'Lover'})).items[0].playId,'123');
+  assert.equal((await query('liveRadio')).items[0].kind,'stations');
+  assert.equal((await query('favoriteState',{id:'123'})).favorite,false);
+  assert.equal((await query('favoriteAdd',{id:'123'})).favorite,true);
+  rejectRemoval=true;
+  assert.match((await query('favoriteRemove',{id:'123'})).error,/403/);
+  assert.equal((await query('favoriteState',{id:'123'})).favorite,true);
+  rejectRemoval=false;
+  assert.equal((await query('favoriteRemove',{id:'123'})).favorite,false);
 });
 test('natural completion survives cleared metadata and a later SDK state change', async()=>{
   const vm=require('node:vm');

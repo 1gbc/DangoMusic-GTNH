@@ -37,6 +37,24 @@ public class GameBridgeCheck {
             ack=play.getAsJsonObject("command").get("id").getAsLong();
             post(s,"/sync",key,"{\"ack\":"+ack+",\"state\":"+state+"}",200);
             check(s.snapshot()!=null,"Explicit play resumes");
+            final long beforeFavorite=ack;
+            java.util.concurrent.FutureTask<JsonObject> favorite=new java.util.concurrent.FutureTask<>(()->s.request("favoriteAdd","123",0));
+            Thread favoriteWorker=new Thread(favorite,"Favorite request test");
+            favoriteWorker.start();
+            JsonObject command=null;
+            for(int i=0;i<40&&command==null;i++){
+                JsonElement pending=post(s,"/sync",key,"{\"ack\":"+beforeFavorite+"}",200).get("command");
+                if(pending.isJsonObject())command=pending.getAsJsonObject();
+                else Thread.sleep(25);
+            }
+            check(command!=null&&command.get("name").getAsString().equals("query"),"Favorite write is queued");
+            s.playSong("456",false);
+            check(post(s,"/sync",key,"{\"ack\":"+ack+"}",200).getAsJsonObject("command").equals(command),
+                "Changing songs must preserve the pending favorite write");
+            ack=command.get("id").getAsLong();
+            JsonObject next=post(s,"/sync",key,"{\"ack\":"+ack+",\"commandResult\":{\"id\":"+ack+",\"favorite\":true}}",200);
+            check(favorite.get(2,java.util.concurrent.TimeUnit.SECONDS).get("favorite").getAsBoolean(),"The confirmed favorite reaches its caller");
+            check(next.getAsJsonObject("command").get("name").getAsString().equals("load"),"The newly selected song still loads");
             s.reconnect();post(s,"/sync",key,"{\"ack\":0}",403);
             System.out.println("Game bridge protocol checks passed");
         } finally {s.close();}
