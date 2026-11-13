@@ -4,6 +4,10 @@
 
 ## 未发布
 
+## 0.2.0-dev.1 · [PR #20](https://github.com/1gbc/DangoMusic-GTNH/pull/20)
+
+- feat(apple): improve music browsing, radio and continuous UI
+
 - 连续圆角模式下，Apple Music 侧栏新增搜索、新发现与广播入口。「资料库」旁可编辑显示条目，主页支持下拉刷新。
 - 主页按 Apple Music 返回的标题展示推荐分组。新发现与广播优先显示地区对应的网页专题，广播页同时展示最近播放的电台。
 - 电台由 Apple Music 接续播放，「正在播放」随电台队列更新。收藏星标点击后立即更新，后台同步失败时恢复原状态。
